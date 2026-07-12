@@ -1,0 +1,131 @@
+# murmuration.yaml — Example configuration for pymurmur
+# All fields are shown with their default values.
+# Remove or comment out any section to use built-in defaults.
+
+# ── Simulation Domain ───────────────────────────────────────────────
+domain:
+  width: 1000.0          # volume extent X
+  height: 700.0           # volume extent Y
+  depth: 400.0            # volume extent Z
+
+# ── Flock Parameters ────────────────────────────────────────────────
+flock:
+  num_boids: 150          # initial bird count
+  boid_size: 9.0          # body radius for occlusion (Pearce: domain / 110)
+  v0: 4.0                 # cruise speed (units/frame)
+  max_force: 0.15         # max steering force per frame
+  visual_range: 70.0      # max distance for neighbor candidate filtering
+
+# ── Flocking Mode ───────────────────────────────────────────────────
+# One of: projection | spatial | field | vicsek | influencer
+mode: projection
+
+# ── Pearce Projection Mode (used when mode = projection) ────────────
+projection:
+  phi_p: 0.03             # projection weight (δ̂ coherence)
+  phi_a: 0.80             # alignment weight (neighbor heading)
+  sigma: 4                # topological neighbor count (σ)
+
+# ── Reynolds Spatial Mode (used when mode = spatial) ─────────────────
+spatial:
+  separation_weight: 4.5
+  alignment_weight: 0.65
+  cohesion_weight: 0.75
+  noise_scale: 0.0        # 0 = no noise
+  acceleration_scale: 0.3 # damping on accumulated forces
+
+# ── Field/Blob Mode (used when mode = field) ─────────────────────────
+field:
+  separation: 0.92         # slot repulsion strength
+  alignment: 0.90          # drift alignment strength
+  cohesion: 1.80           # shell pull strength
+  flow: 0.30               # curl noise strength
+  chase_strength: 0.82     # leader/chaser blend
+  wave_gain: 0.04          # ripple intensity
+  noise: 0.035             # random perturbation
+
+# ── Vicsek Mode (used when mode = vicsek) ────────────────────────────
+vicsek:
+  couplage: 0.8            # alignment coupling η ∈ [0,1]
+  diffusion: 0.8           # angular noise D
+  radius_influence: 5.0    # alignment interaction radius
+  radius_avoid: 1.0        # hard repulsion radius
+  velocity: 1.0            # constant speed
+
+# ── Cosmic Influencer Mode (used when mode = influencer) ─────────────
+influencer:
+  rank_exponent: 1.8       # exponent on rank gradient (1.8 = tight core)
+  substeps: 5              # influencer updates per frame
+
+# ── Boundary Mode ───────────────────────────────────────────────────
+# One of: toroidal | open | margin | sphere
+boundary_mode: toroidal
+# Sphere-specific (used when boundary = sphere):
+boundary_sphere_radius: 300.0
+boundary_avoidance_factor: 0.05
+
+# ── SI Refinements (Pearce SI-Appendix, U-key toggle) ───────────────
+refinements:
+  enabled: true
+  steric: 0.6              # φ_s: 1/d² repulsion strength (0 = off)
+  blind_deg: 60.0          # rear blind cone full angle in degrees
+  anisotropy: 2.0          # body axis ratio a/b (1.0 = isotropic)
+
+# ── Behavioural Extensions ──────────────────────────────────────────
+extensions:
+  predator: false          # autonomous predator agent
+  roosting: false          # day/night roost cycle (Goodenough)
+  wander: false            # bounded flock center wander
+  ripple: false            # density pulse envelopes
+
+# ── Predator-Specific (used when extensions.predator = true) ─────────
+predator:
+  threat_radius: 12.0      # detection/flee radius
+  strength: 1.0            # threat force multiplier
+  momentum: 0.5            # pass-through momentum
+  split_gain: 0.8          # tangent split force intensity
+
+# ── Ecology-Specific (used when extensions.roosting = true) ──────────
+ecology:
+  roost_x: 500.0           # roost site X (default: domain center)
+  roost_y: 350.0           # roost site Y
+  roost_z: 40.0            # roost site Z (near bottom)
+  critical_mass: 500       # smoothstep onset for flock coherence
+
+# ── Performance Tuning (300K target) ────────────────────────────────
+# For N >= 50000 these settings are critical; at low N they have no effect.
+performance:
+  use_numba: true             # JIT-compile hot force loops (projection mode needs it at scale)
+  spatial_index: kdtree       # auto | hash_grid | kdtree (kdtree required for topological sigma)
+  instance_buffer_chunk: 50000  # GPU buffer growth increment (birds per reallocation)
+
+# ── Metrics Detail ──────────────────────────────────────────────────
+metrics:
+  detail_level: 2             # 0=off, 1=fast (O(N) every frame), 2=full (expensive every N frames)
+  interval: 60                # frames between expensive metric computations (detail_level >= 2)
+
+# ── Random Seed ─────────────────────────────────────────────────────
+# null = use system entropy; set an integer for deterministic replay
+seed: null
+
+# ── Visualization (ignored in --no-viz mode) ────────────────────────
+visual:
+  fps: 60
+  window_width: 1200
+  window_height: 800
+  show_grid: false
+  auto_rotate: false
+  theme: ink               # ink | inverse | paper | graphite
+  trails: off              # off | velocity | accumulation
+
+# ── Capture Settings (used with --capture flag) ─────────────────────
+capture:
+  width: 800
+  height: 600
+  frames: 240              # total simulation frames
+  every: 3                 # capture every Nth frame
+  fps: 20                  # GIF playback speed
+  output: output/murmuration.gif
+  metrics_csv: output/metrics.csv
+  metrics_json: output/metrics.json
+  with_viz: true           # include rendered frames in GIF

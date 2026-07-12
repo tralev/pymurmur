@@ -1,0 +1,224 @@
+# ═══════════════════════════════════════════════════════════════════════
+# murmuration_nested.yaml — REFERENCE DRAFT of the D1 target config schema
+# ═══════════════════════════════════════════════════════════════════════
+# STATUS: NOT LOADABLE by the current (pre-D1) loader, which flattens
+# section keys and would mis-read this file (e.g. boundary.mode would
+# collide with the top-level force mode; capture.width with domain.width).
+# It lives in conf/examples/ (outside the conf/*.yaml glob) precisely so
+# it cannot be selected via --config or --list-configs today.
+#
+# PURPOSE: the worked example for roadmap phase D1 — YAML section names map
+# 1:1 to SimConfig sub-dataclass field names; every key inside a section
+# maps 1:1 to that sub-config's fields. Unknown keys must WARN, never drop
+# silently. When D1 lands, this file becomes conf/murmuration.yaml and the
+# flat presets are migrated to this shape.
+#
+# Values below are the dataclass defaults (Pearce projection baseline).
+# Sections for other modes are always present — a config describes all
+# modes; `mode:` selects which one runs (switchable live with M).
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── Domain (static — requires restart) ──────────────────────────────
+domain:
+  width: 1000.0            # volume extent X
+  height: 700.0            # volume extent Y
+  depth: 400.0             # volume extent Z  (strictly 3D: must be > 0)
+
+# ── Boundary ────────────────────────────────────────────────────────
+boundary:
+  mode: toroidal           # toroidal | open | margin | sphere | sphere_soft
+  sphere_radius: 300.0     # sphere*: radius around the DOMAIN CENTRE
+  avoidance_factor: 0.05   # margin/sphere push strength (μ)
+  margin: 42.0             # margin mode: wall zone width (world units)
+  use_toroidal_distance: true   # min-image neighbour queries under toroidal
+
+# ── Flock (static unless noted) ─────────────────────────────────────
+flock:
+  num_boids: 150           # live-mutable via +/- and commands
+  boid_size: 9.0           # body radius; unit for *_radius_bodies scaling
+  v0: 4.0                  # cruise speed (live via PgUp/PgDn, floor 0.3)
+  max_force: 0.15          # steering-force cap per frame
+  visual_range: 70.0       # metric perception radius (hybrid filter gate)
+  seed: 42                 # null = system entropy; int = deterministic replay
+  velocity_init: fixed     # fixed | cube | speed_uniform | tangential
+  speed_min_factor: 0.3    # band-mode floor as a fraction of v0
+  n_predators: 0           # predator-species birds seated at array tail
+
+# ── Active force mode ───────────────────────────────────────────────
+mode: projection           # projection | spatial | field | vicsek |
+                           # influencer | angle | marl   (M cycles registry)
+
+# ── Pearce projection mode ──────────────────────────────────────────
+projection:
+  phi_p: 0.03              # projection weight (δ̂)          [live ↑↓]
+  phi_a: 0.80              # alignment weight                [live ←→]
+                           # φn = 1 − φp − φa (noise weight, derived)
+  sigma: 4                 # topological neighbour count σ   [live [ ] ]
+  refinements: true        # SI refinements master toggle    [live U]
+  steric: 0.6              # φ_s 1/d² repulsion strength (clamped to max_force)
+  blind_deg: 60.0          # rear blind cone full angle (degrees)
+  anisotropy: 2.0          # prolate body axis ratio a/b (1.0 = isotropic)
+  max_visibility: 200.0    # occlusion candidate range cutoff
+  max_occlusion_neighbors: 64   # visibility-sweep candidate cap
+
+# ── Reynolds spatial mode ───────────────────────────────────────────
+spatial:
+  separation_weight: 4.5   # live via HUD slider (1–5)
+  alignment_weight: 0.65   # live via HUD slider (0–0.5 in Starlings regime)
+  cohesion_weight: 0.75    # live via HUD slider (0–2)
+  noise_scale: 0.0         # δ noise magnitude (0 = off)
+  acceleration_scale: 0.3  # damping applied BEFORE the max_force clamp
+  separation_distance: 20.0     # metric separation gate
+  neighbor_filter: knn     # knn | hybrid (radius AND count-cap)
+  influence_count: 7       # hybrid-mode topological cap (Young 2013)
+  alignment_radius_ratio: 0.75  # alignment inner sphere = ratio × visual_range
+  separation_kernel: inverse_square   # inverse_square (unit r̂/d²) | unit
+  noise_mode: force        # force | velocity (post-integration state noise)
+  speed_mode: band         # band | ceiling | fixed
+  parameter_jitter: false  # per-frame environmental weight wander
+  jitter_separation: 0.5   # + U(0, x) on the effective weight
+  jitter_cohesion: 0.1
+  jitter_alignment: 0.005
+  predator_speed_boost: 1.8        # species-mode multipliers
+  predator_perception_boost: 1.5
+  predator_acceleration_boost: 1.4
+  predator_escape_factor: 1.0e7    # escape force replaces separation
+
+# ── crs48 field/blob mode ───────────────────────────────────────────
+field:
+  unit_scale: 0.0          # 0 = auto 0.4·min(W,H,D); source-unit → world scale
+  chase_strength: 0.72     # blob-field ↔ leader/chaser blend (the character knob)
+  shell_influence: 1.0
+  target_pull: 0.35
+  drift_pull: 0.55
+  tangent_pull: 1.0
+  flow_pull: 1.0
+  wave_gain: 0.5           # ripple/wave coupling
+  inertia: 0.8             # 0 = crisp speed clamp … 1 = pure direction steering
+  separation: 0.92         # slot repulsion strength
+  alignment: 0.90          # drift-alignment strength
+  cohesion: 1.80           # shell pull strength
+  flow: 0.30               # curl-flow strength
+
+# ── Vicsek mode (collective-motion predator–prey) ───────────────────
+vicsek:
+  couplage: 0.8            # η alignment coupling ∈ [0,1]
+  diffusion: 0.8           # D angular noise coefficient (√(2DΔt) amplitude)
+  time_step: 1.0           # Δt in the noise amplitude
+  velocity: 1.0            # constant prey speed (fixed speed mode)
+  radius_influence: 5.0    # R_inf prey alignment radius
+  radius_avoid: 1.0        # R_avoid same-type collision radius
+  radius_predators: 5.0    # R_pred prey fear radius
+  weight_afraid: 3.0       # neighbour-weight amplification while afraid
+  predator_noise_ratio: 0.2     # predator noise = ratio × prey noise
+  detect_ratio: 1.5        # hunting detection = ratio × R_pred
+  velocity_predator: 1.0   # constant predator speed
+
+# ── murmuratR cosmic-influencer mode ────────────────────────────────
+influencer:
+  rank_exponent: 1.8       # influence gradient concavity (core/tail balance)
+  substeps: 3              # full move+steer+tick cycles per frame
+  scale: 1.0               # trajectory embedding multiplier
+  influence_mode: rank     # rank (source behaviour) | distance
+  near_dist_sq: 100.0      # distance-mode numerator (clamp(k/d², .2, .8))
+  init: gauss              # gauss (N^{1/3}·sep cloud, zero headings) | box
+  separation: 0.5          # sep in the init multiplier N^{1/3}·sep
+
+# ── PyNBoids angle-steering mode ────────────────────────────────────
+angle:
+  turn_rate: 120.0         # deg/s base turn rate
+  max_turn_rate: 200.0     # deg/s at the wall
+  turn_threshold: 0.5      # deg dead-zone (anti-oscillation)
+  jitter_deg: 4.0          # per-frame pre-steering heading jitter
+  margin: 42.0             # edge-avoidance zone (world units)
+  speed_mode: linear       # linear | quadratic | softened | off
+  base_speed: 150.0        # world units/s
+  neighbors: 7             # ideal/maximum neighbour count
+  sep_radius_bodies: 1.0   # mode-A flee threshold  = boid_size × this
+  align_radius_bodies: 5.0 # mode-B align threshold = boid_size × this
+  range_radius_bodies: 12.0     # neighbour cutoff  = boid_size × this
+
+# ── MARL bridge mode (external control; training stays external) ────
+marl:
+  action_scale: 0.1        # Δv per unit action (in velocity_cap units)
+  velocity_cap: 0.1        # per-component speed cap (source units × U)
+  rule_weight: 0.01        # deferred global-rule gain
+  separation_radius: 0.2   # hard separation gate (source units × U)
+  episode_steps: 500
+  reward_alignment_w: 1.0  # reward term weights (analysis/rewards.py)
+  reward_cohesion_w: 1.0
+  reward_angular_w: 0.0
+  reward_boundary_w: 0.0
+  reward_altitude_w: 0.0
+  reward_faithful_signs: true   # source's +alignment sign quirk
+
+# ── Threat system (crs48 FSM predator; live-toggleable) ─────────────
+threat:
+  mode: "off"              # off | cursor | orbit | autonomous   [live T]
+  radius: 0.5              # source units (× field unit scale U)
+  strength: 1.0
+  momentum: 0.5            # pass-through momentum (turn-rate damping)
+  acceleration: 1.0        # chase turn-rate contribution
+  split_gain: 0.8          # tangential tear force (the "hole")
+  vacuole_strength: 0.4    # hollow-void push amplification
+  blackening_gain: 0.6     # density-compression near the threat
+
+# ── Ecology + wander + ripple extensions ────────────────────────────
+ecology:
+  roosting_enabled: false  # day-night roost cycle    [live K]
+  roost: [500.0, 350.0, 40.0]   # roost site (near-ground default)
+  critical_mass: 500       # coherence-gate smoothstep centre
+  seasonal_size: false     # drive N from the seasonal cosine model
+  peak_size: 150           # N at the mid-January peak
+  wander_enabled: false    # bounded-unit-travel attractor
+  wander_speed: 1.0
+  wander_radius: 0.6       # fraction of the field unit scale U
+  ripple_enabled: false    # enveloped travelling density pulses
+
+# ── Metrics & physical calibration ──────────────────────────────────
+metrics:
+  detail_level: 1          # 0 = off | 1 = fast O(N) | 2 = + expensive/gated
+  interval: 60             # frames between expensive metrics / log lines
+  bird_mass_kg: 0.075      # starling mass (physical-unit layer)
+  cruise_speed_ms: 8.94    # real m/s mapped to v0
+  acc_peak_ms2: 40.0       # real m/s² mapped to max_force
+
+# ── Visualization (ignored with --no-viz) ───────────────────────────
+viz:
+  fps: 60
+  window_width: 1200
+  window_height: 800
+  theme: ink               # ink | inverse | paper | graphite | heading
+  trails: "off"            # off | velocity | accumulation | ring
+  trail_length: 12         # ring-trail history K
+  point_sprites: false     # sphere impostors instead of meshes
+  per_bird_color: false    # per-bird HSV hue from seeds
+  dual_view: false         # two simultaneous viewpoints (15/15 + 45/45)
+  background: flat         # flat | gradient
+  show_grid: false         # [live G]
+  auto_rotate: false       # [live O]
+  hud: true                # slider panel + readout   [live TAB]
+
+# ── Capture (used with --capture; env overrides CAPTURE_*) ──────────
+capture:
+  width: 800               # capture FBO resolution (NOT the domain — nested
+  height: 600              #   schema makes that collision impossible)
+  frames: 240
+  every: 3                 # capture every Nth frame
+  fps: 20                  # GIF playback speed
+  output: output/murmuration.gif
+  metrics_csv: output/metrics.csv
+  metrics_json: output/metrics.json
+  with_viz: true           # false = metrics-only capture
+  sweep: true              # cinematic camera sweep during capture
+  prewarm: 60              # un-captured settle frames before recording
+
+# ── Performance ─────────────────────────────────────────────────────
+perf:
+  use_numba: false         # JIT force kernels (install extra: pymurmur[numba])
+  fastmath: false          # ONLY honoured when metrics.detail_level == 0
+  num_threads: -1          # -1 = all cores (index queries / kernels)
+  spatial_index: auto      # auto | hash_grid | kdtree
+  instance_buffer_chunk: 50000
+  adaptive_quality: true   # governor ladder: trails → render scale → N
+  target_fps: 60

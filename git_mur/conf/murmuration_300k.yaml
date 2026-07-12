@@ -1,0 +1,116 @@
+# murmuration_300k.yaml — 300K-bird benchmark configuration for pymurmur
+#
+# Spatial Reynolds mode at extreme scale. Designed to stress-test the
+# cKDTree + numba JIT + SoA pipeline described in arch.md §9.
+#
+# Usage:
+#   # Headless benchmark (no GPU needed):
+#   python -m pymurmur --config murmuration_300k.yaml --no-viz
+#
+#   # With visualization (expect ~15–25 fps on M2 Max / RTX 4080):
+#   python -m pymurmur --config murmuration_300k.yaml
+#
+#   # Capture metrics only (no rendered frames):
+#   python -m pymurmur --config murmuration_300k.yaml --no-viz --capture
+
+# ── Simulation Domain ───────────────────────────────────────────────
+# 2000³ = 8 km³ volume. At 300K birds this gives:
+#   - number density ρ_num = 300_000 / 8_000_000_000 = 3.75 × 10⁻⁵ birds/unit³
+#   - mean inter-bird spacing ≈ (1/ρ_num)^(1/3) ≈ 30 units
+#   - With visual_range=70, each bird sees ~50 neighbors — manageable for cKDTree
+# Toroidal wrap preserves density; open boundary lets flock self-size.
+domain:
+  width: 2000.0
+  height: 2000.0
+  depth: 2000.0
+
+# ── Flock Parameters ────────────────────────────────────────────────
+flock:
+  num_boids: 300000        # target scale (validated at N ∈ {150, 1.5K, 16K, 50K, 300K})
+  boid_size: 2.0           # smaller: occlusion not used in spatial mode at this scale
+  v0: 6.0                  # cruise speed (rystrauss default)
+  max_force: 1.0           # max steering force per frame
+  visual_range: 70.0       # neighbor query radius → ~50 neighbors per bird at this density
+
+# ── Spatial / Reynolds Mode ─────────────────────────────────────────
+mode: spatial
+
+# ── Reynolds Spatial Parameters ─────────────────────────────────────
+spatial:
+  # Core force weights (same as murmuration_spatial.yaml for comparability):
+  separation_weight: 4.5
+  alignment_weight: 0.65
+  cohesion_weight: 0.75
+  noise_scale: 0.5
+  acceleration_scale: 0.3
+  perception: 100.0
+  separation_distance: 20.0
+
+  # Neighbor selection — kdtree mandatory at this scale (arch.md §9.3):
+  neighbor_mode: kdtree
+  # Dual-radius behavior (alignment uses inner 75% of cohesion radius):
+  alignment_radius_ratio: 0.75
+  topological_cap: 50      # cap at 50 neighbors (balances locality vs. global alignment)
+
+  # Toroidal distance for wrapped neighbor queries:
+  use_toroidal_distance: true
+
+# ── Boundary Mode ───────────────────────────────────────────────────
+boundary_mode: toroidal         # wrap at domain edges — keeps density uniform
+
+# ── SI Refinements ──────────────────────────────────────────────────
+refinements:
+  enabled: false           # disable occlusion-dependent refinements at 300K
+  steric: 0.0
+  blind_deg: 0.0
+  anisotropy: 1.0
+
+# ── Behavioural Extensions ──────────────────────────────────────────
+extensions:
+  predator: false          # single predator has negligible effect at 300K
+  roosting: false
+  wander: false
+  ripple: false
+
+# ── Performance Tuning (300K target) ────────────────────────────────
+# These MUST be set correctly for real-time performance at 300K.
+# See arch.md §9 for the full scaling analysis.
+performance:
+  use_numba: true             # REQUIRED — JIT-compile the spatial force kernel
+  spatial_index: kdtree       # REQUIRED — cKDTree (hash grid breaks at this density)
+  instance_buffer_chunk: 50000  # GPU buffer growth increment
+
+# ── Metrics Detail ──────────────────────────────────────────────────
+# Fast metrics only at 300K — expensive ones (H₂, PCA) would dominate frame time.
+# For full metric sweeps, run a separate headless pass with fewer birds.
+metrics:
+  detail_level: 1             # 1 = fast: α, Θ, σr, speed_avg, force_avg only
+  interval: 60                # (not used at detail_level=1, but set for future)
+
+# ── Random Seed ─────────────────────────────────────────────────────
+seed: 42                  # deterministic for reproducible benchmarks
+
+# ── Visualization (minimal — tuned for benchmark throughput) ────────
+visual:
+  fps: 0                   # 0 = uncapped (measure real throughput, not vsync-limited)
+  window_width: 1920
+  window_height: 1080
+  show_grid: false         # skip grid rendering at 300K
+  auto_rotate: false
+  theme: ink               # fast: single-color boids, no speed tint overhead
+  trails: off              # skip trail rendering — every GPU cycle matters
+  # Point sprite mode: draw single-pixel dots instead of tetrahedra.
+  # Reduces GPU vertex load from 1.2M triangles → 300K points.
+  point_sprites: true
+
+# ── Capture Settings ────────────────────────────────────────────────
+capture:
+  width: 800
+  height: 800
+  frames: 600              # 10 seconds at 60fps (or ~20s at 30fps)
+  every: 6                 # ~100 GIF frames
+  fps: 15
+  output: output/murmuration_300k.gif
+  metrics_csv: output/metrics_300k.csv    # per-frame metrics for scaling analysis
+  metrics_json: output/metrics_300k.json
+  with_viz: true

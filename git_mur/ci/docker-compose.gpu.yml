@@ -1,0 +1,10 @@
+# ci/docker-compose.gpu.yml — GPU runtime override
+# Usage: docker compose -f ci/docker-compose.yml -f ci/docker-compose.gpu.yml --profile gpu up
+
+services:
+  test-gpu:
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,graphics,utility
+      - __GL_SYNC_TO_VBLANK=0

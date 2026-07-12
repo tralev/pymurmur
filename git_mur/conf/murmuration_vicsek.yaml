@@ -1,0 +1,102 @@
+# murmuration_vicsek.yaml — Vicsek (angle-based) mode configuration for pymurmur
+# Uses constant-speed agents with angular noise and alignment coupling.
+# Based on corentinpradier/collective-motion (resulting_sci.md §7, new8_sci.md).
+# Includes predator-prey dynamics with asymmetric collision avoidance.
+
+# ── Simulation Domain ───────────────────────────────────────────────
+domain:
+  width: 40.0             # toroidal cube [−20, 20]³ (collective-motion default: W=20)
+  height: 40.0
+  depth: 40.0
+
+# ── Flock Parameters ────────────────────────────────────────────────
+flock:
+  num_boids: 101           # 100 prey + 1 predator (configurable below)
+  boid_size: 0.5           # small: Vicsek agents are points, not occluding bodies
+  v0: 1.0                  # constant speed for prey
+  max_force: 0.0           # not used in Vicsek (no force accumulation)
+  visual_range: 5.0        # R_inf: alignment interaction radius
+
+# ── Vicsek Mode ─────────────────────────────────────────────────────
+mode: vicsek
+
+# ── Vicsek Parameters ───────────────────────────────────────────────
+# All defaults from collective-motion (new8_sci.md §15)
+vicsek:
+  # ── Core Vicsek ──
+  couplage: 0.8                # η: alignment coupling strength ∈ [0,1]
+  diffusion: 0.8               # D: angular noise coefficient
+  time_step: 1.0               # Δt per Vicsek update
+
+  # ── Prey parameters ──
+  velocity_prey: 1.0           # constant prey speed
+  radius_influence: 5.0        # R_inf: prey alignment interaction radius
+  radius_avoid: 1.0            # R_avoid: same-type minimum separation
+  radius_predators: 5.0        # R_pred: predator detection / fear radius
+
+  # ── Predator parameters ──
+  num_predators: 1             # number of predator agents
+  velocity_predator: 1.0       # constant predator speed
+  predator_noise_scale: 0.2    # 5× less noise than prey (deliberate movement)
+  predator_detect_radius: 7.5  # 1.5 × R_pred (larger hunting detection radius)
+
+  # ── Fear response ──
+  weight_afraid: 3.0           # alignment amplification when predator detected
+
+  # ── Phase diagram sweep (run headless) ──
+  phase_diagram_resolution: 21  # grid resolution for (η, D) sweep
+  phase_diagram_use_nematic: true  # use nematic order parameter (code default)
+
+# ── Boundary Mode ───────────────────────────────────────────────────
+boundary_mode: toroidal    # [−W, W] domain wrapping (collective-motion style)
+
+# ── Behavioural Extensions ──────────────────────────────────────────
+extensions:
+  predator: true           # Vicsek model has built-in predator-prey dynamics
+  roosting: false
+  wander: false
+  ripple: false
+
+# ── Predator-Specific (Vicsek-style) ────────────────────────────────
+predator:
+  hunting_strategy: nearest_prey    # nearest-prey pursuit
+  detection_radius: 7.5             # 1.5 × R_pred
+  noise_scale: 0.2                  # reduced noise vs. prey
+
+# ── Performance Tuning (300K target) ────────────────────────────────
+# Vicsek mode uses cKDTree for neighbor queries; force computation is vectorised numpy.
+# numba is optional at 300K (vicsek per-bird math is simple angle averaging).
+performance:
+  use_numba: false            # Vicsek math is simple enough for vectorised numpy at 300K
+  spatial_index: kdtree       # auto | hash_grid | kdtree (needed for alignment/avoidance radii)
+  instance_buffer_chunk: 50000  # GPU buffer growth increment (birds per reallocation)
+
+# ── Metrics Detail ──────────────────────────────────────────────────
+metrics:
+  detail_level: 1             # 0=off, 1=fast (O(N) every frame), 2=full (expensive every N frames)
+  interval: 60                # frames between expensive metric computations (detail_level >= 2)
+
+# ── Seed ────────────────────────────────────────────────────────────
+seed: 42
+
+# ── Visualization ───────────────────────────────────────────────────
+visual:
+  fps: 60
+  window_width: 800
+  window_height: 800        # square window for toroidal domain
+  show_grid: false
+  auto_rotate: false
+  theme: inverse            # light boids on dark background
+  trails: off               # Vicsek has no velocity magnitude for trails
+
+# ── Capture Settings ────────────────────────────────────────────────
+capture:
+  width: 600
+  height: 600
+  frames: 500               # Vicsek needs more frames to observe phase transition
+  every: 5                  # ~100 GIF frames
+  fps: 15                   # slower playback to see dynamics
+  output: output/murmuration_vicsek.gif
+  metrics_csv: output/metrics_vicsek.csv
+  metrics_json: output/metrics_vicsek.json
+  with_viz: true

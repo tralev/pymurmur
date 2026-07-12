@@ -1,0 +1,9 @@
+# requirements-optional.txt — optional dependencies
+numba>=0.58,<1.0         # JIT force kernels (N >= 50K)
+pygame>=2.5,<3.0         # Window, events, clock
+moderngl>=5.8,<6.0       # GPU instanced rendering
+PyGLM>=2.7,<3.0          # Camera matrices
+Pillow>=10.0,<12.0       # FBO readback, GIF export
+matplotlib>=3.7,<4.0     # Phase diagrams, plots
+
+gymnasium>=0.29,<2.0         # MARL env wrapper (lazy import; roadmap_deepseek.md P12.2)

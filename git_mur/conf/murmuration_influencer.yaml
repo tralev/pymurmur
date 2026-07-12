@@ -1,0 +1,97 @@
+# murmuration_influencer.yaml — Cosmic Influencer mode configuration for pymurmur
+# Birds follow a single moving 3D target with individually varying influence weights.
+# No neighbor interactions — all flocking emerges from differential following.
+# Based on JerBoon/murmuratR (resulting_sci.md §8, new6_sci.md).
+
+# ── Simulation Domain ───────────────────────────────────────────────
+domain:
+  width: 600.0             # large enough for the Lissajous target path (±230 range)
+  height: 600.0
+  depth: 400.0             # shallower: vertical bias in target trajectory
+
+# ── Flock Parameters ────────────────────────────────────────────────
+flock:
+  num_boids: 200
+  boid_size: 2.0
+  v0: 1.0                  # unit speed (all birds move at unit speed)
+  max_force: 0.0           # not used (influencer uses direct direction blending)
+  visual_range: 0.0        # no neighbor queries at all
+
+# ── Cosmic Influencer Mode ──────────────────────────────────────────
+mode: influencer
+
+# ── Influencer Parameters ───────────────────────────────────────────
+# All defaults from murmuratR (new6_sci.md)
+influencer:
+  # ── Target trajectory (3D Lissajous) ──
+  # Primary frequencies (mutually prime): 97, 29, 41
+  # Secondary frequencies: 217, 13, 7
+  target_freq_primary: [97, 29, 41]     # main orbit periods
+  target_freq_secondary: [217, 13, 7]   # local oscillation periods
+  target_amp_primary: [200, 200, 100]   # main orbit amplitudes
+  target_amp_secondary: [30, 30, 27]    # local oscillation amplitudes
+  target_vert_offset: 40.0              # z-offset to keep flock above ground
+  target_phase_offsets: [0, 53, 61]     # starting phases per axis
+
+  # ── Influence model ──
+  influence_min: 0.2                   # minimum influence (farthest bird)
+  influence_max: 1.0                   # maximum influence (closest bird)
+  influence_distance_factor: 100.0      # numerator in inf = clamp(100/d², min, max)
+  rank_exponent: 1.8                   # exponent on rank gradient (1.8 = tight core)
+  use_rank_override: true              # override distance influence with rank-based
+
+  # ── Update ──
+  substeps: 5                          # influencer target updates per simulation frame
+  move_then_steer: true                # use old direction for move, then compute new
+
+  # ── Initialization ──
+  density_scaled_init: true            # use N^(1/3)·sep constant-density init
+  init_separation: 0.5                 # separation factor for density scaling
+
+# ── Boundary Mode ───────────────────────────────────────────────────
+boundary_mode: open              # no wrapping — let flock follow the target freely
+
+# ── Behavioural Extensions ──────────────────────────────────────────
+extensions:
+  predator: false
+  roosting: false
+  wander: false             # wander is redundant with the Lissajous target
+  ripple: false
+
+# ── Performance Tuning (300K target) ────────────────────────────────
+# Influencer mode is O(1) per bird — no neighbor queries at all. Fastest mode.
+# numba is NOT needed (the Lissajous target is a single O(1) evaluation).
+performance:
+  use_numba: false            # influencer mode has no per-bird loops to accelerate
+  spatial_index: none         # auto | hash_grid | kdtree | none (no neighbor interactions)
+  instance_buffer_chunk: 50000  # GPU buffer growth increment (birds per reallocation)
+
+# ── Metrics Detail ──────────────────────────────────────────────────
+metrics:
+  detail_level: 1             # 0=off, 1=fast (O(N) every frame), 2=full (expensive every N frames)
+  interval: 60                # frames between expensive metric computations (detail_level >= 2)
+
+# ── Seed ────────────────────────────────────────────────────────────
+seed: 42
+
+# ── Visualization ───────────────────────────────────────────────────
+visual:
+  fps: 60
+  window_width: 1200
+  window_height: 800
+  show_grid: true           # grid helps show the target's motion through space
+  auto_rotate: true         # orbit camera to see the 3D Lissajous path
+  theme: paper              # warm tones suit the organic influencer aesthetic
+  trails: accumulation      # persistent trails show the flock's history
+
+# ── Capture Settings ────────────────────────────────────────────────
+capture:
+  width: 800
+  height: 600
+  frames: 600               # longer: Lissajous trajectory takes time to develop
+  every: 6                  # ~100 GIF frames
+  fps: 15                   # slower playback shows the organic motion
+  output: output/murmuration_influencer.gif
+  metrics_csv: output/metrics_influencer.csv
+  metrics_json: output/metrics_influencer.json
+  with_viz: true

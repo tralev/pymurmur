@@ -1,0 +1,130 @@
+# ci/docker-compose.yml — multi-profile test orchestration
+# Usage:
+#   docker compose -f ci/docker-compose.yml --profile fast up --build
+#   docker compose -f ci/docker-compose.yml --profile slow up
+#   docker compose -f ci/docker-compose.yml -f ci/docker-compose.gpu.yml --profile gpu up
+
+services:
+  # ── Profile: fast (default — runs on every commit) ──
+  test-fast:
+    build:
+      context: .
+      dockerfile: ci/Dockerfile
+    image: pymurmur-test:latest
+    profiles: [fast]
+    command: >
+      pytest test/ -v
+      -m "not slow"
+      --ignore=test/viz/test_renderer.py
+      --ignore=test/viz/test_input.py
+      --ignore=test/viz/test_camera.py
+      --timeout=60
+      --tb=short
+      --junitxml=output/test-results-fast.xml
+      --cov=pymurmur
+      --cov-report=xml:output/coverage-fast.xml
+      --cov-report=term
+    volumes:
+      - ./output:/app/output
+      - ./conf:/app/conf:ro       # read-only configs
+    environment:
+      - PYMURMUR_TEST=1
+
+  # ── Profile: e2e (end-to-end CLI tests) ──
+  test-e2e:
+    build:
+      context: .
+      dockerfile: ci/Dockerfile
+    image: pymurmur-test:latest
+    profiles: [e2e, full]
+    command: >
+      pytest test/test_e2e.py test/test_config_resolution.py test/test_config_files.py
+      -v --timeout=120 --tb=long
+      --junitxml=output/test-results-e2e.xml
+    volumes:
+      - ./output:/app/output
+      - ./conf:/app/conf:ro
+    environment:
+      - PYMURMUR_TEST=1
+      - PYMURMUR_CONFIG_DIR=/app/conf
+
+  # ── Profile: slow (performance, scaling — runs on PR merge / nightly) ──
+  test-slow:
+    build:
+      context: .
+      dockerfile: ci/Dockerfile
+    image: pymurmur-test:latest
+    profiles: [slow, full]
+    command: >
+      pytest test/test_performance.py test/test_scaling.py
+      -v -m slow
+      --timeout=600
+      --tb=long
+      --junitxml=output/test-results-slow.xml
+      --durations=20
+    volumes:
+      - ./output:/app/output
+      - ./conf:/app/conf:ro
+    environment:
+      - PYMURMUR_TEST=1
+      - NUMBA_NUM_THREADS=4
+
+  # ── Profile: gpu (renderer, input, visual tests — GPU required) ──
+  test-gpu:
+    build:
+      context: .
+      dockerfile: ci/Dockerfile.gpu
+    image: pymurmur-test-gpu:latest
+    profiles: [gpu, full]
+    command: >
+      pytest test/viz/test_renderer.py test/viz/test_input.py test/viz/test_camera.py
+      test/viz/test_shaders.py
+      -v --timeout=120 --tb=long
+      --junitxml=output/test-results-gpu.xml
+    volumes:
+      - ./output:/app/output
+      - ./conf:/app/conf:ro
+    environment:
+      - PYMURMUR_TEST=1
+      # Allow software rendering if no real GPU
+      - LIBGL_ALWAYS_SOFTWARE=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # ── Profile: fast+full (subsystem isolation tests) ──
+  test-imports:
+    build:
+      context: .
+      dockerfile: ci/Dockerfile
+    image: pymurmur-test:latest
+    profiles: [fast, full]
+    command: >
+      pytest test/test_imports.py test/test_subsystem_a.py test/test_subsystem_b.py
+      test/test_subsystem_c.py test/test_subsystem_d.py test/test_subsystem_e.py
+      test/test_subsystem_f.py
+      -v --timeout=60 --tb=short
+      --junitxml=output/test-results-subsystems.xml
+    volumes:
+      - ./output:/app/output
+      - ./conf:/app/conf:ro
+
+  # ── Profile: lint (static analysis) ──
+  lint:
+    build:
+      context: .
+      dockerfile: ci/Dockerfile
+    image: pymurmur-test:latest
+    profiles: [lint, full]
+    command: >
+      sh -c "
+        pip install ruff mypy && 
+        ruff check pymurmur/ test/ &&
+        mypy pymurmur/ --ignore-missing-imports
+      "
+    volumes:
+      - ./conf:/app/conf:ro

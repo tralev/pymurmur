@@ -1,0 +1,164 @@
+name: Test pymurmur
+true:
+  push:
+    branches:
+    - main
+    paths-ignore:
+    - '*.md'
+    - conf/**
+    - output/**
+  pull_request:
+    branches:
+    - main
+  schedule:
+  - cron: 0 3 * * *
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test-fast:
+    name: Fast tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python:
+        - '3.11'
+        - '3.12'
+      fail-fast: false
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python }}
+        cache: pip
+    - name: Install dependencies
+      run: 'pip install numpy scipy PyYAML
+
+        pip install pytest pytest-cov pytest-timeout
+
+        '
+    - name: Install optional deps
+      run: 'pip install numba  # test numba fallback paths
+
+        '
+    - name: Run fast test suite
+      run: "mkdir -p output\npytest test/ -v \\\n  -m \"not slow\" \\\n  --ignore=test/viz/test_renderer.py \\\n  --ignore=test/viz/test_input.py\
+        \ \\\n  --ignore=test/viz/test_camera.py \\\n  --timeout=60 \\\n  --tb=short \\\n  --junitxml=output/test-results-fast.xml\
+        \ \\\n  --cov=pymurmur \\\n  --cov-report=xml:output/coverage-fast.xml \\\n  --cov-report=term\n"
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-fast-py${{ matrix.python }}
+        path: output/test-results-fast.xml
+    - name: Upload coverage
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-fast-py${{ matrix.python }}
+        path: output/coverage-fast.xml
+  test-imports:
+    name: Import rules & subsystems
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install deps
+      run: pip install numpy scipy PyYAML pytest
+    - name: Run import & subsystem tests
+      run: "mkdir -p output\npytest test/test_imports.py test_architecture.py test_docs.py test_golden.py \\\n  test/test_subsystem_a.py\
+        \ test/test_subsystem_b.py \\\n  test/test_subsystem_c.py test/test_subsystem_d.py \\\n  test/test_subsystem_e.py\
+        \ test/test_subsystem_f.py \\\n  -v --timeout=60 --tb=short \\\n  --junitxml=output/test-results-subsystems.xml\n"
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-subsystems
+        path: output/test-results-subsystems.xml
+  test-e2e:
+    name: E2E & config validation
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install deps
+      run: pip install numpy scipy PyYAML pytest pytest-timeout
+    - name: Run E2E & config tests
+      run: "mkdir -p output\npytest test/test_e2e.py test/test_config_resolution.py \\\n  test/test_config_files.py \\\n \
+        \ -v --timeout=120 --tb=long \\\n  --junitxml=output/test-results-e2e.xml\n"
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-e2e
+        path: output/test-results-e2e.xml
+  test-slow:
+    name: Performance & scaling
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install deps
+      run: 'pip install numpy scipy PyYAML numba
+
+        pip install pytest pytest-timeout
+
+        '
+    - name: Run performance tests
+      run: "mkdir -p output\npytest test/test_performance.py test/test_scaling.py \\\n  -v -m slow \\\n  --timeout=600 --tb=long\
+        \ \\\n  --durations=20 \\\n  --junitxml=output/test-results-slow.xml\n"
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-slow
+        path: output/test-results-slow.xml
+  test-gpu:
+    name: GPU tests (software GL)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install system deps for GL
+      run: "sudo apt-get update\nsudo apt-get install -y xvfb libgl1-mesa-glx libgl1-mesa-dri \\\n  libegl1-mesa libegl1 libsdl2-2.0-0\n"
+    - name: Install Python deps
+      run: 'pip install numpy scipy PyYAML pytest pytest-timeout
+
+        pip install moderngl PyGLM pygame Pillow
+
+        '
+    - name: Run GPU tests (software rasterizer)
+      run: "mkdir -p output\nexport DISPLAY=:99\nXvfb :99 -screen 0 1024x768x24 -ac +extension GLX +render &\nsleep 2\npytest\
+        \ test/viz/test_renderer.py test/viz/test_input.py \\\n  test/viz/test_camera.py test/viz/test_shaders.py \\\n  -v\
+        \ --timeout=120 --tb=long \\\n  --junitxml=output/test-results-gpu.xml\n"
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-gpu
+        path: output/test-results-gpu.xml
+  lint:
+    name: Lint (ruff + mypy)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install linters
+      run: pip install ruff mypy numpy scipy PyYAML
+    - name: Run ruff
+      run: ruff check pymurmur/ test/
+    - name: Run mypy
+      run: mypy pymurmur/ --ignore-missing-imports

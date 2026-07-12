@@ -1,0 +1,7 @@
+# requirements-test.txt — test-only dependencies
+pytest>=8.0,<9.0
+pytest-cov>=6.0,<7.0
+pytest-xdist>=3.0,<4.0   # parallel test execution
+pytest-timeout>=2.0,<3.0
+ruff>=0.4,<1.0           # linting
+mypy>=1.8,<2.0           # type checking

@@ -1,0 +1,176 @@
+# murmuration_evo.yaml — EvoFlock GA optimization mode configuration for pymurmur
+# Evolves flock parameters using a steady-state genetic algorithm with
+# hypervolume-scalarized multi-objective optimization.
+# Based on Craig Reynolds, "EvoFlock" (arXiv:2606.25280v1) — resulting_sci.md §5, new_sci10.md.
+#
+# Usage: python -m pymurmur --config murmuration_evo.yaml --no-viz
+# The GA runs headlessly; best parameter set is saved to output/evolved.yaml.
+
+# ── Simulation Domain (EvoFlock default: 200 boids, obstacle-filled enclosure) ──
+domain:
+  width: 200.0             # tighter volume for obstacle-dense environment
+  height: 200.0
+  depth: 200.0
+
+# ── Inner Flock Config (will be optimized) ──────────────────────────
+# These are the STARTING values for the black-box model being optimized.
+# The GA will search around these defaults within the specified parameter ranges.
+flock:
+  num_boids: 200           # EvoFlock default: 200 boids per evaluation
+  boid_size: 1.0            # body diameter = 1 meter (EvoFlock unit)
+  v0: 20.0                  # target speed centre (band is [19, 21] m/s)
+  max_force: 50.0           # middle of [0, 100] N range
+  visual_range: 50.0        # middle of distance ranges
+
+# ── Base Mode for Inner Simulations ─────────────────────────────────
+mode: spatial              # GA optimizes Reynolds boids parameters
+
+# ── EvoFlock GA Parameters ──────────────────────────────────────────
+evoflock:
+  # ── GA hyperparameters (§1.4) ──
+  population_size: 300         # optimal from empirical sweeps (500+ worse)
+  ssga_steps: 30000            # ~100 equivalent generations (30000/300)
+  island_count: 4              # number of semi-isolated demes
+  migration_rate: 0.05         # individuals migrating per SSGA step
+  tournament_size: 3           # 3-way tournament with negative selection
+
+  # ── Evaluation ──
+  simulations_per_eval: 4      # parallel flock simulations per candidate
+  eval_strategy: worst         # return WORST fitness of 4 (conservative)
+  simulation_steps: 500        # ~16.6s at 30fps per evaluation
+  time_step: 0.0333            # 1/30 second
+
+  # ── Crossover & mutation ──
+  crossover: uniform           # each parameter from random parent
+  mutation_stdev: 0.02         # σ for zero-centered Gaussian mutation
+  mutation_probability: 0.1    # per-parameter mutation chance
+
+  # ── Caching ──
+  cache_fitness: true          # reuse evaluated fitness until replaced
+
+  # ── Output ──
+  output_best: output/evolved.yaml     # best parameter set as new config
+  output_history: output/evo_history.csv  # per-step fitness trace
+
+  # ── Reproducibility ──
+  runs_to_submit: 5            # run 5 independent evolutions, take best
+  log_each_generation: true
+
+# ── Objective Functions (§3) ────────────────────────────────────────
+objectives:
+  # ── Multi-objective scalarization (§2.2) ──
+  hypervolume_epsilon: 0.01       # ε-floor: maps [0,1] → [0.01, 1] before product
+
+  # ── Separation (§3.1) ──
+  # Trapezoidal scoring: 0 for d<2, ramp to 1 at [2,4], ramp to 0 beyond
+  separation:
+    enabled: true
+    d_target_low: 2.0             # body diameters — ramp start
+    d_target_high: 4.0            # body diameters — ramp end
+    d_min: 2.0                    # below this: score = 0 (potential collision)
+    d_max: 5.0                    # above this: score = 0 (too sparse)
+    weight: 1.0
+
+  # ── Obstacle avoidance (§3.2) ──
+  # (f_collision_free)^500 — hard threshold at ~99.99% collision-free
+  obstacle_avoidance:
+    enabled: false               # disabled: no obstacle SDFs in base simulation
+    exponent: 500                 # extreme exponentiation
+    collision_threshold: 10       # ≤10 collisions per 100,000 boid-steps
+
+  # ── Speed (§3.3) ──
+  # Piecewise-linear target band [19, 21] m/s
+  speed:
+    enabled: true
+    target_low: 19.0              # m/s — below this: score ramps down
+    target_high: 21.0             # m/s — above this: score ramps down
+    support_low: 18.0             # m/s — absolute floor
+    support_high: 22.0            # m/s — absolute ceiling
+
+  # ── Curvature (§3.4) ──
+  # Penalizes perfectly straight flight (20% penalty at κ=0)
+  curvature:
+    enabled: true
+    kappa_ceiling: 0.1            # rad/m — at or above this: score = 1.0
+    floor_score: 0.8              # score at κ=0 (20% penalty)
+    ceiling_score: 1.0            # score at κ≥kappa_ceiling
+
+# ── 15-Parameter Black-Box Model (to be optimized by GA) ────────────
+# Each parameter has [min, max] range. The GA evolves these within bounds.
+parameters_to_optimize:
+  # ── Steering weights (unitless) ──
+  forward_weight:         [0, 100]    # speed-control force strength
+  separate_weight:        [0, 100]    # separation behavior weight
+  align_weight:           [0, 100]    # alignment behavior weight
+  cohere_weight:          [0, 100]    # cohesion behavior weight
+  predictive_avoid_weight: [0, 100]   # predictive obstacle avoidance
+  static_avoid_weight:    [0, 100]    # static obstacle avoidance
+
+  # ── Distance thresholds (meters) ──
+  max_force:              [0, 100]    # maximum steering force (N)
+  max_dist_separate:      [0, 100]    # max distance for separation
+  max_dist_align:         [0, 100]    # max distance for alignment
+  max_dist_cohere:        [0, 100]    # max distance for cohesion
+
+  # ── Angle thresholds (cos(α), [−1, +1]) ──
+  angle_separate:         [-1, 1]     # max angle for separation (cos)
+  angle_align:            [-1, 1]     # max angle for alignment (cos)
+  angle_cohere:           [-1, 1]     # max angle for cohesion (cos)
+
+  # ── Special behaviors ──
+  fly_away_max_dist:      [0, 100]    # distance to trigger fly-away (m)
+  min_time_to_collide:    [0, 10]     # look-ahead time for obstacles (s)
+
+# Fixed parameters (not optimized, §4.1):
+#   boids_per_flock: 200, simulation_steps: 500, time_step: 1/30s,
+#   body_diameter: 1m, body_mass: 1kg, k_nearest_neighbors: 7
+
+# ── Boundary Mode ───────────────────────────────────────────────────
+boundary_mode: toroidal
+
+# ── Behavioural Extensions ──────────────────────────────────────────
+extensions:
+  predator: false
+  roosting: false
+  wander: false
+  ripple: false
+
+# ── Performance Tuning (300K target) ────────────────────────────────
+# GA runs headless — performance tuning affects inner simulation evaluations.
+performance:
+  use_numba: true             # JIT-compile hot force loops for faster inner sims
+  spatial_index: kdtree       # auto | hash_grid | kdtree (needed for neighbor-based forces)
+  instance_buffer_chunk: 50000  # GPU buffer growth increment (not used in headless GA)
+
+# ── Metrics Detail ──────────────────────────────────────────────────
+# GA runs don't need per-frame metrics — keep overhead minimal.
+metrics:
+  detail_level: 0             # 0=off (GA only needs final fitness, not per-frame metrics)
+  interval: 60                # (ignored when detail_level = 0)
+
+# ── Seed ────────────────────────────────────────────────────────────
+# Null = wall-clock seeded (non-deterministic, as in the paper).
+# Set to an integer for reproducible GA runs.
+seed: null
+
+# ── Visualization (EvoFlock runs headless) ──────────────────────────
+visual:
+  fps: 60
+  window_width: 1200
+  window_height: 800
+  show_grid: false
+  auto_rotate: false
+  theme: ink
+  trails: off
+
+# ── Capture ─────────────────────────────────────────────────────────
+capture:
+  width: 800
+  height: 600
+  frames: 0                # GA runs don't capture visual frames
+  every: 1
+  fps: 20
+  output: null
+  metrics_csv: output/evo_metrics.csv
+  metrics_json: output/evo_metrics.json
+  with_viz: false          # headless: fitness evaluation only

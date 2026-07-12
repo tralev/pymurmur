@@ -1,0 +1,102 @@
+# pyproject.toml — pymurmur packaging, lint, and type-check configuration.
+# pytest configuration intentionally lives in pytest.ini (single source;
+# roadmap.md references it) — do not add [tool.pytest.ini_options    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+] here.
+
+[build-system    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+requires = ["setuptools>=68"    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+build-backend = "setuptools.build_meta"
+
+[project    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+name = "pymurmur"
+version = "0.1.0"
+description = "3D starling murmuration simulation: 7 interchangeable physics models, headless-capable, ModernGL visualization, scientific metrics"
+license = { text = "MIT" }
+requires-python = ">=3.9"          # verified locally on 3.9.6; CI matrix targets 3.11/3.12
+dependencies = [
+    "numpy>=1.24,<3.0",
+    "scipy>=1.10,<2.0",
+    "PyYAML>=6.0,<7.0",
+    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+
+[project.optional-dependencies    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+# Optional layers mirror arch.md §9 — the core stays headless-minimal.
+viz = [
+    "pygame>=2.5,<3.0",
+    "moderngl>=5.8,<6.0",
+    "PyGLM>=2.7,<3.0",
+    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+capture = [
+    "Pillow>=10.0,<12.0",
+    "matplotlib>=3.7,<4.0",        # also the GPU-free capture fallback (roadmap_deepseek.md P8.9)
+    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+numba = [
+    "numba>=0.60,<1.0",            # >=0.60 for numpy 2.x support (roadmap_deepseek.md P4.10)
+    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+marl = [
+    "gymnasium>=0.29,<2.0",        # lazy-imported env wrapper (roadmap_deepseek.md P12.2)
+    # stable-baselines3 is deliberately NOT listed — scripts/train_marl.py only.
+    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+test = [
+    "pytest>=8.0,<9.0",
+    "pytest-cov>=6.0,<7.0",
+    "pytest-xdist>=3.0,<4.0",
+    "pytest-timeout>=2.0,<3.0",
+    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+lint = [
+    "ruff>=0.4,<1.0",
+    "mypy>=1.8,<2.0",
+    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+
+[tool.setuptools.packages.find    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+include = ["pymurmur*"    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+
+# ── Ruff (docker.md lint profile runs: ruff check pymurmur/ test/) ──────────
+[tool.ruff    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+select = [
+    "E", "W",     # pycodestyle
+    "F",          # pyflakes
+    "I",          # isort
+    "NPY",        # numpy-specific rules (incl. legacy np.random.* usage aid)
+    "B",          # bugbear
+    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+ignore = [
+    "E501",       # long lines in formula-heavy comments/docstrings
+    "B008",       # function call in default arg (dataclass field factories pattern)
+    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+
+[tool.ruff.lint.per-file-ignores    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+"test/**" = ["B011"    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]               # allow assert False style in tests
+
+# ── Mypy (docker.md lint profile runs: mypy pymurmur/ --ignore-missing-imports)
+[tool.mypy    "guard: P14 guard-rail tests (architecture, docs, golden, config drift, collection count)",
+]
+python_version = "3.9"
+ignore_missing_imports = true      # moderngl/pygame/PyGLM/numba ship no stubs
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+

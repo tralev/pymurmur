@@ -1,0 +1,143 @@
+# murmuration_field.yaml — Field/Blob mode configuration for pymurmur
+# Uses blob-anchor dynamics with O(n) slot repulsion for 10K+ birds.
+# Based on crs48/murmuration field simulation (resulting_sci.md §11, new_sci.md §2).
+
+# ── Simulation Domain ───────────────────────────────────────────────
+domain:
+  width: 1000.0
+  height: 1000.0           # more cubic domain for 3D blob dynamics
+  depth: 1000.0
+
+# ── Flock Parameters ────────────────────────────────────────────────
+flock:
+  num_boids: 16000         # field mode target: 10K-30K birds
+  boid_size: 4.0           # smaller: field mode uses slot repulsion, not body occlusion
+  v0: 4.0
+  max_force: 0.15
+  visual_range: 0.0        # field mode does not use neighbor queries
+
+# ── Field / Blob Mode ───────────────────────────────────────────────
+mode: field
+
+# ── Field Mode Parameters ───────────────────────────────────────────
+# All constants and formulas from crs48 source (resulting_sci.md §11, new_sci.md §2)
+field:
+  # ── Core dynamics ──
+  separation: 0.92         # slot repulsion strength (§2.4)
+  alignment: 0.90          # drift alignment strength
+  cohesion: 1.80           # shell pull strength (§2.3)
+  flow: 0.30               # curl noise strength (§2.5)
+  chase_strength: 0.82     # leader/chaser blend amount (§2.2)
+  noise: 0.035             # random perturbation magnitude
+
+  # ── Shell force (§2.3) ──
+  shell_influence: 0.9     # weight of shell radial force (vs. target pull)
+  shell_radius_base: 0.24  # base fraction of pilot radius for shell
+  inner_radius_factor: 0.28 # fraction for inner radius cavity floor
+
+  # ── Leader/Chaser (§2.2) ──
+  num_groups: 7            # number of leader/chaser groups
+  leader_fraction: 0.16    # ~16% of particles are leaders
+  leader_lag_base: 1.1     # base lag multiplier
+  secondary_mix: 0.3       # blend toward secondary group anchor
+
+  # ── Slot repulsion (§2.4) ──
+  slot_radius: 0.07        # slot repulsion distance (base)
+  slot_offsets: [1, 7, 31]  # fixed-index offsets for O(n) spacing
+
+  # ── Ripple envelopes (§2.5, §2.6) ──
+  ripple_enabled: true
+  wave_gain: 0.04          # ripple intensity multiplier
+  ripple_trains: 3         # number of staggered ripple trains
+  ripple_offsets: [0.0, 9.33, 18.67]  # train onset delays (seconds)
+
+  # ── Flow field noise (§2.5) ──
+  flow_pull: 0.22          # flow force attraction strength
+  flow_pulse: 0.08         # flow modulation by ripple activity
+  flow_spatial_freq: [2.8, 2.3, 2.6]  # spatial frequencies (x, y, z)
+  flow_temporal_freq: [0.24, 0.20, 0.16]  # temporal frequencies
+
+  # ── Fold noise (§2.8) ──
+  fold_spatial_freq: [3.7, 3.1, 3.3]    # higher freq than flow field
+  fold_temporal_freq: [0.73, 0.67, 0.59]
+
+  # ── Tangential orbital (§2.1) ──
+  tangent_pull: 0.035      # orbital force strength
+
+  # ── Buoyancy (§2.6) ──
+  buoyancy_amplitude: 0.09 # vertical undulation amplitude
+  buoyancy_vertical_pull: 0.24  # pull toward target y-level
+
+  # ── Viscous drag (§3.6) ──
+  viscous_base: 0.08       # base drag coefficient
+  viscous_flow_mix: 0.02   # flow-modulated addition
+
+  # ── Drift alignment (§2.2) ──
+  drift_pull: 0.12         # drift alignment attraction
+  drift_direction: [0.34, 0.16, 0.08]  # baseline drift vector
+
+  # ── Target pull (§2.1) ──
+  target_pull: 0.22        # direct attraction toward computed target
+
+  # ── Inertia ──
+  inertia: 0.82            # lerp factor for speed clamping (0=crisp, 1=pure direction)
+
+  # ── Boundary ──
+  pilot_radius: 1.0        # base radius for boundary sphere
+  boundary_radius_factor: 1.45  # soft boundary at this multiple of pilot_radius
+
+# ── Boundary Mode ───────────────────────────────────────────────────
+boundary_mode: sphere           # field mode uses a soft spherical container (§3.6)
+boundary_sphere_radius: 300.0
+boundary_avoidance_factor: 1.6  # push-back strength multiplier
+
+# ── Behavioural Extensions ──────────────────────────────────────────
+extensions:
+  predator: false
+  roosting: false
+  wander: true             # field mode benefits from center wandering
+  ripple: true             # ripple envelopes active
+
+# ── Wander-Specific (§2.7, new_sci.md §8) ──────────────────────────
+wander:
+  attractor_speed: 0.15    # speed of the wandering attractor
+  attractor_radius: 400.0  # max radius of wander from domain center
+  wander_speed: 1.0        # multiplier on bounded_unit_travel
+
+# ── Performance Tuning (300K target) ────────────────────────────────
+# Field mode is already O(1) per bird — fastest at any scale.
+# numba is NOT needed (numpy vectorised is sufficient even at 300K).
+performance:
+  use_numba: false            # field mode uses O(1) force terms — numpy is fast enough
+  spatial_index: none         # auto | hash_grid | kdtree | none (no neighbor queries in field mode)
+  instance_buffer_chunk: 50000  # GPU buffer growth increment (birds per reallocation)
+
+# ── Metrics Detail ──────────────────────────────────────────────────
+metrics:
+  detail_level: 1             # 0=off, 1=fast (O(N) every frame), 2=full (expensive every N frames)
+  interval: 60                # frames between expensive metric computations (detail_level >= 2)
+
+# ── Seed ────────────────────────────────────────────────────────────
+seed: 42
+
+# ── Visualization ───────────────────────────────────────────────────
+visual:
+  fps: 60
+  window_width: 1200
+  window_height: 800
+  show_grid: false
+  auto_rotate: true        # demo mode: orbit camera for field display
+  theme: ink
+  trails: velocity         # motion streaks help show blob dynamics
+
+# ── Capture Settings ────────────────────────────────────────────────
+capture:
+  width: 800
+  height: 600
+  frames: 240
+  every: 3
+  fps: 20
+  output: output/murmuration_field.gif
+  metrics_csv: output/metrics_field.csv
+  metrics_json: output/metrics_field.json
+  with_viz: true

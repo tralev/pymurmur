@@ -1,0 +1,98 @@
+# murmuration_spatial.yaml — Reynolds boids (spatial) mode configuration for pymurmur
+# Uses classic separation/alignment/cohesion forces with a k-d tree or spatial hash grid.
+# Ideal test fixture for Phase 1–2 development (core physics + spatial forces).
+
+# ── Simulation Domain ───────────────────────────────────────────────
+domain:
+  width: 1500.0           # wider domain for Reynolds boids (matches rystrauss default)
+  height: 900.0
+  depth: 600.0
+
+# ── Flock Parameters ────────────────────────────────────────────────
+# Defaults from rystrauss/boids (new5_sci.md §5.3)
+flock:
+  num_boids: 200          # rystrauss benchmark default
+  boid_size: 4.0          # smaller: Reynolds doesn't use body-size occlusion
+  v0: 6.0                 # max_speed = 6 (rystrauss default)
+  max_force: 1.0          # max_force = 1 (rystrauss default)
+  visual_range: 100.0     # perception radius = 100 (rystrauss default)
+
+# ── Spatial / Reynolds Mode ─────────────────────────────────────────
+mode: spatial
+
+# ── Reynolds Spatial Parameters ─────────────────────────────────────
+spatial:
+  # Core force weights (rystrauss defaults, new5_sci.md §5.3):
+  separation_weight: 4.5       # strong separation dominates (prevents overlap)
+  alignment_weight: 0.65       # moderate alignment
+  cohesion_weight: 0.75        # moderate cohesion
+  # Additional parameters:
+  noise_scale: 0.5             # velocity noise magnitude (> 0 enables jitter)
+  acceleration_scale: 0.3      # damping on accumulated forces per frame
+  perception: 100.0            # neighbor query radius
+  separation_distance: 20.0    # distance threshold for separation force
+
+  # Neighbor selection:
+  neighbor_mode: kdtree        # kdtree | spatial_hash | brute
+  # Dual-radius behavior (Starlings, new3_sci.md §5.1):
+  alignment_radius_ratio: 0.75 # alignment uses inner 75% of cohesion radius
+  topological_cap: 7           # max neighbors to consider (cf. Young 2013)
+
+  # Toroidal distance (rystrauss, new5_sci.md §1):
+  use_toroidal_distance: true  # use wrapped distance for neighbor queries
+
+# ── Boundary Mode ───────────────────────────────────────────────────
+boundary_mode: toroidal         # classic Reynolds wrapping domain
+
+# ── Behavioural Extensions ──────────────────────────────────────────
+extensions:
+  predator: true           # spawn a predator boid (right-click in visual mode)
+  roosting: false
+  wander: false
+  ripple: false
+
+# ── Predator-Specific ───────────────────────────────────────────────
+# rystrauss/boids predator model (new5_sci.md §2, new9_sci.md §11)
+predator:
+  escape_factor: 10_000_000     # overwhelming flee force magnitude
+  speed_boost: 1.8              # predator max_speed multiplier
+  perception_boost: 1.5         # predator perception multiplier
+  acceleration_boost: 1.4       # predator acceleration multiplier
+  threat_radius: 100.0          # detection radius for prey response
+
+# ── Performance Tuning (300K target) ────────────────────────────────
+# For N >= 50000 these settings are critical; at low N they have no effect.
+performance:
+  use_numba: true             # JIT-compile hot force loops (spatial mode needs it at 300K)
+  spatial_index: kdtree       # auto | hash_grid | kdtree (kdtree required for 50+ neighbors per bird)
+  instance_buffer_chunk: 50000  # GPU buffer growth increment (birds per reallocation)
+
+# ── Metrics Detail ──────────────────────────────────────────────────
+metrics:
+  detail_level: 1             # 0=off, 1=fast (O(N) every frame), 2=full (expensive every N frames)
+  interval: 60                # frames between expensive metric computations (detail_level >= 2)
+
+# ── Random Seed ─────────────────────────────────────────────────────
+seed: 42                  # deterministic for reproducible test fixtures
+
+# ── Visualization ───────────────────────────────────────────────────
+visual:
+  fps: 60
+  window_width: 1500
+  window_height: 900      # matches rystrauss default window
+  show_grid: true
+  auto_rotate: false
+  theme: ink              # dark boids on light background
+  trails: velocity        # show motion streaks
+
+# ── Capture Settings ────────────────────────────────────────────────
+capture:
+  width: 800
+  height: 480             # 1500:900 → 800:480 preserves aspect ratio
+  frames: 300             # ~5 seconds at 60fps
+  every: 3                # ~100 GIF frames
+  fps: 20
+  output: output/murmuration_spatial.gif
+  metrics_csv: output/metrics_spatial.csv
+  metrics_json: output/metrics_spatial.json
+  with_viz: true
