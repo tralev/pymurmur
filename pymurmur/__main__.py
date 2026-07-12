@@ -32,6 +32,10 @@ def parse_args() -> argparse.Namespace:
         help="List available config presets in conf/",
     )
     parser.add_argument(
+        "--probe", action="store_true",
+        help="Probe available capabilities (GPU, numba, etc.) and exit",
+    )
+    parser.add_argument(
         "--no-viz", action="store_true",
         help="Run headlessly without visualisation",
     )
@@ -86,6 +90,67 @@ def load_config(name: str | None) -> SimConfig:
     )
 
 
+def probe_capabilities() -> dict[str, str | None]:
+    """Probe optional dependencies and return capability dict.
+
+    Returns a dict mapping capability name to version string
+    or None if not available. Used by --probe CLI flag and
+    by CI guard-rails to detect environment.
+    """
+    caps: dict[str, str | None] = {}
+
+    # GPU rendering
+    try:
+        import moderngl
+        caps["moderngl"] = moderngl.__version__
+    except ImportError:
+        caps["moderngl"] = None
+
+    # JIT compilation
+    try:
+        import numba
+        caps["numba"] = numba.__version__
+    except ImportError:
+        caps["numba"] = None
+
+    # Windowing / input
+    try:
+        import pygame
+        caps["pygame"] = pygame.version.ver
+    except ImportError:
+        caps["pygame"] = None
+
+    # Spatial indexing
+    try:
+        import scipy
+        caps["scipy"] = scipy.__version__
+    except ImportError:
+        caps["scipy"] = None
+
+    # MARL bridge
+    try:
+        import gymnasium
+        caps["gymnasium"] = gymnasium.__version__
+    except ImportError:
+        caps["gymnasium"] = None
+
+    # GPU-free fallback rendering
+    try:
+        import matplotlib
+        caps["matplotlib"] = matplotlib.__version__
+    except ImportError:
+        caps["matplotlib"] = None
+
+    # Camera math (GPU path)
+    try:
+        import glm
+        caps["PyGLM"] = glm.__version__
+    except ImportError:
+        caps["PyGLM"] = None
+
+    return caps
+
+
 def list_available_configs() -> None:
     """Scan conf/ and print all .yaml files with descriptions."""
     # Try project-root conf/ first
@@ -110,6 +175,14 @@ def list_available_configs() -> None:
 def main() -> None:
     """Main entry point."""
     args = parse_args()
+
+    if args.probe:
+        caps = probe_capabilities()
+        print("pymurmur capability probe:")
+        for name, version in caps.items():
+            status = version if version else "NOT FOUND"
+            print(f"  {name:12s}  {status}")
+        return
 
     if args.list_configs:
         list_available_configs()

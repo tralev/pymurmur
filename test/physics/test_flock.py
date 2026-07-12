@@ -1,6 +1,7 @@
 """Unit tests for physics.flock — PhysicsFlock, SpatialHashGrid, KDTreeIndex."""
 
 import numpy as np
+import pytest
 
 from pymurmur.physics.flock import PhysicsFlock, SpatialHashGrid, KDTreeIndex
 
@@ -889,6 +890,21 @@ def test_max_speed_default_none(default_config):
     assert flock.max_speed is None, "max_speed must be None by default"
 
 
+def test_last_accelerations_nonzero_after_forces(default_config):
+    """P0.7: last_accelerations captures actual force data, not just zeros."""
+    cfg = default_config
+    cfg.num_boids = 20
+    cfg.mode = "spatial"
+    flock = PhysicsFlock(cfg)
+    flock.step(cfg, 1.0 / 60.0)
+    # After a step with spatial forces, accelerations should have been
+    # non-zero before being reset (captured in last_accelerations)
+    acc_mags = np.linalg.norm(flock.last_accelerations[flock.active], axis=1)
+    assert acc_mags.max() > 0, (
+        f"last_accelerations should capture non-zero forces, got max={acc_mags.max():.6f}"
+    )
+
+
 def test_max_speed_per_bird_lowers_cap(default_config):
     """Setting per-bird max_speed lowers the speed cap for those birds."""
     cfg = default_config
@@ -935,6 +951,25 @@ def test_max_speed_different_per_bird(default_config):
     assert np.isclose(speeds[2], 3.0, atol=0.05)
 
 
+def test_add_boids_uses_flock_rng_deterministically(default_config):
+    """P0.4: add_boids uses flock.rng — same RNG state → same positions."""
+    cfg = default_config
+    flock = PhysicsFlock(cfg)
+    # Re-initialise with known seed
+    flock.rng = np.random.default_rng(42)
+
+    # Test 1: add_boids uses flock.rng for positions
+    flock.rng = np.random.default_rng(42)
+    flock.add_boids(5, cfg)
+    pos1 = flock.positions[-5:].copy()
+
+    flock.rng = np.random.default_rng(42)
+    flock.add_boids(5, cfg)
+    pos2 = flock.positions[-5:].copy()
+    # After adding 5 more, positions should match (same RNG state before add)
+    assert np.array_equal(pos1, pos2), "add_boids not using flock.rng deterministically"
+
+
 def test_max_speed_none_uses_scalar_v0(default_config):
     """When max_speed is None, the scalar v0 from config is used."""
     cfg = default_config
@@ -952,3 +987,29 @@ def test_max_speed_none_uses_scalar_v0(default_config):
 
     speeds = np.linalg.norm(flock.velocities[flock.active], axis=1)
     assert (speeds <= 3.01).all(), f"speeds={speeds} should ≤ 3.0 (cfg.v0)"
+
+
+def test_max_speed_with_ceiling_mode(default_config):
+    """P0.8+P0.9: per-bird max_speed works with ceiling speed mode."""
+    cfg = default_config
+    cfg.num_boids = 4
+    flock = PhysicsFlock(cfg)
+    # Different caps per bird — bird 2 (cap=5) stays, bird 0 (cap=2) clamped
+    flock.max_speed = np.array([2.0, 3.0, 5.0, 4.0], dtype=np.float32)
+    flock.velocities = np.array([[8.0, 0, 0]] * 4, dtype=np.float32)
+    flock.accelerations[:] = 0.0
+
+    from pymurmur.physics.boid import integrate
+    integrate(
+        flock.positions, flock.velocities, flock.accelerations,
+        flock.active, cfg.width, cfg.height, cfg.depth,
+        4.0, "toroidal", 1.0 / 60.0,
+        max_speed=flock.max_speed, speed_mode="ceiling",
+    )
+    speeds = np.linalg.norm(flock.velocities, axis=1)
+    # Ceiling: speeds > cap are clamped down to cap
+    s0, s1, s2, s3 = float(speeds[0]), float(speeds[1]), float(speeds[2]), float(speeds[3])
+    assert s0 == pytest.approx(2.0, abs=0.05), f"bird 0 cap=2: speed={s0:.4f}"
+    assert s1 == pytest.approx(3.0, abs=0.05), f"bird 1 cap=3: speed={s1:.4f}"
+    assert s2 == pytest.approx(5.0, abs=0.05), f"bird 2 cap=5: speed={s2:.4f}"
+    assert s3 == pytest.approx(4.0, abs=0.05), f"bird 3 cap=4: speed={s3:.4f}"

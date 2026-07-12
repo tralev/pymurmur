@@ -286,3 +286,71 @@ def random_unit_sphere(
     pts = rng.normal(size=(n, 3)).astype(np.float32)
     norms = np.linalg.norm(pts, axis=1, keepdims=True)
     return pts / norms
+
+
+def init_positions(
+    n: int,
+    width: float,
+    height: float,
+    depth: float,
+    rng: np.random.Generator | None = None,
+    mode: str = "box",
+    separation: float = 9.0,
+) -> np.ndarray:
+    """Generate initial flock positions using one of 5 strategies.
+
+    Args:
+        n: number of birds
+        width, height, depth: domain bounds
+        rng: seeded random generator
+        mode: "box" | "sphere_shell" | "gaussian" | "grid" | "blob"
+        separation: bird body size for overlap prevention
+
+    Returns:
+        (n, 3) float32 position array
+    """
+    rng = rng or np.random.default_rng()
+    C = np.array([width / 2, height / 2, depth / 2], dtype=np.float32)
+
+    if mode == "sphere_shell":
+        R = 0.4 * min(width, height, depth)
+        dirs = random_unit_sphere(n, rng)
+        return (C + dirs * R).astype(np.float32)
+
+    elif mode == "gaussian":
+        sigma = n ** (1.0 / 3.0) * separation
+        pts = rng.normal(0.0, sigma, (n, 3)).astype(np.float32)
+        return C + pts
+
+    elif mode == "grid":
+        pts_per_axis = int(np.ceil(n ** (1.0 / 3.0)))
+        xs = np.linspace(0, width * 0.9, pts_per_axis, dtype=np.float32)
+        ys = np.linspace(0, height * 0.9, pts_per_axis, dtype=np.float32)
+        zs = np.linspace(0, depth * 0.9, pts_per_axis, dtype=np.float32)
+        xx, yy, zz = np.meshgrid(xs, ys, zs, indexing="ij")
+        grid_pts = np.column_stack([xx.ravel(), yy.ravel(), zz.ravel()])
+        # Trim to exact n (grid always has >= n points)
+        return grid_pts[:n].astype(np.float32)
+
+    elif mode == "blob":
+        # 5 centres roughly evenly distributed in domain
+        centres = C + np.array([
+            [-0.48,  0.18,  0.12],
+            [ 0.36, -0.20, -0.28],
+            [ 0.12,  0.34,  0.42],
+            [-0.16, -0.30,  0.34],
+            [ 0.48,  0.16,  0.18],
+        ], dtype=np.float32) * min(width, height, depth) * 0.4
+        radii = rng.uniform(
+            0.0, 1.0, (n, 1)
+        ).astype(np.float32)  # ∛-uniform via cbrt later
+        radii = np.cbrt(radii) * (0.22 + rng.uniform(0.0, 1.0, (n, 1)).astype(np.float32) * 0.28)
+        radii *= min(width, height, depth) * 0.4
+        dirs = random_unit_sphere(n, rng)
+        centre_idx = rng.integers(0, len(centres), n)
+        centre_pos = centres[centre_idx]
+        jitter = rng.uniform(-1.0, 1.0, (n, 3)).astype(np.float32) * 0.045 * min(width, height, depth)
+        return (centre_pos + dirs * radii + jitter).astype(np.float32)
+
+    else:  # "box" (legacy)
+        return random_positions(n, width, height, depth, rng)

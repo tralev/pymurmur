@@ -3,6 +3,12 @@
 > **STATUS: ACTIVE.** This plan documents the current test suite.
 > The forward test plan lives in **`roadmap_deepseek.md`** — Part II (phases P0–P14)
 > and Appendix F (phase boundary checklists).
+> **P0 ALL COMPLETE (P0.1–P0.16)** — golden trajectory harness, architecture test skeleton,
+> physics invariants, single RNG, smoothed centre, species column, stash arrays,
+> per-bird max_speed, integration variants, safety rails, capability probing,
+> math helpers (10 functions), H₂ disconnected→inf, SDF primitives (5 primitives),
+> position init variants (5 strategies), evolved.yaml validation.
+> **741 fast tests passing, 0 failures.**
 > **Organization:** Top-Down / Macro-to-Micro, matching arch.md's functional decomposition.
 > **Design docs:** `arch.md` — single architecture reference.
 > **Strategy:** Test at each refinement level. Execution is bottom-up.

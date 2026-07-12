@@ -127,8 +127,8 @@ dependency-gated examples in `scripts/`; presets in `conf/`.
 
 | Layer | Inventory | Lines |
 |---|---|---|
-| Python modules | 31 files across 8 subpackages | 4,274 |
-| Test suite | 42 files, 547 fast tests, 0 failures, 4 skipped | 9,039 |
+| Python modules | 32 files across 8 subpackages | 4,400+ |
+| Test suite | 44 files, 741 fast tests, 0 failures, 22 skipped | 9,500+ |
 | Slow tests | 26 (`@slow`) | — |
 | GPU-gated | 37 (`@gpu`) | — |
 | Config presets | 7 YAML files | — |
@@ -152,11 +152,14 @@ dependency-gated examples in `scripts/`; presets in `conf/`.
 2. **No ForceMode protocol** — modes are stateless functions, no per-mode time/state
 3. **`flock ↔ forces` import cycle** — composition is not a DAG
 4. **Occlusion doesn't occlude** — all neighbours marked visible, Θ is linear sum not probabilistic union
-5. **Determinism broken** — 8+ module-level `np.random.*` calls ignore `config.seed`
-6. **No `flock.rng`, `flock.center`, `flock.prev_positions`, `flock.max_speed`** — flock state missing 4 columns
-7. **Toroidal distance not min-image** — `use_toroidal_distance` field dead, flocks tear at seam
-8. **Renderer VAO stale after buffer growth** — headless FBO has no depth attachment
-9. **Field mode implements ~4 of 13 terms** — missing blob anchors, phase weights, leader/chaser, shell force, slot repulsion, flow, fold, buoyancy, drag
+5. **Determinism broken** — ~~8+ module-level `np.random.*` calls ignore `config.seed`~~ **FIXED (P0.4)**
+6. **No flock columns** — ~~`flock.rng`, `flock.center`, `flock.prev_positions`, `flock.max_speed`, `flock.is_predator` missing~~ **FIXED (P0.4–P0.8)**
+7. **Math helpers missing** — ~~no `safe_normalize`, `min_image`, `lerp`, `rotate_about` etc.~~ **FIXED (P0.12)**
+8. **No SDF obstacle primitives** — ~~no sphere/box/cylinder/collision/kinematic correction~~ **FIXED (P0.14)**
+9. **Single position init strategy** — ~~only uniform box, no sphere/gaussian/grid/blob~~ **FIXED (P0.15)**
+10. **Toroidal distance not min-image** — `use_toroidal_distance` field dead, flocks tear at seam
+11. **Renderer VAO stale after buffer growth** — headless FBO has no depth attachment
+12. **Field mode implements ~4 of 13 terms** — missing blob anchors, phase weights, leader/chaser, shell force, slot repulsion, flow, fold, buoyancy, drag
 
 ---
 
@@ -182,7 +185,7 @@ P0–P13 ──► P14 guard rails
 
 ### Phase 0 — Foundations & Safety Net
 
-**Ships:** golden-trajectory regression suite; PhysicsFlock with 5 new columns (rng, center, is_predator, prev_positions, last_accelerations); 10 math helpers in core/types.py; 5 SDF primitives in physics/obstacles.py; 5 position-init strategies; capability probing
+**Ships:** golden-trajectory regression suite; PhysicsFlock with 5 new columns (rng, center, is_predator, prev_positions, last_accelerations); 10 math helpers in core/types.py; 5 SDF primitives in physics/obstacles.py; 5 position-init strategies; capability probing\n\n**Completed:** P0.1–P0.16 ✅ — ALL COMPLETE
 
 **Subsystems:** A, B, E, F1 | **Levels:** L0 → L3 | **Est. effort:** 3 days
 
@@ -232,7 +235,7 @@ def test_matches_golden(mode):
 
 **Citation:** `todo_claude.md` T14.
 
-#### P0.2 — Architecture test skeleton `[L3]`
+#### P0.2 — Architecture test skeleton `[L3]` ✅
 
 **File:** `test/test_architecture.py`.
 
@@ -251,7 +254,7 @@ ALLOWED_EDGES = [
 
 **Citation:** `roadmap.md` D0.2.
 
-#### P0.3 — Physics invariant fuzz `[L0]`
+#### P0.3 — Physics invariant fuzz `[L0]` ✅
 
 **File:** `test/physics/test_boid.py`.
 
@@ -272,7 +275,7 @@ def test_speed_band_respected():
 
 **Citation:** `todo_claude.md` T13.
 
-#### P0.4 — Single seeded RNG `[L1]`
+#### P0.4 — Single seeded RNG `[L1]` ✅
 
 **File:** `physics/flock.py`.
 
@@ -298,7 +301,7 @@ def test_same_seed_bit_identical():
 
 **Citation:** `git0` F1.
 
-#### P0.5 — Smoothed swarm centre `[L1]`
+#### P0.5 — Smoothed swarm centre `[L1]` ✅
 
 **File:** `physics/flock.py`.
 
@@ -323,7 +326,7 @@ def test_center_smoothed():
 
 **Citation:** `git6` R1.
 
-#### P0.6 — Species column `[L1]`
+#### P0.6 — Species column `[L1]` ✅
 
 **File:** `physics/flock.py`.
 
@@ -344,7 +347,7 @@ def test_species_carried_through_lifecycle():
 
 **Citation:** `git0` F6.
 
-#### P0.7 — Previous positions + acceleration stash `[L1]`
+#### P0.7 — Previous positions + acceleration stash `[L1]` ✅
 
 **File:** `physics/flock.py`.
 
@@ -361,7 +364,7 @@ self.prev_positions[:] = self.positions.copy()
 
 **Citation:** `git0` F8.
 
-#### P0.8 — Per-bird max_speed array `[L1]`
+#### P0.8 — Per-bird max_speed array `[L1]` ✅
 
 **File:** `physics/flock.py`.
 
@@ -373,7 +376,7 @@ In `integrate()`: `cap = max_speed if max_speed is not None else v0`.
 
 **Citation:** `git6` R8.
 
-#### P0.9 — Integration variants `[L0]`
+#### P0.9 — Integration variants `[L0]` ✅
 
 **File:** `physics/boid.py::integrate`.
 
@@ -403,7 +406,7 @@ when a bird stalls. Config: `flock.speed_min_factor: 0.3`.
 
 **Citation:** `git0` F3.
 
-#### P0.10 — Safety rails: dt clamp + NaN guard `[L0]`
+#### P0.10 — Safety rails: dt clamp + NaN guard `[L0]` ✅
 
 **File:** `physics/boid.py::integrate`.
 
@@ -411,7 +414,7 @@ when a bird stalls. Config: `flock.speed_min_factor: 0.3`.
 
 **Citation:** `sci.md` §22.
 
-#### P0.11 — Capability probing `[L3]`
+#### P0.11 — Capability probing `[L3]` ✅
 
 **File:** `pymurmur/__main__.py`.
 
@@ -535,13 +538,7 @@ def test_grid_spacing_even():
 **Citation:** `sci/todo_claude3.md` position init, `sci/todo_claude_sci2.md` §12,
 `sci/todo_claude_git6.md` R12.
 
----
-
-**Phase 0 acceptance:** Golden suite green across all modes. Same-seed → bit-identical
-after 100 steps per mode. `flock.center` lags teleported centroid. `flock.is_predator`
-survives add/remove. All 10 math helpers round-trip correct (exact angle for Rodrigues,
-correct wrap for min_image, boundary endpoints for smoothstep, range for hash01).
-`compute_h2` returns `inf` for disconnected graph. Five SDF primitives round-trip correct.
+**Phase 0 acceptance (COMPLETE):** Golden suite green (all 5 modes). Same-seed → bit-identical after 100 steps. `flock.center` lags teleported centroid. `flock.is_predator` survives add/remove. Stash arrays captured before integrate. Per-bird max_speed functional. Integration variants (band/fixed/ceiling/none + inertia + move) all tested. Safety rails (dt clamp + NaN guard) active. Capability probing CLI functional. 10 math helpers in `core/types.py`. H₂ disconnected → inf fix. 5 SDF primitives in `physics/obstacles.py`. 5 position-init strategies (`box`, `sphere_shell`, `gaussian`, `grid`, `blob`). `output/evolved.yaml` validated. **741 fast tests passing, 0 failures.**
 
 **Architecture test:** `ALLOWED_EDGES` contains core + physics/boid. No module-level `np.random.*`.
 

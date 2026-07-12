@@ -581,6 +581,85 @@ def test_toroidal_positions_in_bounds():
     print(f"\n✓ 7 birds × 100 frames: all positions in [0,W)×[0,H)×[0,D)")
 
 
+def test_fixed_mode_fuzz():
+    """200 seeds with speed_mode='fixed': all speeds ≡ v0."""
+    W, H, D = 1000.0, 700.0, 400.0
+    v0 = 4.0
+
+    for seed in range(200):
+        rng_i = np.random.default_rng(seed)
+        pos = rng_i.uniform(0, [W, H, D], (30, 3)).astype(np.float32)
+        vel = rng_i.uniform(-2 * v0, 2 * v0, (30, 3)).astype(np.float32)
+        acc = rng_i.uniform(-1, 1, (30, 3)).astype(np.float32)
+        active = np.ones(30, dtype=bool)
+
+        integrate(pos, vel, acc, active, W, H, D, v0, "toroidal",
+                  1.0 / 60.0, speed_mode="fixed")
+
+        speeds = np.linalg.norm(vel, axis=1)
+        assert np.allclose(speeds, v0, atol=1e-4), (
+            f"seed={seed}: fixed mode speeds must be v0={v0}, got {speeds.min():.4f}–{speeds.max():.4f}"
+        )
+        assert not np.isnan(pos).any()
+        assert not np.isnan(vel).any()
+
+    print(f"\n✓ 200 seeds fixed-mode: all speeds ≡ {v0}")
+
+
+def test_ceiling_mode_fuzz():
+    """200 seeds with speed_mode='ceiling': all speeds ≤ v0, no NaN."""
+    W, H, D = 1000.0, 700.0, 400.0
+    v0 = 4.0
+
+    for seed in range(200):
+        rng_i = np.random.default_rng(seed)
+        pos = rng_i.uniform(0, [W, H, D], (30, 3)).astype(np.float32)
+        vel = rng_i.uniform(-2 * v0, 2 * v0, (30, 3)).astype(np.float32)
+        acc = rng_i.uniform(-1, 1, (30, 3)).astype(np.float32)
+        active = np.ones(30, dtype=bool)
+
+        integrate(pos, vel, acc, active, W, H, D, v0, "toroidal",
+                  1.0 / 60.0, speed_mode="ceiling")
+
+        speeds = np.linalg.norm(vel, axis=1)
+        assert (speeds <= v0 + 1e-4).all(), (
+            f"seed={seed}: ceiling mode max speed={speeds.max():.4f} > v0={v0}"
+        )
+        assert not np.isnan(pos).any()
+        assert not np.isnan(vel).any()
+
+    print(f"\n✓ 200 seeds ceiling-mode: all speeds ≤ {v0}")
+
+
+def test_inertia_fuzz_inactive_preserved():
+    """Inertia > 0 with mixed active/inactive: inactive rows unchanged."""
+    W, H, D = 1000.0, 700.0, 400.0
+    v0 = 4.0
+    rng = np.random.default_rng(13)
+
+    for _ in range(50):
+        pos = rng.uniform(0, [W, H, D], (20, 3)).astype(np.float32)
+        vel = rng.uniform(-v0, v0, (20, 3)).astype(np.float32)
+        acc = rng.uniform(-1, 1, (20, 3)).astype(np.float32)
+        active = rng.uniform(0, 1, 20) > 0.2
+
+        pos_before = pos.copy()
+        vel_before = vel.copy()
+
+        integrate(pos, vel, acc, active, W, H, D, v0, "toroidal",
+                  1.0 / 60.0, speed_mode="band", inertia=0.7)
+
+        inactive = ~active
+        assert np.array_equal(pos[inactive], pos_before[inactive]), (
+            "inertia fuzz: inactive positions changed"
+        )
+        assert np.array_equal(vel[inactive], vel_before[inactive]), (
+            "inertia fuzz: inactive velocities changed"
+        )
+
+    print("\n✓ 50 seeds inertia=0.7: inactive rows bit-identical")
+
+
 # ── Array helper additions ────────────────────────────────────────
 
 @pytest.mark.skip(reason="requires scipy for uniformity test")
@@ -934,3 +1013,155 @@ def test_nan_guard_only_active():
     # Birds 0, 1 (inactive) still NaN
     assert np.isnan(pos[0, 0])
     assert np.isnan(pos[1, 0])
+
+
+# ── P0.15 Position Init Variants ─────────────────────────────────
+
+
+def test_init_positions_box():
+    """Box mode: uniform random in domain."""
+    from pymurmur.physics.boid import init_positions
+    rng = np.random.default_rng(42)
+    pos = init_positions(100, 1000.0, 700.0, 400.0, rng, mode="box")
+    assert pos.shape == (100, 3)
+    assert pos.dtype == np.float32
+    assert (pos[:, 0] >= 0).all() and (pos[:, 0] <= 1000.0).all()
+    assert (pos[:, 1] >= 0).all() and (pos[:, 1] <= 700.0).all()
+    assert (pos[:, 2] >= 0).all() and (pos[:, 2] <= 400.0).all()
+
+
+def test_init_positions_sphere_shell():
+    """Sphere shell: all points exactly on shell surface."""
+    from pymurmur.physics.boid import init_positions
+    rng = np.random.default_rng(42)
+    W, H, D = 1000.0, 700.0, 400.0
+    C = np.array([W / 2, H / 2, D / 2], dtype=np.float32)
+    R = 0.4 * min(W, H, D)  # 0.4 * 400 = 160
+
+    pos = init_positions(200, W, H, D, rng, mode="sphere_shell")
+    dists = np.linalg.norm(pos - C, axis=1)
+    assert np.allclose(dists, R, atol=1e-4), (
+        f"sphere_shell: all points must be at R={R}, got {dists.min():.3f}–{dists.max():.3f}"
+    )
+
+
+def test_init_positions_sphere_shell_shape():
+    """Sphere shell returns correct shape and dtype."""
+    from pymurmur.physics.boid import init_positions
+    rng = np.random.default_rng(7)
+    pos = init_positions(50, 1000.0, 700.0, 400.0, rng, mode="sphere_shell")
+    assert pos.shape == (50, 3)
+    assert pos.dtype == np.float32
+
+
+def test_init_positions_gaussian():
+    """Gaussian mode: positions cluster around centre."""
+    from pymurmur.physics.boid import init_positions
+    rng = np.random.default_rng(42)
+    W, H, D = 1000.0, 700.0, 400.0
+    C = np.array([W / 2, H / 2, D / 2], dtype=np.float32)
+
+    pos = init_positions(500, W, H, D, rng, mode="gaussian", separation=9.0)
+    assert pos.shape == (500, 3)
+
+    # Mean should be near centre
+    mean = pos.mean(axis=0)
+    assert np.allclose(mean, C, atol=20.0), f"gaussian mean should be near C, got {mean}"
+
+    # Std dev should be proportional to σ = n^(1/3) * separation
+    expected_sigma = 500 ** (1.0 / 3.0) * 9.0  # ≈ 71.4
+    std = pos.std(axis=0).mean()
+    assert 30 < std < 150, f"gaussian std={std:.1f}, expected near {expected_sigma:.1f}"
+
+
+def test_init_positions_grid():
+    """Grid mode: deterministic, evenly spaced layout."""
+    from pymurmur.physics.boid import init_positions
+    rng = np.random.default_rng(42)
+
+    pos = init_positions(125, 1000.0, 700.0, 400.0, rng, mode="grid")
+    assert pos.shape == (125, 3)
+
+    # Grid should produce unique positions with non-trivial spacing
+    # 125 = 5³, so 5 points per axis
+    assert len(np.unique(pos[:, 0])) >= 3
+    assert len(np.unique(pos[:, 1])) >= 3
+    assert len(np.unique(pos[:, 2])) >= 3
+
+    # Deterministic: same seed → same grid
+    pos2 = init_positions(125, 1000.0, 700.0, 400.0, rng, mode="grid")
+    # Grid is deterministic regardless of rng
+    np.testing.assert_array_equal(pos, pos2)
+
+
+def test_init_positions_grid_no_overlaps():
+    """Grid: no two birds at identical positions."""
+    pytest.importorskip("scipy")
+    from scipy.spatial.distance import cdist
+    from pymurmur.physics.boid import init_positions
+    rng = np.random.default_rng(1)
+
+    pos = init_positions(64, 500.0, 500.0, 500.0, rng, mode="grid")
+    dists = cdist(pos, pos)
+    # Set diagonal to large value so we only check inter-bird distances
+    np.fill_diagonal(dists, np.inf)
+    min_sep = dists.min()
+    expected_spacing = (500.0 * 500.0 * 500.0 / 64) ** (1.0 / 3.0)
+    assert min_sep > 0.8 * expected_spacing, (
+        f"grid min sep={min_sep:.1f} < 0.8*spacing={0.8*expected_spacing:.1f}"
+    )
+
+
+def test_init_positions_blob():
+    """Blob mode: 5-centre shell with jitter."""
+    from pymurmur.physics.boid import init_positions
+    rng = np.random.default_rng(42)
+    W, H, D = 1000.0, 700.0, 400.0
+    C = np.array([W / 2, H / 2, D / 2], dtype=np.float32)
+
+    pos = init_positions(200, W, H, D, rng, mode="blob")
+    assert pos.shape == (200, 3)
+    assert pos.dtype == np.float32
+
+    # Blob centre should be near domain centre (allowing for offsets)
+    mean = pos.mean(axis=0)
+    assert np.allclose(mean, C, atol=150.0), f"blob mean={mean} far from C={C}"
+
+    # Points should have non-trivial spread (not all at same point)
+    assert pos.std(axis=0).mean() > 5.0
+
+
+def test_init_positions_seeded():
+    """Same seed → same positions across all non-grid modes."""
+    from pymurmur.physics.boid import init_positions
+    for mode in ("box", "sphere_shell", "gaussian", "blob"):
+        rng1 = np.random.default_rng(42)
+        rng2 = np.random.default_rng(42)
+        p1 = init_positions(50, 1000.0, 700.0, 400.0, rng1, mode=mode)
+        p2 = init_positions(50, 1000.0, 700.0, 400.0, rng2, mode=mode)
+        assert np.allclose(p1, p2), f"{mode}: same seed must produce same positions"
+
+
+def test_init_positions_different_modes_different():
+    """Different modes produce different position distributions."""
+    from pymurmur.physics.boid import init_positions
+    rng = np.random.default_rng(42)
+    p1 = init_positions(50, 1000.0, 700.0, 400.0, rng, mode="box")
+    p2 = init_positions(50, 1000.0, 700.0, 400.0, rng, mode="sphere_shell")
+    # Different modes should not produce identical results
+    assert not np.allclose(p1, p2)
+
+
+def test_init_positions_grid_non_cubic():
+    """Grid with non-cubic N (not a perfect cube): still produces correct count."""
+    from pymurmur.physics.boid import init_positions
+    rng = np.random.default_rng(42)
+
+    # 50 is not a perfect cube — grid should still work
+    pos = init_positions(50, 1000.0, 700.0, 400.0, rng, mode="grid")
+    assert pos.shape == (50, 3)
+    assert pos.dtype == np.float32
+    # All positions should be within domain
+    assert (pos[:, 0] >= 0).all() and (pos[:, 0] <= 900.0).all()
+    assert (pos[:, 1] >= 0).all() and (pos[:, 1] <= 630.0).all()
+    assert (pos[:, 2] >= 0).all() and (pos[:, 2] <= 360.0).all()

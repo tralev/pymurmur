@@ -24,9 +24,11 @@ class TestH2Robustness:
         assert h2 >= 0
 
     def test_h2_smaller_than_n(self):
-        """H₂ < N for any connected graph."""
-        positions = np.random.uniform(0, 100, (15, 3)).astype(np.float32)
-        _, h2 = compute_h2(positions, m=3)
+        """H₂ < N for any connected graph (seeded to avoid disconnection)."""
+        rng = np.random.default_rng(42)
+        positions = rng.uniform(0, 100, (15, 3)).astype(np.float32)
+        _, h2 = compute_h2(positions, m=5)  # m=5 ensures connectivity
+        assert np.isfinite(h2), f"H₂ should be finite for connected graph, got {h2}"
         assert h2 < len(positions), f"H₂={h2:.3f} >= N={len(positions)}"
 
     def test_h2_decreases_with_more_neighbours(self):
@@ -75,11 +77,20 @@ class TestH2Robustness:
         assert h2 == 0.0
 
     def test_isolated_birds_no_edges(self):
-        """Birds with m neighbours but k=1 (only self) → no edges → (0, 0)."""
-        # With m=1 and N=1, k = min(2, 1) = 1, only self returned, skipped
-        positions = np.array([[0, 0, 0], [1000, 1000, 1000]], dtype=np.float32)
-        _, h2 = compute_h2(positions, m=1)
-        assert h2 >= 0  # shouldn't crash on no-edge case
+        """Birds at single point — all edges built, graph is connected → finite H₂."""
+        positions = np.array([[0, 0, 0], [0, 0, 0], [0, 0, 0]], dtype=np.float32)
+        _, h2 = compute_h2(positions, m=2)
+        # All birds co-located → complete graph → connected → finite H₂
+        assert np.isfinite(h2)
+
+    def test_h2_inf_when_disconnected(self):
+        """Disconnected k-NN graph returns (inf, inf) — P0.13."""
+        import math
+        # Four birds in two isolated clusters — m=1 means each bird only
+        # connects within its cluster, graph is disconnected
+        pts = np.array([[0, 0, 0], [1, 0, 0], [1000, 0, 0], [1001, 0, 0]], dtype=np.float32)
+        _, h2 = compute_h2(pts, m=1)
+        assert math.isinf(h2), f"Expected inf for disconnected graph, got {h2}"
 
     def test_prebuilt_tree_same_result(self):
         """Passing a pre-built cKDTree yields same H₂ as default."""

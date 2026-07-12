@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .boid import integrate, random_positions, random_unit_sphere
+from .boid import integrate, random_unit_sphere, init_positions
 
 if TYPE_CHECKING:
     from ..core.config import SimConfig
@@ -31,8 +31,11 @@ class PhysicsFlock:
             config.seed if config.seed else 0
         )
 
-        self.positions = random_positions(
-            N, config.width, config.height, config.depth, self.rng)
+        self.positions = init_positions(
+            N, config.width, config.height, config.depth, self.rng,
+            mode=getattr(config, 'position_init', 'box'),
+            separation=getattr(config, 'boid_size', 9.0),
+        )
         self.velocities = random_unit_sphere(N, self.rng) * config.v0 * 0.8
         self.accelerations = np.zeros((N, 3), dtype=np.float32)
         self.seeds = self.rng.uniform(0.0, 1.0, N).astype(np.float32)
@@ -109,8 +112,11 @@ class PhysicsFlock:
             idx = inactive[:added]
             self.active[idx] = True
             self.is_predator[idx] = is_predator
-            self.positions[idx] = random_positions(
-                added, config.width, config.height, config.depth, self.rng)
+            self.positions[idx] = init_positions(
+                added, config.width, config.height, config.depth, self.rng,
+                mode=getattr(config, 'position_init', 'box'),
+                separation=getattr(config, 'boid_size', 9.0),
+            )
             self.velocities[idx] = random_unit_sphere(added, self.rng) * config.v0 * 0.8
             self.accelerations[idx] = 0.0
 

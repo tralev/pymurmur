@@ -225,7 +225,7 @@ def compute_h2(positions: np.ndarray, m: int, tree=None) -> tuple[float, float]:
                 data.append(1.0)
 
     if not rows:
-        return 0.0, 0.0
+        return float('inf'), float('inf')
 
     # Build directed adjacency, then symmetrize
     from scipy.sparse import coo_matrix
@@ -242,10 +242,12 @@ def compute_h2(positions: np.ndarray, m: int, tree=None) -> tuple[float, float]:
     # Eigenvalues of Laplacian (need dense for eigh)
     try:
         eigenvals = eigh(L.toarray(), eigvals_only=True)
+        # Check if graph is disconnected: algebraic connectivity λ₁ ≈ 0
+        # (more than one zero eigenvalue means >1 connected component)
+        if eigenvals[1] < 1e-10:
+            return float('inf'), float('inf')
         # H₂² = (1/2N) * Σ_{i≥2} 1/λ_i  (λ_0 = 0, skip)
         nonzero = eigenvals[1:][eigenvals[1:] > 1e-10]
-        if len(nonzero) == 0:
-            return 0.0, 0.0
         h2_sq = float(np.sum(1.0 / nonzero) / (2 * N))
         h2 = float(np.sqrt(h2_sq))
         return h2_sq, h2
@@ -265,6 +267,9 @@ def find_optimal_m(positions: np.ndarray, tree=None) -> tuple[int, float]:
     best_j = float('inf')
     for m in range(2, min(21, len(positions))):
         _, h2 = compute_h2(positions, m, tree)
+        # Skip disconnected graphs (returned as inf)
+        if not np.isfinite(h2):
+            continue
         j = h2 + 0.06 * m
         if j < best_j:
             best_j = j
