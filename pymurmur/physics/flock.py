@@ -27,15 +27,30 @@ class PhysicsFlock:
 
     def __init__(self, config: SimConfig) -> None:
         N = config.num_boids
-        rng = np.random.default_rng(config.seed)
+        self.rng = np.random.default_rng(
+            config.seed if config.seed else 0
+        )
 
         self.positions = random_positions(
-            N, config.width, config.height, config.depth, rng)
-        self.velocities = random_unit_sphere(N, rng) * config.v0 * 0.8
+            N, config.width, config.height, config.depth, self.rng)
+        self.velocities = random_unit_sphere(N, self.rng) * config.v0 * 0.8
         self.accelerations = np.zeros((N, 3), dtype=np.float32)
-        self.seeds = rng.uniform(0.0, 1.0, N).astype(np.float32)
+        self.seeds = self.rng.uniform(0.0, 1.0, N).astype(np.float32)
         self.last_theta = np.zeros(N, dtype=np.float32)
         self.active = np.ones(N, dtype=bool)
+
+        # Smoothed swarm centre — EMA centroid (P0.5)
+        self.center: np.ndarray | None = None
+
+        # Species column — predator/prey flag (P0.6)
+        self.is_predator: np.ndarray = np.zeros(N, dtype=bool)
+
+        # Previous-frame stash — render interpolation + MSD (P0.7)
+        self.prev_positions: np.ndarray = np.zeros((N, 3), dtype=np.float32)
+        self.last_accelerations: np.ndarray = np.zeros((N, 3), dtype=np.float32)
+
+        # Per-bird max speed — None uses scalar v0 (P0.8)
+        self.max_speed: np.ndarray | None = None
 
         # Auto-select spatial index based on flock size
         self._index: SpatialHashGrid | KDTreeIndex
@@ -56,16 +71,26 @@ class PhysicsFlock:
         from .forces import compute_all_forces
         compute_all_forces(self, config)
 
-        # 3. Integrate
+        # 3. Stash pre-integration state (P0.7)
+        self.last_accelerations[:] = self.accelerations
+        self.prev_positions[:] = self.positions
+
+        # 4. Integrate
         integrate(
             self.positions, self.velocities, self.accelerations,
             self.active,
-            config.width, config.height, config.depth,
-            config.v0, config.boundary_mode, dt,
-            config.boundary_sphere_radius, config.boundary_avoidance_factor,
-        )
+            config.width, config.height, config.depth,                    config.v0, config.boundary_mode, dt,
+                    config.boundary_sphere_radius, config.boundary_avoidance_factor,
+                    rng=self.rng,
+                    max_speed=self.max_speed,
+                )
 
-    def add_boids(self, count: int, config: SimConfig) -> int:
+        # 5. Update smoothed centre (EMA centroid)
+        self.update_center()
+
+    def add_boids(
+        self, count: int, config: SimConfig, is_predator: bool = False
+    ) -> int:
         """Flip inactive slots to active. Extends arrays if needed.
 
         Returns number actually added.
@@ -80,12 +105,12 @@ class PhysicsFlock:
             added = min(count, len(inactive))
 
         if added > 0:
-            rng = np.random.default_rng()
             idx = inactive[:added]
             self.active[idx] = True
+            self.is_predator[idx] = is_predator
             self.positions[idx] = random_positions(
-                added, config.width, config.height, config.depth, rng)
-            self.velocities[idx] = random_unit_sphere(added, rng) * config.v0 * 0.8
+                added, config.width, config.height, config.depth, self.rng)
+            self.velocities[idx] = random_unit_sphere(added, self.rng) * config.v0 * 0.8
             self.accelerations[idx] = 0.0
 
         return added
@@ -103,7 +128,10 @@ class PhysicsFlock:
         N = self.N_capacity
         new_size = N + max(count, 1000)
 
-        for attr in ("positions", "velocities", "accelerations"):
+        for attr in (
+            "positions", "velocities", "accelerations",
+            "prev_positions", "last_accelerations",
+        ):
             arr = getattr(self, attr)
             extended = np.zeros((new_size, 3), dtype=np.float32)
             extended[:N] = arr
@@ -112,6 +140,13 @@ class PhysicsFlock:
         for attr in ("seeds", "last_theta"):
             arr = getattr(self, attr)
             extended = np.zeros(new_size, dtype=np.float32)
+            extended[:N] = arr
+            setattr(self, attr, extended)
+
+        # Extend bool arrays
+        for attr in ("is_predator",):
+            arr = getattr(self, attr)
+            extended = np.zeros(new_size, dtype=bool)
             extended[:N] = arr
             setattr(self, attr, extended)
 
@@ -129,6 +164,23 @@ class PhysicsFlock:
 
     def get_index(self) -> SpatialHashGrid | KDTreeIndex:
         return self._index
+
+    def update_center(self) -> None:
+        """Update smoothed swarm centre via EMA.
+
+        centroid = mean of active positions.
+        If centre is uninitialised, snap to centroid.
+        Otherwise, EMA: centre ← centre + 0.5 · (centroid − centre).
+        """
+        if self.active.sum() == 0:
+            return
+
+        centroid = self.positions[self.active].mean(axis=0)
+
+        if self.center is None:
+            self.center = centroid.copy()
+        else:
+            self.center += 0.5 * (centroid - self.center)
 
 
 # ── Spatial index implementations ─────────────────────────────────

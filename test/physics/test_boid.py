@@ -232,7 +232,11 @@ def test_speed_clamp_vectorised():
 
 
 def test_zero_speed_reseed():
-    """Birds with near-zero speed get re-seeded to random direction."""
+    """Zero-speed birds get deterministic fallback (minSpeed, 0, 0).
+
+    P0.9: deterministic fallback replaces random_unit_sphere for
+    bit-identical replay. speed = v0 * speed_min_factor = 1.2.
+    """
     N = 5
     pos = np.zeros((N, 3), dtype=np.float32)
     vel = np.zeros((N, 3), dtype=np.float32)  # all zero speed
@@ -241,9 +245,13 @@ def test_zero_speed_reseed():
 
     integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0, 4.0, "toroidal", 1.0)
     speeds = np.linalg.norm(vel, axis=1)
-    # After reseed: speed should be 0.5 * v0 = 2.0
+    # Deterministic: minSpeed = 0.3 * 4.0 = 1.2
     assert (speeds > 0).all(), f"speeds={speeds}"
-    assert np.allclose(speeds, 2.0, atol=0.1), f"speeds={speeds}"
+    assert np.allclose(speeds, 1.2, atol=0.1), f"speeds={speeds}"
+    # Deterministic direction: all birds get (+, 0, 0)
+    assert (vel[:, 0] > 0).all(), "all x-components must be positive"
+    assert np.allclose(vel[:, 1], 0.0), "all y-components must be 0"
+    assert np.allclose(vel[:, 2], 0.0), "all z-components must be 0"
 
 
 def test_integrate_inactive_unchanged():
@@ -422,6 +430,154 @@ def test_boundary_sphere_inside():
     assert np.linalg.norm(pos[0]) <= 300.0  # still inside
 
 
+# ── P0.3 Physics Invariant Fuzz Tests ──────────────────────────
+# Per roadmap P0.3: for integrate(..., "toroidal"): after step,
+# 0 ≤ pos < (W,H,D) elementwise, |v| ≤ v0 + ε, no NaN,
+# inactive rows bit-identical.
+
+
+def test_speed_band_respected():
+    """200 random seeds: all speeds ≤ v0 + epsilon, positions in domain."""
+    W, H, D = 1000.0, 700.0, 400.0
+    v0 = 4.0
+
+    for seed in range(200):
+        rng_i = np.random.default_rng(seed)
+        pos = rng_i.uniform(0, [W, H, D], (50, 3)).astype(np.float32)
+        vel = rng_i.uniform(-2 * v0, 2 * v0, (50, 3)).astype(np.float32)
+        acc = np.zeros((50, 3), dtype=np.float32)
+        active = np.ones(50, dtype=bool)
+
+        integrate(pos, vel, acc, active, W, H, D, v0, "toroidal", 1.0 / 60.0)
+
+        speeds = np.linalg.norm(vel, axis=1)
+        assert (speeds <= v0 + 1e-4).all(), (
+            f"seed={seed}: max speed={speeds.max():.4f} > v0={v0}"
+        )
+        assert (pos[:, 0] >= 0).all() and (pos[:, 0] < W).all(), (
+            f"seed={seed}: x out of bounds: min={pos[:,0].min():.1f} max={pos[:,0].max():.1f}"
+        )
+        assert (pos[:, 1] >= 0).all() and (pos[:, 1] < H).all(), (
+            f"seed={seed}: y out of bounds"
+        )
+        assert (pos[:, 2] >= 0).all() and (pos[:, 2] < D).all(), (
+            f"seed={seed}: z out of bounds"
+        )
+
+    print(f"\n✓ 200 seeds: all speeds ≤ {v0}+ε, all positions in domain")
+
+
+def test_no_nan_after_integrate():
+    """200 random seeds across boundary modes: no NaN in positions or velocities."""
+    W, H, D = 1000.0, 700.0, 400.0
+    v0 = 4.0
+
+    for mode in ("toroidal", "open", "margin", "sphere"):
+        for seed in range(200):
+            rng_i = np.random.default_rng(seed)
+            pos = rng_i.uniform(0, [W, H, D], (30, 3)).astype(np.float32)
+            vel = rng_i.uniform(-2 * v0, 2 * v0, (30, 3)).astype(np.float32)
+            acc = rng_i.uniform(-1, 1, (30, 3)).astype(np.float32)
+            active = rng_i.uniform(0, 1, 30) > 0.1  # ~90% active
+
+            integrate(pos, vel, acc, active, W, H, D, v0, mode, 1.0 / 60.0)
+
+            assert not np.isnan(pos).any(), (
+                f"mode={mode} seed={seed}: NaN in positions"
+            )
+            assert not np.isnan(vel).any(), (
+                f"mode={mode} seed={seed}: NaN in velocities"
+            )
+            assert not np.isinf(pos).any(), (
+                f"mode={mode} seed={seed}: Inf in positions"
+            )
+            assert not np.isinf(vel).any(), (
+                f"mode={mode} seed={seed}: Inf in velocities"
+            )
+
+    print(f"\n✓ 3 modes × 200 seeds: no NaN or Inf in positions/velocities")
+
+
+def test_inactive_rows_bit_identical():
+    """Inactive birds' positions and velocities are bit-identical after integrate.
+
+    P0.3 requirement: inactive rows bit-identical. More rigorous than
+    test_integrate_inactive_unchanged which uses np.allclose.
+    """
+    W, H, D = 1000.0, 700.0, 400.0
+    v0 = 4.0
+    rng = np.random.default_rng(7)
+
+    for mode in ("toroidal", "open", "margin", "sphere"):
+        for _ in range(50):
+            pos = rng.uniform(0, [W, H, D], (20, 3)).astype(np.float32)
+            vel = rng.uniform(-v0, v0, (20, 3)).astype(np.float32)
+            acc = rng.uniform(-1, 1, (20, 3)).astype(np.float32)
+            active = rng.uniform(0, 1, 20) > 0.15
+
+            pos_before = pos.copy()
+            vel_before = vel.copy()
+
+            integrate(pos, vel, acc, active, W, H, D, v0, mode, 1.0 / 60.0)
+
+            inactive = ~active
+            # Exact bit-identical check (not allclose)
+            assert np.array_equal(pos[inactive], pos_before[inactive]), (
+                f"mode={mode}: inactive positions changed"
+            )
+            assert np.array_equal(vel[inactive], vel_before[inactive]), (
+                f"mode={mode}: inactive velocities changed"
+            )
+
+    print(f"\n✓ 3 modes × 50 seeds: inactive rows bit-identical")
+
+
+def test_toroidal_positions_in_bounds():
+    """After toroidal integrate, all positions satisfy 0 ≤ pos < domain elementwise.
+
+    Explicit check across a range of starting positions near the boundary.
+    """
+    W, H, D = 1000.0, 700.0, 400.0
+    v0 = 4.0
+
+    # Fixed positions that test edge cases: near-wrapping, at-boundary, far-out
+    test_positions = np.array([
+        [999.0, 350.0, 200.0],   # near +X boundary
+        [1.0, 350.0, 200.0],     # near -X boundary
+        [500.0, 699.0, 200.0],   # near +Y
+        [500.0, 1.0, 200.0],     # near -Y
+        [500.0, 350.0, 399.0],   # near +Z
+        [500.0, 350.0, 1.0],     # near -Z
+        [500.0, 350.0, 200.0],   # centre (no wrap)
+    ], dtype=np.float32)
+
+    vel = np.array([
+        [10.0, 0.0, 0.0],
+        [-10.0, 0.0, 0.0],
+        [0.0, 10.0, 0.0],
+        [0.0, -10.0, 0.0],
+        [0.0, 0.0, 10.0],
+        [0.0, 0.0, -10.0],
+        [0.0, 0.0, 0.0],
+    ], dtype=np.float32)
+
+    N = len(test_positions)
+    acc = np.zeros((N, 3), dtype=np.float32)
+    active = np.ones(N, dtype=bool)
+
+    for frame in range(100):
+        integrate(test_positions, vel, acc, active, W, H, D, v0, "toroidal", 1.0 / 60.0)
+
+    # After 100 frames, all positions must be in bounds
+    assert (test_positions[:, 0] >= 0).all() and (test_positions[:, 0] < W).all(), (
+        f"x out of bounds: min={test_positions[:,0].min():.1f} max={test_positions[:,0].max():.1f}"
+    )
+    assert (test_positions[:, 1] >= 0).all() and (test_positions[:, 1] < H).all()
+    assert (test_positions[:, 2] >= 0).all() and (test_positions[:, 2] < D).all()
+
+    print(f"\n✓ 7 birds × 100 frames: all positions in [0,W)×[0,H)×[0,D)")
+
+
 # ── Array helper additions ────────────────────────────────────────
 
 @pytest.mark.skip(reason="requires scipy for uniformity test")
@@ -461,3 +617,206 @@ def test_random_positions_different():
     p1 = random_positions(100, 1000.0, 700.0, 400.0, rng1)
     p2 = random_positions(100, 1000.0, 700.0, 400.0, rng2)
     assert not np.allclose(p1, p2)
+
+
+# ── P0.9 Integration Variants ───────────────────────────────────
+
+
+def test_speed_mode_fixed():
+    """Fixed mode: all speeds exactly equal v0 after integrate."""
+    N = 10
+    pos = np.zeros((N, 3), dtype=np.float32)
+    # Mix of different speeds
+    vel = np.array([
+        [0.5, 0, 0], [8.0, 0, 0], [3.0, 0, 0], [0, 0.2, 0],
+        [10, 0, 0], [0, 7, 0], [1.5, 0, 0], [0, 0, 12],
+        [0.1, 0, 0], [4.0, 0, 0],
+    ], dtype=np.float32)
+    acc = np.zeros((N, 3), dtype=np.float32)
+    active = np.ones(N, dtype=bool)
+
+    integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0,
+              4.0, "toroidal", 1.0 / 60.0, speed_mode="fixed")
+
+    speeds = np.linalg.norm(vel, axis=1)
+    assert np.allclose(speeds, 4.0, atol=1e-4), (
+        f"fixed mode: all speeds must be v0=4.0, got {speeds}"
+    )
+
+
+def test_speed_mode_fixed_zero_safe():
+    """Fixed mode: zero-velocity birds get (cap, 0, 0) — 0-safe.
+
+    The fixed mode direction fallback (1,0,0) is applied BEFORE
+    the zero-speed fallback, so the result is cap=4.0, not minSpeed=1.2.
+    """
+    N = 3
+    pos = np.zeros((N, 3), dtype=np.float32)
+    vel = np.zeros((N, 3), dtype=np.float32)
+    acc = np.zeros((N, 3), dtype=np.float32)
+    active = np.ones(N, dtype=bool)
+
+    integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0,
+              4.0, "toroidal", 1.0 / 60.0, speed_mode="fixed")
+
+    speeds = np.linalg.norm(vel, axis=1)
+    # Fixed mode sets speed to cap = 4.0 (not minSpeed=1.2)
+    assert np.allclose(speeds, 4.0, atol=1e-4), (
+        f"fixed mode: expected 4.0, got {speeds}"
+    )
+    # Deterministic direction: (v0, 0, 0)
+    assert np.allclose(vel[:, 1], 0.0)
+    assert np.allclose(vel[:, 2], 0.0)
+    assert (vel[:, 0] > 0).all()
+
+
+def test_speed_mode_ceiling():
+    """Ceiling mode: only caps speeds above v0, slow speeds unchanged."""
+    N = 5
+    pos = np.zeros((N, 3), dtype=np.float32)
+    vel = np.array([
+        [8.0, 0, 0],   # above cap → clamped to 4.0
+        [2.0, 0, 0],   # within cap → unchanged
+        [0.5, 0, 0],   # slow → unchanged
+        [10.0, 0, 0],  # above cap → clamped to 4.0
+        [3.5, 0, 0],   # within cap → unchanged
+    ], dtype=np.float32)
+    acc = np.zeros((N, 3), dtype=np.float32)
+    active = np.ones(N, dtype=bool)
+    vel_before = vel.copy()
+
+    integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0,
+              4.0, "toroidal", 1.0 / 60.0, speed_mode="ceiling")
+
+    speeds = np.linalg.norm(vel, axis=1)
+    # All speeds ≤ 4.0
+    assert (speeds <= 4.01).all()
+    # Slow speed unchanged
+    assert speeds[2] < 1.0  # ~0.5, not boosted
+    # Direction of slow bird preserved
+    assert vel[2, 0] > 0 and vel[2, 1] == 0
+
+
+def test_speed_mode_none():
+    """None mode: no speed clamp at all."""
+    N = 3
+    pos = np.zeros((N, 3), dtype=np.float32)
+    vel = np.array([[15.0, 0, 0], [0.1, 0, 0], [0, 0, 0.01]], dtype=np.float32)
+    acc = np.zeros((N, 3), dtype=np.float32)
+    active = np.ones(N, dtype=bool)
+    vel_before = vel.copy()
+
+    integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0,
+              4.0, "toroidal", 1.0 / 60.0, speed_mode="none")
+
+    # Velocities should be unchanged (no force applied, no clamp)
+    np.testing.assert_array_equal(vel, vel_before)
+
+
+def test_speed_mode_default_band():
+    """Default speed_mode='band': clamps to [0.3*v0, v0]."""
+    N = 5
+    pos = np.zeros((N, 3), dtype=np.float32)
+    vel = np.array([
+        [8.0, 0, 0],   # above → clamped to 4.0
+        [2.0, 0, 0],   # within → unchanged
+        [0.5, 0, 0],   # below → boosted to 1.2
+        [0.1, 0, 0],   # below → boosted to 1.2
+        [4.0, 0, 0],   # at cap → unchanged
+    ], dtype=np.float32)
+    acc = np.zeros((N, 3), dtype=np.float32)
+    active = np.ones(N, dtype=bool)
+
+    integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0,
+              4.0, "toroidal", 1.0 / 60.0, speed_mode="band")
+
+    speeds = np.linalg.norm(vel, axis=1)
+    assert 3.9 <= speeds[0] <= 4.1   # capped from 8 to 4
+    assert 1.9 <= speeds[1] <= 2.1   # within band, ~2 unchanged
+    assert 1.1 <= speeds[2] <= 1.3   # boosted to 1.2
+    assert 1.1 <= speeds[3] <= 1.3   # boosted to 1.2
+    assert 3.9 <= speeds[4] <= 4.1   # at cap, unchanged
+
+
+def test_inertia_lerp():
+    """Inertia blends between raw and clamped velocity."""
+    N = 3
+    pos = np.zeros((N, 3), dtype=np.float32)
+    vel = np.array([[8.0, 0, 0], [8.0, 0, 0], [8.0, 0, 0]], dtype=np.float32)
+    acc = np.zeros((N, 3), dtype=np.float32)
+    active = np.ones(N, dtype=bool)
+
+    # inertia=0.0 → fully clamped (4.0)
+    v1 = vel.copy()
+    integrate(pos, v1, acc.copy(), active, 1000.0, 700.0, 400.0,
+              4.0, "toroidal", 1.0 / 60.0, speed_mode="band", inertia=0.0)
+    assert np.allclose(np.linalg.norm(v1[0]), 4.0, atol=0.05)
+
+    # inertia=1.0 → fully raw (8.0)
+    v2 = vel.copy()
+    integrate(pos, v2, acc.copy(), active, 1000.0, 700.0, 400.0,
+              4.0, "toroidal", 1.0 / 60.0, speed_mode="band", inertia=1.0)
+    assert np.allclose(np.linalg.norm(v2[0]), 8.0, atol=0.05)
+
+    # inertia=0.5 → halfway (~6.0)
+    v3 = vel.copy()
+    integrate(pos, v3, acc.copy(), active, 1000.0, 700.0, 400.0,
+              4.0, "toroidal", 1.0 / 60.0, speed_mode="band", inertia=0.5)
+    assert np.allclose(np.linalg.norm(v3[0]), 6.0, atol=0.1)
+
+
+def test_speed_mode_no_move():
+    """move=False: positions unchanged, only velocity processed."""
+    N = 3
+    pos = np.array([[100, 200, 100], [400, 300, 200], [300, 100, 50]],
+                   dtype=np.float32)
+    vel = np.array([[4.0, 0, 0], [4.0, 0, 0], [4.0, 0, 0]], dtype=np.float32)
+    acc = np.zeros((N, 3), dtype=np.float32)
+    active = np.ones(N, dtype=bool)
+    pos_before = pos.copy()
+
+    integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0,
+              4.0, "open", 1.0, move=False)
+
+    # Positions unchanged when move=False (use open boundary to avoid wrap)
+    np.testing.assert_array_equal(pos, pos_before)
+    # Velocities still processed (clamped)
+    assert np.allclose(np.linalg.norm(vel, axis=1), 4.0, atol=0.05)
+
+
+def test_speed_min_factor_custom():
+    """Custom speed_min_factor changes the lower speed bound."""
+    N = 3
+    pos = np.zeros((N, 3), dtype=np.float32)
+    vel = np.array([[0.2, 0, 0], [0.2, 0, 0], [0.2, 0, 0]], dtype=np.float32)
+    acc = np.zeros((N, 3), dtype=np.float32)
+    active = np.ones(N, dtype=bool)
+
+    integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0,
+              4.0, "toroidal", 1.0 / 60.0, speed_mode="band",
+              speed_min_factor=0.5)
+
+    speeds = np.linalg.norm(vel, axis=1)
+    # Min speed should be 0.5 * 4.0 = 2.0
+    assert np.allclose(speeds, 2.0, atol=0.1), (
+        f"custom min_factor=0.5: expected 2.0, got {speeds}"
+    )
+
+
+def test_speed_mode_fixed_with_max_speed():
+    """Fixed mode with per-bird max_speed: each bird gets its own cap."""
+    N = 3
+    pos = np.zeros((N, 3), dtype=np.float32)
+    vel = np.array([[8.0, 0, 0], [8.0, 0, 0], [8.0, 0, 0]], dtype=np.float32)
+    acc = np.zeros((N, 3), dtype=np.float32)
+    active = np.ones(N, dtype=bool)
+    max_speed = np.array([2.0, 3.0, 5.0], dtype=np.float32)
+
+    integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0,
+              4.0, "toroidal", 1.0 / 60.0, speed_mode="fixed",
+              max_speed=max_speed)
+
+    speeds = np.linalg.norm(vel, axis=1)
+    assert np.isclose(speeds[0], 2.0, atol=0.05)
+    assert np.isclose(speeds[1], 3.0, atol=0.05)
+    assert np.isclose(speeds[2], 5.0, atol=0.05)

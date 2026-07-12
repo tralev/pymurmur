@@ -29,42 +29,99 @@ def integrate(
     dt: float,
     sphere_radius: float = 300.0,
     avoidance_factor: float = 0.05,
+    rng: np.random.Generator | None = None,
+    max_speed: np.ndarray | None = None,
+    speed_mode: str = "band",
+    inertia: float = 0.0,
+    move: bool = True,
+    speed_min_factor: float = 0.3,
 ) -> None:
     """Vectorised Euler integration over the entire flock.
 
     Operates on flat arrays — no Python per-bird loop. All parameters
     are passed explicitly to avoid a SimConfig import at the hot-path level.
+
+    speed_mode: "band" (clamp [min, cap]), "fixed" (exact renormalisation),
+                "ceiling" (≤ cap only), "none" (no clamp).
+    inertia: 0.0–1.0 lerp between raw and clamped velocity.
+    move: if False, skip position update (caller owns positions).
     """
     # 1. Apply accumulated forces (only active birds)
     velocities[active] += accelerations[active]
 
-    # 2. Speed clamp: [0.3 * v0, v0] — vectorised
+    # 2. Build per-bird caps
+    N = len(velocities)
+    if max_speed is not None:
+        caps = max_speed.astype(np.float32)
+    else:
+        caps = np.full(N, v0, dtype=np.float32)
+    min_speed = caps * speed_min_factor
+
+    # 3. Speed clamp — save raw velocity for inertia
     speeds = np.linalg.norm(velocities, axis=1, keepdims=True)
-    too_fast = (speeds > v0).ravel()
-    too_slow = (speeds < v0 * 0.3).ravel()
+    raw_vel = velocities.copy() if inertia > 0 else None
 
-    if too_fast.any():
-        velocities[too_fast] = (velocities[too_fast]
-                                / speeds[too_fast]) * v0
-    if too_slow.any():
-        velocities[too_slow] = (velocities[too_slow]
-                                / speeds[too_slow]) * v0 * 0.3
+    if speed_mode == "band":
+        too_fast = (speeds.ravel() > caps).ravel() & active
+        too_slow = (speeds.ravel() < min_speed).ravel() & active
+        if too_fast.any():
+            velocities[too_fast] = (
+                velocities[too_fast] / speeds[too_fast]
+            ) * caps[too_fast, np.newaxis]
+        if too_slow.any():
+            velocities[too_slow] = (
+                velocities[too_slow] / (speeds[too_slow] + 1e-10)
+            ) * min_speed[too_slow, np.newaxis]
 
-    # 2b. Zero-speed re-seed: random unit sphere for speeds < 1e-6
+    elif speed_mode == "fixed":
+        # Exact renormalisation to cap, 0-safe: zero-velocity
+        # birds get deterministic direction (1, 0, 0) to avoid NaN.
+        safe_speeds = speeds + 1e-10
+        dirs = velocities / safe_speeds
+        zero_mask = (speeds.ravel() < 1e-6) & active
+        if zero_mask.any():
+            dirs[zero_mask.ravel(), 0] = 1.0
+            dirs[zero_mask.ravel(), 1] = 0.0
+            dirs[zero_mask.ravel(), 2] = 0.0
+        velocities[active] = dirs[active] * caps[active, np.newaxis]
+
+    elif speed_mode == "ceiling":
+        too_fast = (speeds.ravel() > caps).ravel() & active
+        if too_fast.any():
+            velocities[too_fast] = (
+                velocities[too_fast] / speeds[too_fast]
+            ) * caps[too_fast, np.newaxis]
+        # No lower bound — slow speeds left as-is
+
+    elif speed_mode == "none":
+        pass  # no speed clamp
+
+    # 4. Inertia: lerp between raw and clamped velocity
+    if inertia > 0 and raw_vel is not None:
+        velocities[active] = (
+            velocities[active] * (1.0 - inertia)
+            + raw_vel[active] * inertia
+        )
+
+    # 5. Zero-speed deterministic fallback — (minSpeed, 0, 0) for all modes
+    #    Prevents NaN in normalise() and keeps replay bit-identical.
+    speeds = np.linalg.norm(velocities, axis=1, keepdims=True)
     zero_speed = (speeds.ravel() < 1e-6) & active
     if zero_speed.any():
-        nz = zero_speed.sum()
-        velocities[zero_speed] = random_unit_sphere(nz) * v0 * 0.5
+        velocities[zero_speed, 0] = min_speed[zero_speed]
+        velocities[zero_speed, 1] = 0.0
+        velocities[zero_speed, 2] = 0.0
 
-    # 3. Move forward
-    positions[active] += velocities[active] * dt
+    # 6. Move forward
+    if move:
+        positions[active] += velocities[active] * dt
 
-    # 4. Boundary enforcement
+    # 7. Boundary enforcement
     _apply_boundary(positions, velocities, active,
                     width, height, depth, boundary_mode,
                     sphere_radius, avoidance_factor)
 
-    # 5. Reset accelerations for next frame
+    # 8. Reset accelerations for next frame
     accelerations[active] = np.float32(0.0)
 
 
@@ -81,9 +138,10 @@ def _apply_boundary(
 ) -> None:
     """Enforce boundary conditions on active birds."""
     if mode == "toroidal":
-        positions[:, 0] %= width
-        positions[:, 1] %= height
-        positions[:, 2] %= depth
+        mask = active
+        positions[mask, 0] %= width
+        positions[mask, 1] %= height
+        positions[mask, 2] %= depth
 
     elif mode == "open":
         pass  # birds may leave freely

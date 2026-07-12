@@ -433,3 +433,522 @@ def test_index_skip_for_vicsek_mode(default_config):
     flock.step(cfg, 1.0 / 60.0)
     if isinstance(index, SpatialHashGrid):
         assert not index.ready, "Vicsek mode should skip flock-level index rebuild"
+
+
+# ── P0.4 Determinism Tests ─────────────────────────────────────
+
+
+def test_flock_rng_initialised(default_config):
+    """PhysicsFlock has a self.rng attribute initialised from config.seed."""
+    cfg = default_config
+    cfg.seed = 42
+    cfg.num_boids = 10
+    flock = PhysicsFlock(cfg)
+    assert hasattr(flock, "rng"), "flock.rng must exist"
+    assert isinstance(flock.rng, np.random.Generator), (
+        "flock.rng must be np.random.Generator"
+    )
+
+
+def test_same_seed_bit_identical():
+    """Two engines with same seed produce bit-identical positions after 100 steps.
+
+    P0.4 requirement: same seed → bit-identical after 100 steps per mode.
+    Tests projection mode (deterministic, no zero-speed reseed).
+    """
+    from pymurmur.simulation.engine import SimulationEngine
+    from pymurmur.core.config import SimConfig
+
+    cfg = SimConfig()
+    cfg.seed = 42
+    cfg.num_boids = 30
+    cfg.mode = "projection"
+
+    e1 = SimulationEngine(cfg)
+    e2 = SimulationEngine(cfg)
+
+    for _ in range(100):
+        e1.step(1.0 / 60.0)
+        e2.step(1.0 / 60.0)
+
+    np.testing.assert_array_equal(
+        e1.flock.positions, e2.flock.positions,
+        err_msg="Same seed must produce bit-identical positions after 100 steps"
+    )
+    np.testing.assert_array_equal(
+        e1.flock.velocities, e2.flock.velocities,
+        err_msg="Same seed must produce bit-identical velocities after 100 steps"
+    )
+
+
+def test_same_seed_bit_identical_spatial():
+    """Spatial mode also produces bit-identical results with same seed."""
+    from pymurmur.simulation.engine import SimulationEngine
+    from pymurmur.core.config import SimConfig
+
+    cfg = SimConfig()
+    cfg.seed = 77
+    cfg.num_boids = 30
+    cfg.mode = "spatial"
+
+    e1 = SimulationEngine(cfg)
+    e2 = SimulationEngine(cfg)
+
+    for _ in range(100):
+        e1.step(1.0 / 60.0)
+        e2.step(1.0 / 60.0)
+
+    np.testing.assert_array_equal(e1.flock.positions, e2.flock.positions)
+
+
+def test_same_seed_bit_identical_field():
+    """Field mode also produces bit-identical results with same seed."""
+    from pymurmur.simulation.engine import SimulationEngine
+    from pymurmur.core.config import SimConfig
+
+    cfg = SimConfig()
+    cfg.seed = 123
+    cfg.num_boids = 30
+    cfg.mode = "field"
+
+    e1 = SimulationEngine(cfg)
+    e2 = SimulationEngine(cfg)
+
+    for _ in range(100):
+        e1.step(1.0 / 60.0)
+        e2.step(1.0 / 60.0)
+
+    np.testing.assert_array_equal(e1.flock.positions, e2.flock.positions)
+
+
+def test_different_seeds_diverge():
+    """Different seeds produce different positions after 100 steps."""
+    from pymurmur.simulation.engine import SimulationEngine
+    from pymurmur.core.config import SimConfig
+
+    cfg1 = SimConfig()
+    cfg1.seed = 42
+    cfg1.num_boids = 30
+    cfg1.mode = "projection"
+
+    cfg2 = SimConfig()
+    cfg2.seed = 99
+    cfg2.num_boids = 30
+    cfg2.mode = "projection"
+
+    e1 = SimulationEngine(cfg1)
+    e2 = SimulationEngine(cfg2)
+
+    for _ in range(100):
+        e1.step(1.0 / 60.0)
+        e2.step(1.0 / 60.0)
+
+    assert not np.array_equal(e1.flock.positions, e2.flock.positions), (
+        "Different seeds must produce different positions"
+    )
+
+
+# ── P0.5 Smoothed Swarm Centre Tests ───────────────────────────
+
+
+def test_center_initialised_none(default_config):
+    """flock.center is None before any step()."""
+    cfg = default_config
+    cfg.num_boids = 20
+    flock = PhysicsFlock(cfg)
+    assert flock.center is None, "center must be None before first step"
+
+
+def test_center_set_after_first_step(default_config):
+    """flock.center is set to the centroid after the first step."""
+    cfg = default_config
+    cfg.num_boids = 20
+    flock = PhysicsFlock(cfg)
+    flock.step(cfg, 1.0 / 60.0)
+    assert flock.center is not None, "center must be set after first step"
+    assert flock.center.shape == (3,), "center must be (3,) float32"
+    assert flock.center.dtype == np.float32
+
+
+def test_center_close_to_centroid(default_config):
+    """After first step, centre equals centroid exactly (EMA init snap)."""
+    cfg = default_config
+    cfg.num_boids = 20
+    flock = PhysicsFlock(cfg)
+    flock.step(cfg, 1.0 / 60.0)
+
+    centroid = flock.positions[flock.active].mean(axis=0)
+    np.testing.assert_array_equal(
+        flock.center, centroid,
+        err_msg="First step: center must snap to centroid"
+    )
+
+
+def test_center_ema_smoothing(default_config):
+    """Teleport flock — centre moves exactly 50% toward centroid (EMA α=0.5).
+
+    Uses update_center() directly to isolate EMA behaviour from physics.
+    """
+    cfg = default_config
+    cfg.num_boids = 20
+    flock = PhysicsFlock(cfg)
+
+    # Initialise centre
+    flock.update_center()
+    old_center = flock.center.copy()
+
+    # Teleport all birds far away (no step, no physics)
+    flock.positions += np.array([500.0, 0.0, 0.0], dtype=np.float32)
+
+    # Update centre directly — pure EMA, no force/integrate
+    flock.update_center()
+
+    new_centroid = flock.positions[flock.active].mean(axis=0)
+    distance_center_moved = np.linalg.norm(flock.center - old_center)
+    distance_to_centroid = np.linalg.norm(new_centroid - old_center)
+
+    # Centre should have moved toward the centroid
+    assert distance_center_moved > 0, "center should move after teleport"
+
+    # Centre should NOT have reached the centroid in one step (EMA lag)
+    assert distance_center_moved < distance_to_centroid, (
+        f"EMA lag: center moved {distance_center_moved:.1f}, "
+        f"but centroid moved {distance_to_centroid:.1f}"
+    )
+
+    # EMA α=0.5 → centre moves exactly 50% of the way
+    expected_move = 0.5 * distance_to_centroid
+    assert np.isclose(distance_center_moved, expected_move, atol=1e-4), (
+        f"EMA α=0.5: expected move ≈ {expected_move:.1f}, "
+        f"got {distance_center_moved:.1f}"
+    )
+
+
+def test_center_converges(default_config):
+    """Pure EMA: after teleport, centre converges to <1% of centroid in ~7 frames.
+
+    Uses update_center() directly (no physics) so convergence follows
+    error = D · (0.5)^n exactly.  With D=500, error < 5.0 after 7 frames.
+    """
+    cfg = default_config
+    cfg.num_boids = 20
+    flock = PhysicsFlock(cfg)
+
+    # Initialise centre
+    flock.update_center()
+
+    # Teleport — zero velocities so no physics drift
+    flock.positions += np.array([500.0, 0.0, 0.0], dtype=np.float32)
+    flock.velocities[:] = 0.0
+    flock.accelerations[:] = 0.0
+
+    centroid = flock.positions[flock.active].mean(axis=0)
+    for i in range(20):
+        flock.update_center()
+        error = np.linalg.norm(flock.center - centroid)
+        if error < 0.01 * np.linalg.norm(centroid):
+            break
+
+    assert i < 10, (
+        f"Pure EMA should converge within 10 frames, took {i + 1}"
+    )
+
+
+def test_center_no_active_birds(default_config):
+    """update_center() is a no-op when all birds are inactive."""
+    cfg = default_config
+    cfg.num_boids = 10
+    flock = PhysicsFlock(cfg)
+    flock.step(cfg, 1.0 / 60.0)
+
+    # Deactivate all birds
+    flock.active[:] = False
+    center_before = flock.center.copy()
+
+    flock.update_center()
+
+    np.testing.assert_array_equal(
+        flock.center, center_before,
+        err_msg="center must not change when no active birds"
+    )
+
+
+# ── P0.6 Species Column Tests ───────────────────────────────────
+
+
+def test_is_predator_all_false_initially(default_config):
+    """All birds start as prey (is_predator all False)."""
+    cfg = default_config
+    cfg.num_boids = 20
+    flock = PhysicsFlock(cfg)
+    assert hasattr(flock, "is_predator"), "flock.is_predator must exist"
+    assert flock.is_predator.dtype == bool
+    assert not flock.is_predator.any(), "all birds must be prey initially"
+    assert len(flock.is_predator) == flock.N_capacity
+
+
+def test_add_boids_predator_flag(default_config):
+    """add_boids(is_predator=True) marks new birds as predators."""
+    cfg = default_config
+    cfg.num_boids = 10
+    flock = PhysicsFlock(cfg)
+    added = flock.add_boids(5, cfg, is_predator=True)
+    assert added == 5
+    # New birds are at the end of active
+    active_idx = np.where(flock.active)[0]
+    new_birds = active_idx[-5:]
+    assert flock.is_predator[new_birds].all(), (
+        "new birds must be predators"
+    )
+    # Original birds are still prey
+    original = active_idx[:10]
+    assert not flock.is_predator[original].any(), (
+        "original birds must remain prey"
+    )
+
+
+def test_add_boids_prey_default(default_config):
+    """add_boids() without is_predator defaults to prey (False)."""
+    cfg = default_config
+    cfg.num_boids = 10
+    flock = PhysicsFlock(cfg)
+    added = flock.add_boids(5, cfg)  # no is_predator arg
+    assert added == 5
+    active_idx = np.where(flock.active)[0]
+    new_birds = active_idx[-5:]
+    assert not flock.is_predator[new_birds].any(), (
+        "default add_boids must produce prey"
+    )
+
+
+def test_species_survives_add_remove(default_config):
+    """is_predator flag persists after remove_boids (flags on inactive birds survive).
+
+    Per P0.6 spec: add 5 predators → 5 total, remove 3 active from end →
+    flags on those inactive indices persist. is_predator.sum() stays at 5.
+    """
+    cfg = default_config
+    cfg.num_boids = 10
+    flock = PhysicsFlock(cfg)
+
+    # Add predators
+    flock.add_boids(5, cfg, is_predator=True)
+    assert flock.is_predator.sum() == 5
+
+    # Remove 3 birds (last active ones — predators, since added at end)
+    removed = flock.remove_boids(3)
+    assert removed == 3
+    # Flags persist on all 5 predator slots (3 now inactive, 2 still active)
+    assert flock.is_predator.sum() == 5, (
+        f"is_predator flags must persist on inactive birds, got {flock.is_predator.sum()}"
+    )
+    # Only 2 predators remain active
+    assert flock.is_predator[flock.active].sum() == 2
+
+
+def test_species_carried_through_extend(default_config):
+    """is_predator preserved when arrays grow via add_boids beyond capacity."""
+    cfg = default_config
+    cfg.num_boids = 10
+    flock = PhysicsFlock(cfg)
+
+    # Mark first 3 birds as predators
+    active_idx = np.where(flock.active)[0]
+    flock.is_predator[active_idx[:3]] = True
+    cap_before = flock.N_capacity
+
+    # Add more birds to force extend
+    added = flock.add_boids(cap_before + 50, cfg)
+    assert added > 0
+    assert flock.N_capacity > cap_before
+
+    # First 3 birds should still be predators after extend
+    assert flock.is_predator[active_idx[:3]].all(), (
+        "predator flags lost after _extend()"
+    )
+
+
+def test_is_predator_inactive_preserved(default_config):
+    """Inactive birds' is_predator flags are preserved."""
+    cfg = default_config
+    cfg.num_boids = 10
+    flock = PhysicsFlock(cfg)
+
+    # Make the last 2 active birds predators (they'll be removed first)
+    active_idx = np.where(flock.active)[0]
+    flock.is_predator[active_idx[-2:]] = True
+    assert flock.is_predator.sum() == 2
+
+    # Remove 2 (deactivates last 2 active, which are the predators)
+    flock.remove_boids(2)
+
+    # The deactivated birds should still have is_predator=True
+    # (they're inactive but their flags persist)
+    inactive = np.where(~flock.active)[0]
+    assert len(inactive) == 2
+    assert flock.is_predator[inactive].all(), (
+        "inactive predators should retain their flags"
+    )
+    # And is_predator.sum() still counts them
+    assert flock.is_predator.sum() == 2
+
+
+# ── P0.7 Prev Positions + Acceleration Stash Tests ─────────────
+
+
+def test_prev_positions_initialised(default_config):
+    """prev_positions is (N, 3) float32, initially all zeros."""
+    cfg = default_config
+    cfg.num_boids = 10
+    flock = PhysicsFlock(cfg)
+    assert hasattr(flock, "prev_positions"), "prev_positions must exist"
+    assert flock.prev_positions.shape == (flock.N_capacity, 3)
+    assert flock.prev_positions.dtype == np.float32
+    assert (flock.prev_positions == 0.0).all()
+
+
+def test_last_accelerations_initialised(default_config):
+    """last_accelerations is (N, 3) float32, initially all zeros."""
+    cfg = default_config
+    cfg.num_boids = 10
+    flock = PhysicsFlock(cfg)
+    assert hasattr(flock, "last_accelerations"), "last_accelerations must exist"
+    assert flock.last_accelerations.shape == (flock.N_capacity, 3)
+    assert flock.last_accelerations.dtype == np.float32
+    assert (flock.last_accelerations == 0.0).all()
+
+
+def test_prev_positions_stashed_before_integrate(default_config):
+    """After step(), prev_positions holds the pre-integration positions."""
+    cfg = default_config
+    cfg.num_boids = 20
+    flock = PhysicsFlock(cfg)
+
+    pos_before_step = flock.positions.copy()
+    flock.step(cfg, 1.0 / 60.0)
+
+    # prev_positions should equal positions from before the step
+    np.testing.assert_array_equal(
+        flock.prev_positions, pos_before_step,
+        err_msg="prev_positions must capture pre-integration positions"
+    )
+    # positions should have changed (integration moved birds)
+    assert not np.array_equal(flock.positions, pos_before_step), (
+        "positions should change after step"
+    )
+
+
+def test_last_accelerations_stashed_before_reset(default_config):
+    """After step(), last_accelerations holds the force-computed accelerations."""
+    cfg = default_config
+    cfg.num_boids = 20
+    flock = PhysicsFlock(cfg)
+    flock.step(cfg, 1.0 / 60.0)
+
+    # After step(), accelerations are reset to zero (integrate does this)
+    assert (flock.accelerations[flock.active] == 0.0).all(), (
+        "accelerations should be zero after integrate"
+    )
+    # But last_accelerations should hold the pre-reset values
+    # At minimum, it should be non-zero for at least some birds (forces exist)
+    assert not (flock.last_accelerations[flock.active] == 0.0).all(), (
+        "last_accelerations must capture non-zero force accelerations"
+    )
+
+
+def test_stash_arrays_survive_extend(default_config):
+    """prev_positions and last_accelerations preserved after _extend()."""
+    cfg = default_config
+    cfg.num_boids = 10
+    flock = PhysicsFlock(cfg)
+
+    # Set known values
+    flock.prev_positions[:] = np.arange(30, dtype=np.float32).reshape(10, 3)
+    flock.last_accelerations[:] = np.arange(30, 60, dtype=np.float32).reshape(10, 3)
+    cap_before = flock.N_capacity
+
+    # Force extend
+    flock.add_boids(cap_before + 50, cfg)
+
+    # First 10 rows should be preserved
+    expected_prev = np.arange(30, dtype=np.float32).reshape(10, 3)
+    expected_acc = np.arange(30, 60, dtype=np.float32).reshape(10, 3)
+    np.testing.assert_array_equal(flock.prev_positions[:10], expected_prev)
+    np.testing.assert_array_equal(flock.last_accelerations[:10], expected_acc)
+
+
+# ── P0.8 Per-Bird Max Speed Tests ──────────────────────────────
+
+
+def test_max_speed_default_none(default_config):
+    """max_speed is None by default (scalar v0 fallback)."""
+    cfg = default_config
+    cfg.num_boids = 10
+    flock = PhysicsFlock(cfg)
+    assert hasattr(flock, "max_speed"), "max_speed must exist"
+    assert flock.max_speed is None, "max_speed must be None by default"
+
+
+def test_max_speed_per_bird_lowers_cap(default_config):
+    """Setting per-bird max_speed lowers the speed cap for those birds."""
+    cfg = default_config
+    cfg.num_boids = 5
+    cfg.mode = "projection"
+    flock = PhysicsFlock(cfg)
+
+    # Give every bird a tight speed cap
+    flock.max_speed = np.full(flock.N_capacity, 1.0, dtype=np.float32)
+    # Set velocities above the cap
+    flock.velocities[:] = np.array([[3.0, 0.0, 0.0]] * 5, dtype=np.float32)
+    flock.accelerations[:] = 0.0
+
+    flock.step(cfg, 1.0 / 60.0)
+
+    speeds = np.linalg.norm(flock.velocities[flock.active], axis=1)
+    # All speeds should be clamped to max_speed=1.0, not v0=4.0
+    assert (speeds <= 1.01).all(), f"speeds={speeds} should ≤ 1.0"
+    assert (speeds >= 0.29).all(), f"speeds={speeds} should ≥ 0.3"
+
+
+def test_max_speed_different_per_bird(default_config):
+    """Each bird can have a different max_speed cap."""
+    cfg = default_config
+    cfg.num_boids = 3
+    cfg.mode = "projection"
+    flock = PhysicsFlock(cfg)
+
+    # Bird 0: cap=2.0, Bird 1: cap=1.0, Bird 2: cap=3.0
+    flock.max_speed = np.array([2.0, 1.0, 3.0], dtype=np.float32)
+    # All start at high speed
+    flock.velocities[:] = np.array([[5.0, 0.0, 0.0]] * 3, dtype=np.float32)
+    flock.accelerations[:] = 0.0
+
+    flock.step(cfg, 1.0 / 60.0)
+
+    speeds = np.linalg.norm(flock.velocities, axis=1)
+    assert speeds[0] <= 2.01, f"bird 0 speed={speeds[0]}"
+    assert speeds[1] <= 1.01, f"bird 1 speed={speeds[1]}"
+    assert speeds[2] <= 3.01, f"bird 2 speed={speeds[2]}"
+    # Each should be at their cap (since starting speed 5 > all caps)
+    assert np.isclose(speeds[0], 2.0, atol=0.05)
+    assert np.isclose(speeds[1], 1.0, atol=0.05)
+    assert np.isclose(speeds[2], 3.0, atol=0.05)
+
+
+def test_max_speed_none_uses_scalar_v0(default_config):
+    """When max_speed is None, the scalar v0 from config is used."""
+    cfg = default_config
+    cfg.num_boids = 5
+    cfg.mode = "projection"
+    cfg.v0 = 3.0  # non-default v0
+    flock = PhysicsFlock(cfg)
+
+    # max_speed is None → should use config.v0 = 3.0
+    assert flock.max_speed is None
+    flock.velocities[:] = np.array([[8.0, 0.0, 0.0]] * 5, dtype=np.float32)
+    flock.accelerations[:] = 0.0
+
+    flock.step(cfg, 1.0 / 60.0)
+
+    speeds = np.linalg.norm(flock.velocities[flock.active], axis=1)
+    assert (speeds <= 3.01).all(), f"speeds={speeds} should ≤ 3.0 (cfg.v0)"

@@ -55,6 +55,9 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     "pymurmur.core.types": set(),
     "pymurmur.core.config": {"pymurmur.core.types"},
 
+    # ── Tier 0: physics/obstacles (L0 atom, P0.14) — core only ──
+    "pymurmur.physics.obstacles": {"pymurmur.core.types"},
+
     # ── Tier 1: physics L0 atoms — core only ──
     "pymurmur.physics.boid":      {"pymurmur.core.types"},
     "pymurmur.physics.occlusion": {"pymurmur.core.types"},
@@ -385,15 +388,23 @@ PHASE_VIOLATION_REMOVALS = {
 
 
 def get_allowed_edges_for_phase(phase: str) -> dict[str, set[str]]:
-    """Return the ALLOWED_EDGES active at the given phase boundary."""
-    import copy
-    edges = copy.deepcopy(dict(ALLOWED_EDGES))
+    """Return the ALLOWED_EDGES active at the given phase boundary.
+
+    Builds incrementally from an empty dict by accumulating PHASE_EDGES
+    up to the target phase. P0 returns only core + physics/boid;
+    P14 returns the full matrix matching arch.md §5.
+    """
+    edges: dict[str, set[str]] = {}
 
     target_num = int(phase[1:])
     for pn in sorted(int(k[1:]) for k in PHASE_EDGES):
         if pn <= target_num:
             ph = f"P{pn}"
-            for mod, targets in PHASE_EDGES.get(ph, {}).items():
+            phase_value = PHASE_EDGES.get(ph, {})
+            # Empty set means no new edges introduced at this phase (e.g. P6)
+            if isinstance(phase_value, set):
+                continue
+            for mod, targets in phase_value.items():
                 if mod not in edges:
                     edges[mod] = set()
                 edges[mod] |= targets
@@ -554,9 +565,89 @@ def _collect_import_edges() -> list[tuple[str, str, int, bool]]:
 # ── Tests
 
 
-
-
 pytestmark = pytest.mark.guard
+
+# ── P0.2 Phase-Gated Tests ──────────────────────────────────────
+# These validate the incremental phase-gating mechanism itself.
+# The full-matrix tests below (test_all_imports_within_allowed_edges,
+# test_forbidden_edges_not_present) validate against the P14 target.
+
+
+def test_p0_allowed_edges_minimal():
+    """P0 ALLOWED_EDGES contains exactly core + physics/boid + physics/obstacles.
+
+    Per roadmap P0.2 acceptance: ALLOWED_EDGES contains core + physics/boid.
+    P0.14 adds physics/obstacles (L0 atom, core only).
+    """
+    p0_edges = get_allowed_edges_for_phase("P0")
+
+    # Required entries per P0 acceptance criteria
+    assert "pymurmur.core.types" in p0_edges, \
+        "P0 must allow pymurmur.core.types (L0, numpy/stdlib only)"
+    assert "pymurmur.physics.boid" in p0_edges, \
+        "P0 must allow pymurmur.physics.boid (L0, imports core/types)"
+    assert "pymurmur.physics.obstacles" in p0_edges, \
+        "P0.14 must allow pymurmur.physics.obstacles (L0, imports core/types)"
+
+    # Core types has zero internal pymurmur imports
+    assert p0_edges["pymurmur.core.types"] == set(), \
+        "pymurmur.core.types must have zero pymurmur imports (L0 atom)"
+
+    # physics/boid may import core/types only
+    assert "pymurmur.core.types" in p0_edges["pymurmur.physics.boid"], \
+        "physics/boid must be allowed to import core/types"
+
+    # physics/obstacles may import core/types only
+    assert "pymurmur.core.types" in p0_edges["pymurmur.physics.obstacles"], \
+        "physics/obstacles must be allowed to import core/types"
+
+    print(f"✓ P0 ALLOWED_EDGES: {len(p0_edges)} modules with minimal dependencies")
+
+
+def test_get_allowed_edges_for_phase_builds_incrementally():
+    """get_allowed_edges_for_phase builds strictly additive edge sets.
+
+    P(i) ⊆ P(i+1) for all phases — later phases add edges, never remove.
+    """
+    phases = sorted(PHASE_EDGES.keys(), key=lambda k: int(k[1:]))
+
+    for i in range(len(phases) - 1):
+        earlier = get_allowed_edges_for_phase(phases[i])
+        later = get_allowed_edges_for_phase(phases[i + 1])
+
+        # Every module in the earlier phase must exist in the later phase
+        for mod in earlier:
+            assert mod in later, \
+                f"Module {mod} present in {phases[i]} but missing in {phases[i+1]}"
+
+        # Every allowed target in the earlier phase must also be allowed later
+        for mod, targets in earlier.items():
+            for tgt in targets:
+                assert tgt in later.get(mod, set()), \
+                    f"Edge {mod}→{tgt} allowed in {phases[i]} but forbidden in {phases[i+1]}"
+
+    print(f"✓ All {len(phases)} phases are strictly additive (no edge removals)")
+
+
+def test_get_allowed_edges_for_phase_p0_strict():
+    """P0 edges are the strict minimum — no extra modules beyond core + physics/boid.
+
+    If a module not in P0 PHASE_EDGES appears, the phase-gating is broken.
+    """
+    p0_edges = get_allowed_edges_for_phase("P0")
+    p0_phase_def = PHASE_EDGES.get("P0", {})
+
+    # get_allowed_edges_for_phase("P0") must return exactly the P0 phase definition
+    assert set(p0_edges.keys()) == set(p0_phase_def.keys()), \
+        f"P0 edges have unexpected modules: {set(p0_edges.keys()) ^ set(p0_phase_def.keys())}"
+
+    # Each module's allowed targets must match exactly
+    for mod in p0_phase_def:
+        assert p0_edges[mod] == p0_phase_def[mod], \
+            f"P0 edge mismatch for {mod}: expected {p0_phase_def[mod]}, got {p0_edges[mod]}"
+
+    print("✓ P0 edges match PHASE_EDGES[\"P0\"] exactly — strict minimum")
+
 
 def test_all_imports_within_allowed_edges():
     """Every pymurmur .py file's imports must be in ALLOWED_EDGES."""

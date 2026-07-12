@@ -42,7 +42,7 @@ class Predator(Extension):
         else:
             # Pass through with offset
             self._phase = "approach"
-            self._pos = com + np.random.normal(scale=200, size=3).astype(np.float32)
+            self._pos = com + flock.rng.normal(scale=200, size=3).astype(np.float32)
 
         self._pos += self._vel * 0.016
 

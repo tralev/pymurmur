@@ -39,7 +39,7 @@ def vicsek_forces(flock: PhysicsFlock, config: SimConfig) -> None:
 
     if n_active < 2:
         # Single bird or zero: pure noise direction
-        noise = np.random.normal(scale=noise_d, size=(n_active, 3)).astype(np.float32)
+        noise = flock.rng.normal(scale=noise_d, size=(n_active, 3)).astype(np.float32)
         noise_norms = np.linalg.norm(noise, axis=1, keepdims=True) + 1e-10
         directions = noise / noise_norms
         velocities[active_idx] = directions * v0

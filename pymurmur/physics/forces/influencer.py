@@ -31,7 +31,7 @@ def influencer_forces(flock: PhysicsFlock, config: SimConfig) -> None:
 
     for _ in range(substeps):
         # Compute 3D Lissajous target position
-        t = np.random.uniform(0, 2 * np.pi)
+        t = flock.rng.uniform(0, 2 * np.pi)
         target = np.array([
             200 * np.sin(t * 2.3),
             200 * np.sin(t * 3.7),
