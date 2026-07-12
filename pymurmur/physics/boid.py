@@ -35,6 +35,7 @@ def integrate(
     inertia: float = 0.0,
     move: bool = True,
     speed_min_factor: float = 0.3,
+    center: np.ndarray | None = None,
 ) -> None:
     """Vectorised Euler integration over the entire flock.
 
@@ -46,6 +47,9 @@ def integrate(
     inertia: 0.0–1.0 lerp between raw and clamped velocity.
     move: if False, skip position update (caller owns positions).
     """
+    # 0. Safety rails: dt clamp (P0.10)
+    dt = float(np.clip(dt, 0.0, 0.05))
+
     # 1. Apply accumulated forces (only active birds)
     velocities[active] += accelerations[active]
 
@@ -123,6 +127,13 @@ def integrate(
 
     # 8. Reset accelerations for next frame
     accelerations[active] = np.float32(0.0)
+
+    # 9. NaN guard: reset any non-finite positions to centre (P0.10)
+    if center is not None:
+        bad = (~np.isfinite(positions)).any(axis=1) & active
+        if bad.any():
+            positions[bad] = center.astype(np.float32)
+            velocities[bad] = 0.0
 
 
 def _apply_boundary(

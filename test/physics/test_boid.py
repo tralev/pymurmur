@@ -294,7 +294,7 @@ def test_integrate_stationary_bird_gets_reseed():
 
 
 def test_integrate_dt_scaling():
-    """Doubling dt doubles position change for same velocity."""
+    """Doubling dt doubles position change (within clamped range)."""
     N = 5
     active = np.ones(N, dtype=bool)
     pt_ref = np.random.randn(N, 3).astype(np.float32) * 100 + 500
@@ -303,15 +303,15 @@ def test_integrate_dt_scaling():
     pos_b = pt_ref.copy()
     vel = np.ones((N, 3), dtype=np.float32) * 2.0
 
+    # Use dt within [0, 0.05] range to avoid clamp
     integrate(pos_a, vel.copy(), np.zeros((N, 3), dtype=np.float32),
-              active, 1000.0, 700.0, 400.0, 4.0, "open", 0.5)
+              active, 1000.0, 700.0, 400.0, 4.0, "open", 0.01)
     integrate(pos_b, vel.copy(), np.zeros((N, 3), dtype=np.float32),
-              active, 1000.0, 700.0, 400.0, 4.0, "open", 1.0)
+              active, 1000.0, 700.0, 400.0, 4.0, "open", 0.02)
 
     disp_a = np.linalg.norm(pos_a - pt_ref, axis=1)
     disp_b = np.linalg.norm(pos_b - pt_ref, axis=1)
     ratio = disp_b / disp_a
-    # ratio should be ~2.0 (within speed clamp tolerance)
     assert np.allclose(ratio, 2.0, atol=0.3), f"ratio={ratio}"
 
 
@@ -372,16 +372,19 @@ def test_boundary_toroidal_velocity_preserved():
 
 
 def test_boundary_open():
-    """Bird can leave domain freely — no position clamp."""
+    """Bird can leave domain freely — no position clamp (open boundary)."""
     N = 1
-    # Speed clamp limits to v0=4.0, so with dt=10, bird moves 40 units
+    # dt clamped to max 0.05, so bird moves v0 * 0.05 = 0.2 per frame
     pos = np.array([[990.0, 350.0, 200.0]], dtype=np.float32)
     vel = np.array([[4.0, 0.0, 0.0]], dtype=np.float32)
     acc = np.zeros((N, 3), dtype=np.float32)
     active = np.ones(N, dtype=bool)
 
-    integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0, 4.0, "open", 10.0)
-    # Bird should be outside domain (990 + 4*10 = 1030 > 1000)
+    # Call integrate many times to leave domain
+    for _ in range(100):
+        integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0,
+                  4.0, "open", 1.0)
+    # After 100 frames at dt=0.05 (clamped), bird moves 4*0.05*100 = 20 units
     assert pos[0, 0] > 1000.0
 
 
@@ -820,3 +823,114 @@ def test_speed_mode_fixed_with_max_speed():
     assert np.isclose(speeds[0], 2.0, atol=0.05)
     assert np.isclose(speeds[1], 3.0, atol=0.05)
     assert np.isclose(speeds[2], 5.0, atol=0.05)
+
+
+# ── P0.10 Safety Rails ─────────────────────────────────────────
+
+
+def test_dt_clamped():
+    """dt > 0.05 is clamped to exactly 0.05."""
+    N = 3
+    pos = np.zeros((N, 3), dtype=np.float32)
+    vel = np.array([[1.0, 0, 0]] * N, dtype=np.float32)
+    acc = np.zeros((N, 3), dtype=np.float32)
+    active = np.ones(N, dtype=bool)
+    pos_before = pos.copy()
+
+    # dt=1.0 → clamped to 0.05
+    integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0,
+              4.0, "open", 1.0)  # dt=1.0, clamped to 0.05
+
+    # Movement should be vel * 0.05 = 0.05, not vel * 1.0 = 1.0
+    displacement = np.linalg.norm(pos - pos_before, axis=1)
+    assert np.allclose(displacement, 0.05, atol=0.01), (
+        f"dt should be clamped to 0.05, displacement={displacement}"
+    )
+
+
+def test_dt_negative_clamped():
+    """dt < 0 is clamped to 0 (no movement)."""
+    N = 3
+    pos = np.zeros((N, 3), dtype=np.float32)
+    vel = np.array([[1.0, 0, 0]] * N, dtype=np.float32)
+    acc = np.zeros((N, 3), dtype=np.float32)
+    active = np.ones(N, dtype=bool)
+    pos_before = pos.copy()
+
+    integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0,
+              4.0, "open", -0.5)
+
+    # Negative dt → clamped to 0 → no movement
+    np.testing.assert_array_equal(pos, pos_before)
+
+
+def test_dt_within_range_unchanged():
+    """dt within [0, 0.05] passes through unchanged."""
+    N = 3
+    pos = np.zeros((N, 3), dtype=np.float32)
+    vel = np.array([[1.0, 0, 0]] * N, dtype=np.float32)
+    acc = np.zeros((N, 3), dtype=np.float32)
+    active = np.ones(N, dtype=bool)
+
+    # dt = 1/60 ≈ 0.0167, within range
+    integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0,
+              4.0, "open", 1.0 / 60.0)
+
+    displacement = np.linalg.norm(pos, axis=1)
+    assert np.allclose(displacement, 1.0 / 60.0, atol=0.01)
+
+
+def test_nan_guard_resets_to_center():
+    """NaN positions are reset to centre, velocity zeroed."""
+    N = 3
+    center = np.array([500.0, 350.0, 200.0], dtype=np.float32)
+    pos = np.array([
+        [np.nan, 200.0, 100.0],
+        [400.0, np.nan, 200.0],
+        [300.0, 100.0, np.nan],
+    ], dtype=np.float32)
+    vel = np.array([[4.0, 0, 0]] * N, dtype=np.float32)
+    acc = np.zeros((N, 3), dtype=np.float32)
+    active = np.ones(N, dtype=bool)
+
+    integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0,
+              4.0, "open", 1.0 / 60.0, center=center)
+
+    # All NaN positions reset to centre
+    np.testing.assert_array_equal(pos, np.tile(center, (N, 1)).astype(np.float32))
+    # Velocities zeroed for reset birds
+    assert (vel == 0.0).all()
+
+
+def test_nan_guard_skips_without_center():
+    """When center is None, NaN guard is skipped (no crash)."""
+    N = 2
+    pos = np.array([[np.nan, 200.0, 100.0], [400.0, 300.0, 200.0]], dtype=np.float32)
+    vel = np.ones((N, 3), dtype=np.float32)
+    acc = np.zeros((N, 3), dtype=np.float32)
+    active = np.ones(N, dtype=bool)
+
+    # center=None (default) — should complete without error
+    integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0,
+              4.0, "open", 1.0 / 60.0)
+    # Bird 0 still has NaN (no guard without center)
+    assert np.isnan(pos[0, 0])
+
+
+def test_nan_guard_only_active():
+    """NaN on inactive bird is not reset."""
+    N = 3
+    center = np.array([500.0, 350.0, 200.0], dtype=np.float32)
+    pos = np.array([[np.nan, 200.0, 100.0]] * N, dtype=np.float32)
+    vel = np.ones((N, 3), dtype=np.float32)
+    acc = np.zeros((N, 3), dtype=np.float32)
+    active = np.array([False, False, True])  # only bird 2 active
+
+    integrate(pos, vel, acc, active, 1000.0, 700.0, 400.0,
+              4.0, "open", 1.0 / 60.0, center=center)
+
+    # Bird 2 (active) reset to centre
+    np.testing.assert_array_equal(pos[2], center)
+    # Birds 0, 1 (inactive) still NaN
+    assert np.isnan(pos[0, 0])
+    assert np.isnan(pos[1, 0])

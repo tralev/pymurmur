@@ -83,6 +83,7 @@ class PhysicsFlock:
                     config.boundary_sphere_radius, config.boundary_avoidance_factor,
                     rng=self.rng,
                     max_speed=self.max_speed,
+                    center=self.center,
                 )
 
         # 5. Update smoothed centre (EMA centroid)
