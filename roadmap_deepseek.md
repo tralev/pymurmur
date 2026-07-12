@@ -142,6 +142,8 @@ dependency-gated examples in `scripts/`; presets in `conf/`.
 - Instanced GPU rendering (ModernGL tetrahedra, Blinn-Phong, themes)
 - Orbit camera, headless FBO→GIF/CSV/JSON capture, metrics collector
 - Phase diagram sweep, density scaling sweep, EvoFlock GA (SSGA, 10 params, 4 objectives)
+- **Evolved artifact:** `output/evolved.yaml` from previous SSGA run — 10 params saved;
+  obstacle objective is neutered to 1.0 (no SDF collision tracking yet, see P0.14/P11)
 - Perf diagnostics (EMA timing) — adaptive ladder unwired
 
 ### Structural gaps (highest impact first)
@@ -548,6 +550,51 @@ correct wrap for min_image, boundary endpoints for smoothstep, range for hash01)
 `core/types.py` gains 10 math helpers. `physics/obstacles.py` created (5 SDF functions).
 Five position-init strategies (`box`, `sphere_shell`, `gaussian`, `grid`, `blob`) shipped;
 `cfg.flock.position_init` selector functional.
+
+#### P0.16 — Validate evolved.yaml artifact `[L3]`
+
+**File:** `test/analysis/test_evolved_yaml.py`. **Data:** `output/evolved.yaml`.
+
+**Verbal idea.** A previous EvoFlock GA run produced `output/evolved.yaml` with
+10 evolved parameters. Before any refactor, pin a validation test that loads this
+artifact and asserts every parameter is within its documented range. This prevents
+silent corruption of the evolved artifact and serves as a contract test for the
+obstacle objective (currently neutered to 1.0 until P0.14 ships SDF collision
+tracking).
+
+**Test** (`test/analysis/test_evolved_yaml.py`):
+```python
+def test_evolved_yaml_loads():
+    """output/evolved.yaml exists and parses as valid YAML."""
+    import yaml
+    path = Path("output/evolved.yaml")
+    assert path.exists(), f"{path} not found"
+    with open(path) as f:
+        data = yaml.safe_load(f)
+    assert isinstance(data, dict)
+
+@pytest.mark.parametrize("param, lo, hi", [
+    ("separation_weight", 0.0, 20.0),
+    ("alignment_weight", 0.0, 10.0),
+    ("cohesion_weight", 0.0, 10.0),
+    ("noise_scale", 0.0, 10.0),
+    ("max_force", 0.01, 10.0),
+    ("phi_p", 0.0, 1.0),
+    ("phi_a", 0.0, 5.0),
+    ("steric", 0.0, 5.0),
+    ("predictive_avoid_weight", 0.0, 200.0),
+    ("static_avoid_weight", 0.0, 200.0),
+])
+def test_evolved_param_in_range(param, lo, hi):
+    """Every evolved parameter is within its valid range."""
+    import yaml
+    with open("output/evolved.yaml") as f:
+        data = yaml.safe_load(f)
+    val = data[param]
+    assert lo <= val <= hi, f"{param}={val} outside [{lo}, {hi}]"
+```
+
+**Citation:** Previous session EvoFlock run; `sci/todo_claude_sci10.md` §1.
 
 ---
 

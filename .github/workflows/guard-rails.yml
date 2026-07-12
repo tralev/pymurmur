@@ -212,6 +212,25 @@ jobs:
         \   | grep 'selected' | grep -oP '\\d+(?= tests)')\n  echo \"  Doc tests collected:  ${doc_count}\"\n  if [ \"${doc_count:-0}\"\
         \ -lt 2 ]; then\n    echo \"ERROR: fewer than 2 doc-drift tests collected\"\n    exit 1\n  fi\n  echo \"✓ Collection-count\
         \ minimums satisfied\"\nfi\n"
+  guard-rail-evolved:
+    name: P0.16 — Evolved artifact validation
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install deps
+      run: pip install numpy scipy PyYAML pytest
+    - name: Validate evolved.yaml artifact
+      run: "mkdir -p output\npytest test/analysis/test_evolved_yaml.py \\\n  -v --tb=long --timeout=30 \\\n  --junitxml=output/guard-evolved.xml\n"
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: guard-results-evolved
+        path: output/guard-evolved.xml
   guard-rails-summary:
     name: All guard rails
     needs:
@@ -221,6 +240,7 @@ jobs:
     - guard-rail-3d
     - guard-rail-doc-links
     - guard-rail-collection-count
+    - guard-rail-evolved
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -228,9 +248,9 @@ jobs:
       run: "echo \"Checking guard rail results...\"\necho \"  DAG:               ${{ needs.guard-rail-dag.result }}\"\necho\
         \ \"  Golden:            ${{ needs.guard-rail-golden.result }}\"\necho \"  Config drift:      ${{ needs.guard-rail-config-drift.result\
         \ }}\"\necho \"  Strictly-3D:       ${{ needs.guard-rail-3d.result }}\"\necho \"  Doc links:         ${{ needs.guard-rail-doc-links.result\
-        \ }}\"\necho \"  Collection count:  ${{ needs.guard-rail-collection-count.result }}\"\n\nFAILED=0\nfor job in \"${{\
+        \ }}\"\necho \"  Evolved artifact:  ${{ needs.guard-rail-evolved.result }}\"\necho \"  Collection count:  ${{ needs.guard-rail-collection-count.result }}\"\n\nFAILED=0\nfor job in \"${{\
         \ needs.guard-rail-dag.result }}\" \\\n           \"${{ needs.guard-rail-golden.result }}\" \\\n           \"${{ needs.guard-rail-config-drift.result\
         \ }}\" \\\n           \"${{ needs.guard-rail-3d.result }}\" \\\n           \"${{ needs.guard-rail-doc-links.result\
-        \ }}\" \\\n           \"${{ needs.guard-rail-collection-count.result }}\"; do\n  if [ \"$job\" = \"failure\" ] ||\
+        \ }}\" \\\n           \"${{ needs.guard-rail-evolved.result }}\" \\\n           \"${{ needs.guard-rail-collection-count.result }}\"; do\n  if [ \"$job\" = \"failure\" ] ||\
         \ [ \"$job\" = \"cancelled\" ]; then\n    FAILED=$((FAILED + 1))\n  fi\ndone\n\nif [ $FAILED -gt 0 ]; then\n  echo\
-        \ \"❌ $FAILED guard rail(s) failed — blocking merge\"\n  exit 1\nfi\n\necho \"✓ All 6 P14 guard rails passed\"\n"
+        \ \"❌ $FAILED guard rail(s) failed — blocking merge\"\n  exit 1\nfi\n\necho \"✓ All 7 P14 guard rails passed\"\n"

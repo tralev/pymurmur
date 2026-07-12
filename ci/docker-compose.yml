@@ -105,7 +105,8 @@ services:
     command: >
       sh -c "pytest $(ls test/test_imports.py test/test_architecture.py
       test/test_docs.py test/test_golden.py test/test_mode_switch_no_crash.py
-      test/test_subsystem_*.py 2>/dev/null | tr '\n' ' ')
+      test/analysis/test_evolved_yaml.py test/test_subsystem_*.py
+      2>/dev/null | tr '\n' ' ')
       -v --timeout=60 --tb=short
       --junitxml=output/test-results-guards.xml"
     volumes:
