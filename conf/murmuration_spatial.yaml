@@ -63,7 +63,6 @@ predator:
 # ── Performance Tuning (300K target) ────────────────────────────────
 # For N >= 50000 these settings are critical; at low N they have no effect.
 performance:
-  use_numba: true             # JIT-compile hot force loops (spatial mode needs it at 300K)
   spatial_index: kdtree       # auto | hash_grid | kdtree (kdtree required for 50+ neighbors per bird)
   instance_buffer_chunk: 50000  # GPU buffer growth increment (birds per reallocation)
 
@@ -83,7 +82,6 @@ visual:
   show_grid: true
   auto_rotate: false
   theme: ink              # dark boids on light background
-  trails: velocity        # show motion streaks
 
 # ── Capture Settings ────────────────────────────────────────────────
 capture:

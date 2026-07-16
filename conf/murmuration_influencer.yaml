@@ -62,7 +62,6 @@ extensions:
 # Influencer mode is O(1) per bird — no neighbor queries at all. Fastest mode.
 # numba is NOT needed (the Lissajous target is a single O(1) evaluation).
 performance:
-  use_numba: false            # influencer mode has no per-bird loops to accelerate
   spatial_index: none         # auto | hash_grid | kdtree | none (no neighbor interactions)
   instance_buffer_chunk: 50000  # GPU buffer growth increment (birds per reallocation)
 
@@ -82,7 +81,6 @@ visual:
   show_grid: true           # grid helps show the target's motion through space
   auto_rotate: true         # orbit camera to see the 3D Lissajous path
   theme: paper              # warm tones suit the organic influencer aesthetic
-  trails: accumulation      # persistent trails show the flock's history
 
 # ── Capture Settings ────────────────────────────────────────────────
 capture:

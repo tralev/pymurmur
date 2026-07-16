@@ -67,7 +67,6 @@ predator:
 # Vicsek mode uses cKDTree for neighbor queries; force computation is vectorised numpy.
 # numba is optional at 300K (vicsek per-bird math is simple angle averaging).
 performance:
-  use_numba: false            # Vicsek math is simple enough for vectorised numpy at 300K
   spatial_index: kdtree       # auto | hash_grid | kdtree (needed for alignment/avoidance radii)
   instance_buffer_chunk: 50000  # GPU buffer growth increment (birds per reallocation)
 
@@ -87,7 +86,6 @@ visual:
   show_grid: false
   auto_rotate: false
   theme: inverse            # light boids on dark background
-  trails: off               # Vicsek has no velocity magnitude for trails
 
 # ── Capture Settings ────────────────────────────────────────────────
 capture:

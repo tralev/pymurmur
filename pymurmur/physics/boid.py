@@ -308,6 +308,8 @@ def init_positions(
 
     Returns:
         (n, 3) float32 position array
+
+    For blob velocities, use init_velocities_blob() — P3.10 drift-biased tangentials.
     """
     rng = rng or np.random.default_rng()
     C = np.array([width / 2, height / 2, depth / 2], dtype=np.float32)
@@ -354,3 +356,29 @@ def init_positions(
 
     else:  # "box" (legacy)
         return random_positions(n, width, height, depth, rng)
+
+
+# ── P3.10: Blob velocity init (drift-biased tangential) ────────────
+
+def init_velocities_blob(
+    n: int,
+    v0: float,
+    rng: np.random.Generator | None = None,
+) -> np.ndarray:
+    """P3.10: Drift-biased tangential velocities for blob mode.
+
+    v = ((0.34 ± 0.08), ±0.16, (0.08 ± 0.08)) · v0 · 0.5
+
+    Creates a gentle forward drift (positive x) with modest y/z spread.
+
+    Returns (n, 3) float32 velocity array.
+    """
+    rng = rng or np.random.default_rng()
+    v = np.empty((n, 3), dtype=np.float32)
+    # x: 0.34 ± 0.08 → uniform(0.26, 0.42)
+    v[:, 0] = 0.34 + rng.uniform(-0.08, 0.08, n).astype(np.float32)
+    # y: ±0.16 → uniform(-0.16, 0.16)
+    v[:, 1] = rng.uniform(-0.16, 0.16, n).astype(np.float32)
+    # z: 0.08 ± 0.08 → uniform(0.0, 0.16)
+    v[:, 2] = 0.08 + rng.uniform(-0.08, 0.08, n).astype(np.float32)
+    return (v * v0 * 0.5).astype(np.float32)

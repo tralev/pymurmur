@@ -101,7 +101,6 @@ class TestSubsystemA:
         """Performance fields have correct defaults."""
         from pymurmur.core.config import SimConfig
         cfg = SimConfig()
-        assert cfg.use_numba is True
         assert cfg.spatial_index == "auto"
         assert cfg.metrics_detail_level == 1
         assert cfg.metrics_interval == 60

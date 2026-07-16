@@ -6,6 +6,9 @@ import pytest
 from pymurmur.physics.flock import PhysicsFlock, SpatialHashGrid, KDTreeIndex
 
 
+from test.helpers import _step_flock  # noqa: E402 — shared test helper
+
+
 def test_flock_init_creates_birds(default_config):
     """PhysicsFlock(config) has N_active == config.num_boids."""
     cfg = default_config
@@ -78,7 +81,7 @@ def test_flock_step_runs(default_config):
     cfg = default_config
     cfg.num_boids = 10
     flock = PhysicsFlock(cfg)
-    flock.step(cfg, 1.0 / 60.0)
+    _step_flock(flock, cfg, 1.0 / 60.0)
     assert flock.N_active == 10
 
 
@@ -88,7 +91,7 @@ def test_flock_step_positions_change(default_config):
     cfg.num_boids = 20
     flock = PhysicsFlock(cfg)
     pos_before = flock.positions[flock.active].copy()
-    flock.step(cfg, 1.0 / 60.0)
+    _step_flock(flock, cfg, 1.0 / 60.0)
     pos_after = flock.positions[flock.active]
     assert not np.allclose(pos_before, pos_after)
 
@@ -193,13 +196,20 @@ def test_hash_grid_query_returns_self(small_flock):
 
 
 def test_hash_grid_query_empty(small_flock):
-    """Query with radius=0 returns only birds in same cell."""
+    """Query in empty cell returns no candidates when no birds present."""
     grid = small_flock.get_index()
     if isinstance(grid, SpatialHashGrid):
+        # Place all birds at a known cell
+        small_flock.positions[:] = np.array([500.0, 350.0, 200.0], dtype=np.float32)
         grid.rebuild(small_flock.positions, small_flock.active)
-        # Query far from all birds
-        far = np.array([99999.0, 99999.0, 99999.0], dtype=np.float32)
-        candidates = grid.query_radius(far, 10.0)
+
+        # Query in a cell far from the birds' cell
+        # With cell_size=70 and cols=15 (1000/70), bird cell = (7, 5, 2)
+        # Query at cell (4, 5, 2) — neighbor cells {3,4,5} don't include 7
+        far = np.array([300.0, 350.0, 200.0], dtype=np.float32)
+        candidates = grid.query_radius(far, 50.0)
+        # With cell_size=70, 27-cell neighborhood from cell (4,5,2)
+        # doesn't reach cell (7,5,2) → no candidates
         assert len(candidates) == 0
 
 
@@ -227,14 +237,17 @@ def test_hash_grid_inactive_excluded(small_flock):
 
 
 def test_hash_grid_cell_wrapping():
-    """Query near domain edge correctly searches adjacent cells only.
+    """Query near domain edge finds birds across the toroidal seam (P2.5).
 
-    Note: SpatialHashGrid does NOT implement toroidal wrapping.
-    Cell keys are computed as int(pos // cell_size) without modulo.
-    This test verifies the actual (non-wrapping) behaviour."""
+    Modulo-wrapped cell keys + min-image distances enable correct
+    cross-boundary neighbour queries."""
     from pymurmur.core.config import SimConfig
     cfg = SimConfig()
     cfg.num_boids = 4
+    cfg.width = 1000
+    cfg.height = 700
+    cfg.depth = 400
+    cfg.visual_range = 100  # small enough to separate birds
     flock = PhysicsFlock(cfg)
     grid = flock.get_index()
     if isinstance(grid, SpatialHashGrid):
@@ -247,17 +260,92 @@ def test_hash_grid_cell_wrapping():
         ], dtype=np.float32)
         grid.rebuild(flock.positions, flock.active)
 
-        # Query at x≈0 should find bird[0] but NOT bird[1] (no wrapping)
+        # P2.5: query at x≈0 finds bird[0] AND cross-seam bird[1]
         candidates_near_0 = grid.query_radius(
             np.array([5, 350, 200], dtype=np.float32), 50.0)
-        assert 0 in candidates_near_0
-        assert 1 not in candidates_near_0  # no toroidal wrap
+        assert 0 in candidates_near_0, "bird at x=10 should be found"
+        assert 1 in candidates_near_0, (
+            "P2.5: bird at x=990 should be found cross-seam via wrapped cells"
+        )
 
-        # Query at x≈1000 should find bird[1] but NOT bird[0]
+        # P2.5: query at x≈1000 finds bird[1] AND cross-seam bird[0]
         candidates_near_1000 = grid.query_radius(
             np.array([995, 350, 200], dtype=np.float32), 50.0)
-        assert 1 in candidates_near_1000
-        assert 0 not in candidates_near_1000
+        assert 1 in candidates_near_1000, "bird at x=990 should be found"
+        assert 0 in candidates_near_1000, (
+            "P2.5: bird at x=10 should be found cross-seam via wrapped cells"
+        )
+
+
+def test_hash_grid_toroidal_distance():
+    """P2.5: query_knn uses min-image distances for correct toroidal ranking.
+
+    Two birds near opposite X boundaries: bird at x=10, bird at x=990.
+    Toroidal distance between them is ~20 (across the seam), not ~980.
+    query_knn should rank by toroidal distance."""
+    from pymurmur.core.config import SimConfig
+    cfg = SimConfig()
+    cfg.num_boids = 4
+    cfg.width = 1000
+    cfg.height = 700
+    cfg.depth = 400
+    cfg.visual_range = 200
+    flock = PhysicsFlock(cfg)
+    grid = flock.get_index()
+    if isinstance(grid, SpatialHashGrid):
+        flock.positions[:] = np.array([
+            [10, 350, 200],     # bird 0
+            [990, 350, 200],    # bird 1: ~20 away toroidally
+            [500, 350, 200],    # bird 2: ~490 away
+            [500, 600, 200],    # bird 3: far
+        ], dtype=np.float32)
+        grid.rebuild(flock.positions, flock.active)
+
+        # Query from bird 0
+        result = grid.query_knn(flock.positions[0], k=3)
+
+        # bird 1 (toroidal neighbor) should be closest
+        assert result[0] == 1, (
+            f"Expected bird 1 closest (toroidal dist ~20), got {list(result)}"
+        )
+
+
+def test_hash_grid_toroidal_yz_axes():
+    """P2.5: cross-seam queries work for Y and Z axes too.
+
+    Birds near opposite Y boundaries (y=10, y=690) and Z boundaries
+    (z=10, z=390) should find each other across the seam."""
+    from pymurmur.core.config import SimConfig
+    cfg = SimConfig()
+    cfg.num_boids = 6
+    cfg.width = 1000
+    cfg.height = 700
+    cfg.depth = 400
+    cfg.visual_range = 150
+    flock = PhysicsFlock(cfg)
+    grid = flock.get_index()
+    if isinstance(grid, SpatialHashGrid):
+        flock.positions[:] = np.array([
+            [500, 10, 200],     # bird 0 — near y=0
+            [500, 690, 200],    # bird 1 — near y=700, toroidal ~20
+            [500, 350, 10],     # bird 2 — near z=0
+            [500, 350, 390],    # bird 3 — near z=400, toroidal ~20
+            [500, 350, 200],    # bird 4 — centre
+            [500, 500, 200],    # bird 5 — far
+        ], dtype=np.float32)
+        grid.rebuild(flock.positions, flock.active)
+
+        # Y-axis: bird 0 at y=10 queries → bird 1 should be found cross-seam
+        candidates_y = grid.query_radius(flock.positions[0], 50.0)
+        assert 1 in candidates_y, (
+            f"P2.5 Y-axis: bird at y=690 should be found cross-seam, got {candidates_y}"
+        )
+
+        # Z-axis: bird 2 at z=10 queries → bird 3 should be found cross-seam
+        candidates_z = grid.query_radius(flock.positions[2], 50.0)
+        assert 3 in candidates_z, (
+            f"P2.5 Z-axis: bird at z=390 should be found cross-seam, got {candidates_z}"
+        )
 
 
 # ── KDTreeIndex tests ─────────────────────────────────────────────
@@ -367,7 +455,7 @@ def test_index_skip_for_field_mode(default_config):
         index._bins.clear()
 
     # Step should complete without error and without rebuilding
-    flock.step(cfg, 1.0 / 60.0)
+    _step_flock(flock, cfg, 1.0 / 60.0)
     # Index should remain empty since field mode skips rebuild
     if isinstance(index, SpatialHashGrid):
         assert not index.ready, "Field mode should skip index rebuild"
@@ -382,7 +470,7 @@ def test_index_rebuilt_for_spatial_mode(default_config):
     flock = PhysicsFlock(cfg)
     index = flock.get_index()
 
-    flock.step(cfg, 1.0 / 60.0)
+    _step_flock(flock, cfg, 1.0 / 60.0)
     # Index should be ready after step for spatial mode
     if isinstance(index, SpatialHashGrid):
         assert index.ready, "Spatial mode should rebuild index"
@@ -397,7 +485,7 @@ def test_index_rebuilt_for_projection_mode(default_config):
     flock = PhysicsFlock(cfg)
     index = flock.get_index()
 
-    flock.step(cfg, 1.0 / 60.0)
+    _step_flock(flock, cfg, 1.0 / 60.0)
     if isinstance(index, SpatialHashGrid):
         assert index.ready, "Projection mode should rebuild index"
 
@@ -414,13 +502,13 @@ def test_index_skip_for_influencer_mode(default_config):
     if isinstance(index, SpatialHashGrid):
         index._bins.clear()
 
-    flock.step(cfg, 1.0 / 60.0)
+    _step_flock(flock, cfg, 1.0 / 60.0)
     if isinstance(index, SpatialHashGrid):
         assert not index.ready, "Influencer mode should skip index rebuild"
 
 
-def test_index_skip_for_vicsek_mode(default_config):
-    """Vicsek mode skips flock-level index (builds its own cKDTree)."""
+def test_index_rebuilt_for_vicsek_mode(default_config):
+    """Vicsek mode now uses the flock-level spatial index (I3.1)."""
     from pymurmur.physics.flock import SpatialHashGrid
     cfg = default_config
     cfg.num_boids = 20
@@ -428,12 +516,9 @@ def test_index_skip_for_vicsek_mode(default_config):
     flock = PhysicsFlock(cfg)
     index = flock.get_index()
 
+    _step_flock(flock, cfg, 1.0 / 60.0)
     if isinstance(index, SpatialHashGrid):
-        index._bins.clear()
-
-    flock.step(cfg, 1.0 / 60.0)
-    if isinstance(index, SpatialHashGrid):
-        assert not index.ready, "Vicsek mode should skip flock-level index rebuild"
+        assert index.ready, "Vicsek mode should rebuild shared index (I3.1)"
 
 
 # ── P0.4 Determinism Tests ─────────────────────────────────────
@@ -502,6 +587,39 @@ def test_same_seed_bit_identical_spatial():
     np.testing.assert_array_equal(e1.flock.positions, e2.flock.positions)
 
 
+def test_same_seed_bit_identical_spatial_with_noise():
+    """Spatial mode with noise_scale > 0 is deterministic (I1.5 regression).
+
+    This guards against noise_force being called without the seeded rng —
+    a missing rng argument causes np.random.default_rng() which produces
+    different values on every call.  Fixed by passing rng to noise_force.
+    """
+    from pymurmur.simulation.engine import SimulationEngine
+    from pymurmur.core.config import SimConfig
+
+    cfg = SimConfig()
+    cfg.seed = 99
+    cfg.num_boids = 40
+    cfg.mode = "spatial"
+    cfg.noise_scale = 1.5
+
+    e1 = SimulationEngine(cfg)
+    e2 = SimulationEngine(cfg)
+
+    for _ in range(50):
+        e1.step(1.0 / 60.0)
+        e2.step(1.0 / 60.0)
+
+    np.testing.assert_array_equal(
+        e1.flock.positions, e2.flock.positions,
+        err_msg="spatial mode with noise_scale > 0 must be deterministic (I1.5)"
+    )
+    np.testing.assert_array_equal(
+        e1.flock.velocities, e2.flock.velocities,
+        err_msg="spatial mode with noise_scale > 0 must be deterministic (I1.5)"
+    )
+
+
 def test_same_seed_bit_identical_field():
     """Field mode also produces bit-identical results with same seed."""
     from pymurmur.simulation.engine import SimulationEngine
@@ -522,20 +640,94 @@ def test_same_seed_bit_identical_field():
     np.testing.assert_array_equal(e1.flock.positions, e2.flock.positions)
 
 
-def test_different_seeds_diverge():
-    """Different seeds produce different positions after 100 steps."""
+def test_same_seed_bit_identical_vicsek():
+    """Vicsek mode produces bit-identical results with same seed (I1.5)."""
+    from pymurmur.simulation.engine import SimulationEngine
+    from pymurmur.core.config import SimConfig
+
+    cfg = SimConfig()
+    cfg.seed = 42
+    cfg.num_boids = 50
+    cfg.mode = "vicsek"
+
+    e1 = SimulationEngine(cfg)
+    e2 = SimulationEngine(cfg)
+
+    for _ in range(100):
+        e1.step(1.0 / 60.0)
+        e2.step(1.0 / 60.0)
+
+    np.testing.assert_array_equal(e1.flock.positions, e2.flock.positions)
+    np.testing.assert_array_equal(e1.flock.velocities, e2.flock.velocities)
+
+
+def test_same_seed_bit_identical_influencer():
+    """Influencer mode produces bit-identical results with same seed (I1.5)."""
+    from pymurmur.simulation.engine import SimulationEngine
+    from pymurmur.core.config import SimConfig
+
+    cfg = SimConfig()
+    cfg.seed = 77
+    cfg.num_boids = 30
+    cfg.mode = "influencer"
+
+    e1 = SimulationEngine(cfg)
+    e2 = SimulationEngine(cfg)
+
+    for _ in range(100):
+        e1.step(1.0 / 60.0)
+        e2.step(1.0 / 60.0)
+
+    np.testing.assert_array_equal(e1.flock.positions, e2.flock.positions)
+    np.testing.assert_array_equal(e1.flock.velocities, e2.flock.velocities)
+
+
+def test_all_modes_deterministic():
+    """Parametric: every force mode produces bit-identical results with same seed."""
+    from pymurmur.simulation.engine import SimulationEngine
+    from pymurmur.core.config import SimConfig
+
+    for mode in ["projection", "spatial", "field", "vicsek", "influencer"]:
+        cfg = SimConfig()
+        cfg.seed = 123
+        cfg.num_boids = 20
+        cfg.mode = mode
+        if mode == "spatial":
+            cfg.noise_scale = 1.0  # exercise the noise RNG path (I1.5 regression guard)
+
+        e1 = SimulationEngine(cfg)
+        e2 = SimulationEngine(cfg)
+
+        for _ in range(50):
+            e1.step(1.0 / 60.0)
+            e2.step(1.0 / 60.0)
+
+        np.testing.assert_array_equal(
+            e1.flock.positions, e2.flock.positions,
+            err_msg=f"{mode}: same seed must produce bit-identical positions"
+        )
+
+
+@pytest.mark.parametrize("mode", ["projection", "spatial", "field", "vicsek", "influencer"])
+def test_different_seeds_diverge(mode):
+    """Different seeds produce different positions after 100 steps.
+
+    Parametrized across all 5 force modes. Verifies that seed-based
+    RNG pipeline works for every mode — different seed → different
+    trajectory, which is the complement of the bit-identical test.
+    """
     from pymurmur.simulation.engine import SimulationEngine
     from pymurmur.core.config import SimConfig
 
     cfg1 = SimConfig()
     cfg1.seed = 42
     cfg1.num_boids = 30
-    cfg1.mode = "projection"
+    cfg1.mode = mode
 
     cfg2 = SimConfig()
     cfg2.seed = 99
     cfg2.num_boids = 30
-    cfg2.mode = "projection"
+    cfg2.mode = mode
 
     e1 = SimulationEngine(cfg1)
     e2 = SimulationEngine(cfg2)
@@ -545,7 +737,7 @@ def test_different_seeds_diverge():
         e2.step(1.0 / 60.0)
 
     assert not np.array_equal(e1.flock.positions, e2.flock.positions), (
-        "Different seeds must produce different positions"
+        f"{mode}: different seeds must produce different positions"
     )
 
 
@@ -557,7 +749,7 @@ def test_center_initialised_none(default_config):
     cfg = default_config
     cfg.num_boids = 20
     flock = PhysicsFlock(cfg)
-    assert flock.center is None, "center must be None before first step"
+    assert    flock.center is None, "center must be None before first step"
 
 
 def test_center_set_after_first_step(default_config):
@@ -565,7 +757,7 @@ def test_center_set_after_first_step(default_config):
     cfg = default_config
     cfg.num_boids = 20
     flock = PhysicsFlock(cfg)
-    flock.step(cfg, 1.0 / 60.0)
+    _step_flock(flock, cfg, 1.0 / 60.0)
     assert flock.center is not None, "center must be set after first step"
     assert flock.center.shape == (3,), "center must be (3,) float32"
     assert flock.center.dtype == np.float32
@@ -576,7 +768,7 @@ def test_center_close_to_centroid(default_config):
     cfg = default_config
     cfg.num_boids = 20
     flock = PhysicsFlock(cfg)
-    flock.step(cfg, 1.0 / 60.0)
+    _step_flock(flock, cfg, 1.0 / 60.0)
 
     centroid = flock.positions[flock.active].mean(axis=0)
     np.testing.assert_array_equal(
@@ -660,7 +852,7 @@ def test_center_no_active_birds(default_config):
     cfg = default_config
     cfg.num_boids = 10
     flock = PhysicsFlock(cfg)
-    flock.step(cfg, 1.0 / 60.0)
+    _step_flock(flock, cfg, 1.0 / 60.0)
 
     # Deactivate all birds
     flock.active[:] = False
@@ -826,7 +1018,7 @@ def test_prev_positions_stashed_before_integrate(default_config):
     flock = PhysicsFlock(cfg)
 
     pos_before_step = flock.positions.copy()
-    flock.step(cfg, 1.0 / 60.0)
+    _step_flock(flock, cfg, 1.0 / 60.0)
 
     # prev_positions should equal positions from before the step
     np.testing.assert_array_equal(
@@ -844,7 +1036,7 @@ def test_last_accelerations_stashed_before_reset(default_config):
     cfg = default_config
     cfg.num_boids = 20
     flock = PhysicsFlock(cfg)
-    flock.step(cfg, 1.0 / 60.0)
+    _step_flock(flock, cfg, 1.0 / 60.0)
 
     # After step(), accelerations are reset to zero (integrate does this)
     assert (flock.accelerations[flock.active] == 0.0).all(), (
@@ -896,7 +1088,7 @@ def test_last_accelerations_nonzero_after_forces(default_config):
     cfg.num_boids = 20
     cfg.mode = "spatial"
     flock = PhysicsFlock(cfg)
-    flock.step(cfg, 1.0 / 60.0)
+    _step_flock(flock, cfg, 1.0 / 60.0)
     # After a step with spatial forces, accelerations should have been
     # non-zero before being reset (captured in last_accelerations)
     acc_mags = np.linalg.norm(flock.last_accelerations[flock.active], axis=1)
@@ -918,7 +1110,7 @@ def test_max_speed_per_bird_lowers_cap(default_config):
     flock.velocities[:] = np.array([[3.0, 0.0, 0.0]] * 5, dtype=np.float32)
     flock.accelerations[:] = 0.0
 
-    flock.step(cfg, 1.0 / 60.0)
+    _step_flock(flock, cfg, 1.0 / 60.0)
 
     speeds = np.linalg.norm(flock.velocities[flock.active], axis=1)
     # All speeds should be clamped to max_speed=1.0, not v0=4.0
@@ -939,7 +1131,7 @@ def test_max_speed_different_per_bird(default_config):
     flock.velocities[:] = np.array([[5.0, 0.0, 0.0]] * 3, dtype=np.float32)
     flock.accelerations[:] = 0.0
 
-    flock.step(cfg, 1.0 / 60.0)
+    _step_flock(flock, cfg, 1.0 / 60.0)
 
     speeds = np.linalg.norm(flock.velocities, axis=1)
     assert speeds[0] <= 2.01, f"bird 0 speed={speeds[0]}"
@@ -983,7 +1175,7 @@ def test_max_speed_none_uses_scalar_v0(default_config):
     flock.velocities[:] = np.array([[8.0, 0.0, 0.0]] * 5, dtype=np.float32)
     flock.accelerations[:] = 0.0
 
-    flock.step(cfg, 1.0 / 60.0)
+    _step_flock(flock, cfg, 1.0 / 60.0)
 
     speeds = np.linalg.norm(flock.velocities[flock.active], axis=1)
     assert (speeds <= 3.01).all(), f"speeds={speeds} should ≤ 3.0 (cfg.v0)"
@@ -1013,3 +1205,45 @@ def test_max_speed_with_ceiling_mode(default_config):
     assert s1 == pytest.approx(3.0, abs=0.05), f"bird 1 cap=3: speed={s1:.4f}"
     assert s2 == pytest.approx(5.0, abs=0.05), f"bird 2 cap=5: speed={s2:.4f}"
     assert s3 == pytest.approx(4.0, abs=0.05), f"bird 3 cap=4: speed={s3:.4f}"
+
+
+# ── P0.4 Determinism — AST scan for module-level np.random ───────
+
+
+def test_no_module_level_np_random():
+    """P0.4: No module-level np.random.* calls remain in pymurmur/.
+
+    Scans every .py file under pymurmur/ for bare `np.random.` calls
+    (i.e. calls on the module-level RNG, not on a local Generator instance).
+    P0.4 requires all stochastic sites to use flock.rng or a local Generator.
+    """
+    import ast
+    from pathlib import Path
+
+    violations = []
+    pymurmur_root = Path("pymurmur")
+
+    for py_file in sorted(pymurmur_root.rglob("*.py")):
+        if py_file.name == "__init__.py" and py_file.stat().st_size < 10:
+            continue
+        tree = ast.parse(py_file.read_text())
+
+        for node in ast.walk(tree):
+            # Match: np.random.<method>(...) — bare np.random call
+            if isinstance(node, ast.Call):
+                if (isinstance(node.func, ast.Attribute)
+                        and isinstance(node.func.value, ast.Attribute)
+                        and isinstance(node.func.value.value, ast.Name)
+                        and node.func.value.value.id == "np"
+                        and node.func.value.attr == "random"):
+                    # Exclude: np.random.default_rng(...) — that's allowed (creates Generator)
+                    if node.func.attr != "default_rng":
+                        violations.append(
+                            f"{py_file}:{node.lineno}: np.random.{node.func.attr}(...)"
+                        )
+
+    assert not violations, (
+        f"P0.4 violation: {len(violations)} module-level np.random.* call(s) found:\n"
+        + "\n".join(violations)
+        + "\n\nAll stochastic sites must use flock.rng (or a local Generator)."
+    )

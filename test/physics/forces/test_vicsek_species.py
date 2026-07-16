@@ -21,6 +21,9 @@ from pymurmur.physics.flock import PhysicsFlock
 pytestmark = pytest.mark.guard
 
 
+from test.helpers import _call_force  # noqa: E402
+
+
 class TestVicsekSpecies:
     """Vicsek predator-prey interaction tests."""
 
@@ -49,7 +52,7 @@ class TestVicsekSpecies:
 
         # Run multiple steps — should not crash
         for _ in range(10):
-            vicsek_forces(flock, cfg)
+            _call_force(vicsek_forces, flock, cfg)
 
         speeds = np.linalg.norm(flock.velocities[flock.active], axis=1)
         assert np.allclose(speeds, 1.0, atol=1e-4)
@@ -69,7 +72,7 @@ class TestVicsekSpecies:
 
         flock.is_predator[:] = True
 
-        vicsek_forces(flock, cfg)
+        _call_force(vicsek_forces, flock, cfg)
         speeds = np.linalg.norm(flock.velocities[flock.active], axis=1)
         assert np.allclose(speeds, 1.0, atol=1e-4)
 
@@ -103,7 +106,7 @@ class TestVicsekSpecies:
         flock.velocities[0] = np.array([0.0, 0.0, 0.0])
 
         for _ in range(5):
-            vicsek_forces(flock, cfg)
+            _call_force(vicsek_forces, flock, cfg)
 
         # Prey birds (idx ≥ 1) should flee the centre
         prey_idx = np.where(flock.active & ~flock.is_predator)[0]
@@ -150,7 +153,7 @@ class TestVicsekSpecies:
         closes = 0
         prev_dist = np.linalg.norm(flock.positions[0] - flock.positions[1])
         for _ in range(30):
-            vicsek_forces(flock, cfg)
+            _call_force(vicsek_forces, flock, cfg)
             # Advance positions manually (Vicsek only sets velocity)
             flock.positions[flock.active] += (
                 flock.velocities[flock.active] * 0.1
@@ -187,7 +190,7 @@ class TestVicsekSpecies:
         flock.positions[1] = np.array([2.0, 0.0, 0.0])  # within R_pred
 
         pos_pred_before = flock.positions[0].copy()
-        vicsek_forces(flock, cfg)
+        _call_force(vicsek_forces, flock, cfg)
 
         # Predator should NOT move from collision push
         assert np.allclose(flock.positions[0], pos_pred_before), (

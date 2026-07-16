@@ -45,6 +45,30 @@ class FlockMetrics:
     thickness_ratio: float | None = None   # flock flatness (PCA)
     optimal_m: float | None = None         # cost-optimal neighbour count m*
 
+    def to_dict(self) -> dict:
+        """Serialize to a JSON-safe dict (I6.5).
+
+        ndarray → list, numpy scalar → Python scalar, NaN → null, None → null.
+        """
+        import math
+
+        result: dict = {}
+        for field_name in self.__dataclass_fields__:
+            value = getattr(self, field_name)
+            if isinstance(value, np.ndarray):
+                result[field_name] = value.tolist()
+            elif isinstance(value, np.floating) and np.isnan(value):
+                result[field_name] = None
+            elif isinstance(value, (np.floating, np.integer)):
+                result[field_name] = value.item()
+            elif isinstance(value, float) and math.isnan(value):
+                result[field_name] = None
+            elif value is None:
+                result[field_name] = None
+            else:
+                result[field_name] = value
+        return result
+
 
 class MetricsCollector:
     """Computes and caches flock metrics each frame.
@@ -59,6 +83,7 @@ class MetricsCollector:
         self._density_history: list[np.ndarray] = []     # for tau_rho
         self._detail_level = getattr(config, 'metrics_detail_level', 1) if config else 1
         self._interval = getattr(config, 'metrics_interval', 60) if config else 60
+        self._mode = getattr(config, 'mode', 'projection') if config else 'projection'
         self._theta_prime_grid = 30  # voxel resolution for external opacity
         self._async_result: object | None = None  # Future from background thread
         self._async_gen: int = 0  # generation counter to detect stale results
@@ -82,8 +107,11 @@ class MetricsCollector:
         dirs = velocities / norms
         m.alpha = float(np.linalg.norm(dirs.sum(axis=0)) / n)
 
-        # Internal opacity Θ
-        m.theta = float(np.mean(flock.last_theta[active]))
+        # Internal opacity Θ — NaN in non-projection modes (P1.10)
+        if self._mode == 'projection':
+            m.theta = float(np.mean(flock.last_theta[active]))
+        else:
+            m.theta = float('nan')
 
         # External opacity Θ' (fast: O(N) grid rasterization)
         m.theta_prime = compute_theta_prime(positions, self._theta_prime_grid)
@@ -314,7 +342,9 @@ def compute_shape(positions: np.ndarray) -> tuple[float, float]:
 
     Returns (aspect_ratio, thickness_ratio).
     aspect = sqrt(λ₁/λ₃) — elongation (>1 = elongated).
-    thickness = sqrt(λ₂/λ₃) — flatness (pancake vs cigar).
+    thickness = sqrt(λ₃/λ₁) ∈ (0,1] — flatness (P1.9 fix: was λ₂/λ₃).
+
+    λ₁ ≥ λ₂ ≥ λ₃.  thickness → 0 for lines/planes, → 1 for spheres.
 
     For degenerate cases (line, plane): if λ₃ ≈ 0 but λ₁ ≫ 0,
     returns (inf, 0) or (large, small) rather than (1, 1).
@@ -338,7 +368,9 @@ def compute_shape(positions: np.ndarray) -> tuple[float, float]:
         return 1.0, 1.0
 
     aspect = float(np.sqrt(lambda1 / lambda3))
-    thickness = float(np.sqrt(lambda2 / lambda3))
+    # P1.9: thickness = sqrt(λ₃/λ₁) ∈ (0,1]
+    #   λ₃/λ₁ → 1 for spheres, → 0 for lines/planes
+    thickness = float(np.sqrt(lambda3 / lambda1))
     return aspect, thickness
 
 

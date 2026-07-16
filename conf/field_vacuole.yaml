@@ -1,0 +1,62 @@
+# field_vacuole.yaml — Phase 3 field mode preset
+# Vacuole dynamics — inner cavity created by negative cohesion
+# at the shell radius, forming a hollow-core blob.
+# Roadmap ref: P3.10 preset table (N=10K, v0=0.68, sep=1.12, align=0.92, coh=1.25, chase=0.76)
+
+# ── Domain ──────────────────────────────────────────────────────────
+domain:
+  width: 1000.0
+  height: 700.0
+  depth: 400.0
+
+# ── Flock ───────────────────────────────────────────────────────────
+flock:
+  num_boids: 10000
+  v0: 0.68
+  boid_size: 4.0
+
+# ── Mode ────────────────────────────────────────────────────────────
+mode: field
+
+# ── Field Parameters ────────────────────────────────────────────────
+field:
+  field_separation: 1.12
+  field_alignment: 0.92
+  field_cohesion: 1.25
+  field_chase_strength: 0.76
+  # Vacuole cavity — strong shell with inner hollow
+  noise: 0.03
+  field_flow: 0.25
+  target_pull: 0.24
+  drift_pull: 0.10
+  shell_influence: 0.90
+  vacuole_strength: 0.9    # hollow-core intensity
+  shell_radius_base: 0.22
+  inner_radius_factor: 0.35
+  inertia: 0.84
+  tangent_pull: 0.03
+
+# ── Extensions ──────────────────────────────────────────────────────
+extensions:
+  wander_enabled: true
+  predator_enabled: false
+  ripple_enabled: false
+
+wander:
+  attractor_speed: 0.10
+  attractor_radius: 250.0
+
+# ── Seed ────────────────────────────────────────────────────────────
+seed: 42
+
+# ── Boundary Mode ───────────────────────────────────────────────────
+boundary_mode: sphere
+
+# ── Performance ─────────────────────────────────────────────────────
+performance:
+  spatial_index: none
+
+# ── Metrics ─────────────────────────────────────────────────────────
+metrics:
+  detail_level: 1
+  interval: 60

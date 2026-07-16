@@ -1,10 +1,163 @@
 """GPU-dependent tests for viz.renderer — Renderer3D, Visualizer.
 
-Requires ModernGL GPU context. All tests are gated behind
+Requires ModernGL GPU context. All GPU-dependent tests are gated behind
 @pytest.mark.gpu and skipped when gpu_available is False.
+
+P2.7 InstanceSchema and P2.8 _mat4_bytes tests run without GPU.
 """
 
+import numpy as np
 import pytest
+
+
+# ── P2.7: InstanceSchema standalone dataclass tests (NO GPU needed) ─
+
+class TestInstanceSchema:
+    """P2.7: InstanceSchema is a pure dataclass — testable without GPU."""
+
+    def test_instance_schema_defaults(self):
+        """P2.7: InstanceSchema has correct default field values."""
+        from pymurmur.viz.renderer import InstanceSchema
+        s = InstanceSchema()
+        assert s.floats == 6, "Default floats must be 6 (pos.xyz + vel.xyz)"
+        assert s.layout == "3f 3f/i", "Default layout must be ModernGL format string"
+        assert s.attrs == ("in_bird_pos", "in_bird_vel"), (
+            "Default attrs must be shader attribute names"
+        )
+
+    def test_instance_schema_custom_floats(self):
+        """P2.7: InstanceSchema accepts custom float count."""
+        from pymurmur.viz.renderer import InstanceSchema
+        s = InstanceSchema(floats=9)
+        assert s.floats == 9
+        assert s.layout == "3f 3f/i"  # layout unchanged unless explicitly set
+
+    def test_instance_schema_custom_layout(self):
+        """P2.7: InstanceSchema accepts custom ModernGL layout string."""
+        from pymurmur.viz.renderer import InstanceSchema
+        s = InstanceSchema(layout="3f 3f 3f/i", attrs=("a", "b", "c"))
+        assert s.layout == "3f 3f 3f/i"
+        assert s.attrs == ("a", "b", "c")
+
+    def test_instance_schema_is_dataclass(self):
+        """P2.7: InstanceSchema must be a @dataclass."""
+        from dataclasses import is_dataclass
+        from pymurmur.viz.renderer import InstanceSchema
+        assert is_dataclass(InstanceSchema), "InstanceSchema must be a @dataclass"
+
+    def test_instance_schema_fields_are_immutable_types(self):
+        """P2.7: floats is int, layout is str, attrs is tuple."""
+        from pymurmur.viz.renderer import InstanceSchema
+        s = InstanceSchema()
+        assert isinstance(s.floats, int)
+        assert isinstance(s.layout, str)
+        assert isinstance(s.attrs, tuple)
+
+    def test_instance_schema_buffer_bytes(self):
+        """P2.7: Buffer allocation formula uses schema.floats correctly.
+
+        Each instance uses floats × 4 bytes (float32). For 100 birds
+        at 6 floats each: 100 × 6 × 4 = 2400 bytes."""
+        from pymurmur.viz.renderer import InstanceSchema
+        s = InstanceSchema(floats=6)
+        n_birds = 100
+        expected_bytes = n_birds * s.floats * 4
+        assert expected_bytes == 2400
+        # With custom float count
+        s2 = InstanceSchema(floats=9)
+        assert n_birds * s2.floats * 4 == 3600
+
+
+# ── P2.8: _mat4_bytes standalone tests (NO GPU needed) ─────────────
+
+class TestMat4Bytes:
+    """P2.8: _mat4_bytes converts PyGLM matrices to consistent bytes."""
+
+    def test_mat4_bytes_returns_64_bytes(self):
+        """P2.8: 4×4 float32 matrix = 16 × 4 = 64 bytes."""
+        glm = pytest.importorskip("glm", reason="PyGLM not installed")
+        from pymurmur.viz.renderer import _mat4_bytes
+        m = glm.mat4(1.0)  # identity
+        b = _mat4_bytes(m)
+        assert isinstance(b, bytes)
+        assert len(b) == 64, f"4×4 mat4 must produce 64 bytes, got {len(b)}"
+
+    def test_mat4_bytes_identity_roundtrip(self):
+        """P2.8: _mat4_bytes → numpy roundtrip preserves identity matrix."""
+        glm = pytest.importorskip("glm", reason="PyGLM not installed")
+        from pymurmur.viz.renderer import _mat4_bytes
+        m = glm.mat4(1.0)
+        b = _mat4_bytes(m)
+        arr = np.frombuffer(b, dtype=np.float32)
+        assert arr.shape == (16,)
+        # Column-major identity: diagonal = 1.0 at indices 0,5,10,15
+        assert arr[0] == 1.0
+        assert arr[5] == 1.0
+        assert arr[10] == 1.0
+        assert arr[15] == 1.0
+        # Off-diagonal zeros
+        zeros = [i for i in range(16) if i not in (0, 5, 10, 15)]
+        for i in zeros:
+            assert arr[i] == 0.0, f"Off-diagonal at index {i}: expected 0.0, got {arr[i]}"
+
+    def test_mat4_bytes_translation_matrix(self):
+        """P2.8: Translation matrix bytes are correct (column-major float32)."""
+        glm = pytest.importorskip("glm", reason="PyGLM not installed")
+        from pymurmur.viz.renderer import _mat4_bytes
+        m = glm.translate(glm.mat4(1.0), glm.vec3(10.0, 20.0, 30.0))
+        b = _mat4_bytes(m)
+        arr = np.frombuffer(b, dtype=np.float32)
+        # Column-major: translation is in last column (indices 12,13,14)
+        assert arr[12] == 10.0, f"X translation at index 12: got {arr[12]}"
+        assert arr[13] == 20.0, f"Y translation at index 13: got {arr[13]}"
+        assert arr[14] == 30.0, f"Z translation at index 14: got {arr[14]}"
+        assert arr[15] == 1.0, f"W at index 15: got {arr[15]}"
+
+    def test_mat4_bytes_float32_dtype(self):
+        """P2.8: Output bytes decode to float32, not float64."""
+        glm = pytest.importorskip("glm", reason="PyGLM not installed")
+        from pymurmur.viz.renderer import _mat4_bytes
+        m = glm.mat4(1.0)
+        b = _mat4_bytes(m)
+        arr = np.frombuffer(b, dtype=np.float32)
+        assert arr.dtype == np.float32
+        # float64 would be 128 bytes
+        assert len(b) == 64, "Must be exactly 64 bytes (float32), not 128 (float64)"
+
+    def test_mat4_bytes_deterministic(self):
+        """P2.8: Same matrix → same bytes every time."""
+        glm = pytest.importorskip("glm", reason="PyGLM not installed")
+        from pymurmur.viz.renderer import _mat4_bytes
+        m = glm.rotate(glm.mat4(1.0), np.radians(45.0), glm.vec3(0.0, 1.0, 0.0))
+        b1 = _mat4_bytes(m)
+        b2 = _mat4_bytes(m)
+        assert b1 == b2, "Same matrix must produce identical bytes"
+
+    def test_mat4_bytes_different_matrices_differ(self):
+        """P2.8: Different matrices produce different bytes."""
+        glm = pytest.importorskip("glm", reason="PyGLM not installed")
+        from pymurmur.viz.renderer import _mat4_bytes
+        m1 = glm.mat4(1.0)
+        m2 = glm.translate(glm.mat4(1.0), glm.vec3(1.0, 0.0, 0.0))
+        assert _mat4_bytes(m1) != _mat4_bytes(m2), (
+            "Different matrices must produce different bytes"
+        )
+
+    def test_mat4_bytes_little_endian_consistent(self):
+        """P2.8: numpy tobytes() uses native byte order — verify float32
+        values are recoverable regardless of architecture.
+
+        A 1.0 float32 is 0x3F800000 — regardless of endianness, reading
+        back with numpy should recover the same value."""
+        glm = pytest.importorskip("glm", reason="PyGLM not installed")
+        from pymurmur.viz.renderer import _mat4_bytes
+        m = glm.scale(glm.mat4(1.0), glm.vec3(2.5, 3.5, 4.5))
+        b = _mat4_bytes(m)
+        arr = np.frombuffer(b, dtype=np.float32)
+        # Scale diagonal in column-major: diag indices 0,5,10
+        assert np.isclose(arr[0], 2.5), f"X scale at index 0: got {arr[0]}"
+        assert np.isclose(arr[5], 3.5), f"Y scale at index 5: got {arr[5]}"
+        assert np.isclose(arr[10], 4.5), f"Z scale at index 10: got {arr[10]}"
 
 
 @pytest.mark.gpu
@@ -220,20 +373,22 @@ class TestVisualizerIntegration:
         assert img.size == (default_config.window_width, default_config.window_height)
 
     def test_visualizer_run_one_frame(self, gpu_available, default_config):
-        """headless_frame() processes at least one simulation step."""
+        """headless_frame() renders without error (step is caller's responsibility)."""
         if not gpu_available:
             pytest.skip("GPU not available")
         from pymurmur.simulation.engine import SimulationEngine
         from pymurmur.viz.visualizer import Visualizer
 
         sim = SimulationEngine(default_config)
-        frame_before = sim.frame
         viz = Visualizer(sim, default_config, headless=True)
-        viz.headless_frame()
-        assert sim.frame == frame_before + 1
+        sim.step(1.0 / 60)  # step before render (I4.1)
+        frame_before = sim.frame
+        img = viz.headless_frame()
+        assert img is not None
+        assert sim.frame == frame_before  # rendering doesn't advance sim
 
     def test_visualizer_paused_skips_step(self, gpu_available, default_config):
-        """Paused visualizer does not advance the simulation."""
+        """Rendering works regardless of pause state (pause only affects caller's step)."""
         if not gpu_available:
             pytest.skip("GPU not available")
         from pymurmur.simulation.engine import SimulationEngine
@@ -243,8 +398,9 @@ class TestVisualizerIntegration:
         viz = Visualizer(sim, default_config, headless=True)
         viz.paused = True
         frame_before = sim.frame
-        viz.headless_frame()
-        assert sim.frame == frame_before  # no step taken
+        img = viz.headless_frame()
+        assert img is not None
+        assert sim.frame == frame_before  # rendering doesn't advance sim
 
     def test_renderer_camera_wiring(self, gpu_available, default_config):
         """Renderer3D + OrbitCamera + SimulationEngine wire without error."""
@@ -292,6 +448,7 @@ class TestVisualizerIntegration:
 
         # Simulate main-loop deferred add: pending_add → flock.add_boids
         pending = 5
+        sim.step(1.0 / 60)  # step first (I4.1)
         added = sim.flock.add_boids(pending, default_config)
         default_config.num_boids = sim.flock.N_active
         pending -= added
@@ -315,6 +472,7 @@ class TestVisualizerIntegration:
 
         # Simulate main-loop deferred remove: pending_remove → flock.remove_boids
         pending = 5
+        sim.step(1.0 / 60)  # step first (I4.1)
         removed = sim.flock.remove_boids(pending)
         default_config.num_boids = sim.flock.N_active
         pending -= removed
@@ -335,13 +493,16 @@ class TestVisualizerIntegration:
         sim = SimulationEngine(default_config)
         viz = Visualizer(sim, default_config, headless=True)
 
-        # Advance, then reset
+        # Advance, then reset (I4.1: step explicitly before render)
+        sim.step(1.0 / 60)
         viz.headless_frame()
+        sim.step(1.0 / 60)
         viz.headless_frame()
         sim.reset()
         assert sim.frame == 0
 
         # After reset, should be able to continue
+        sim.step(1.0 / 60)
         viz.headless_frame()
         assert sim.frame == 1
 
@@ -355,8 +516,9 @@ class TestVisualizerIntegration:
         sim = SimulationEngine(default_config)
         viz = Visualizer(sim, default_config, headless=True)
 
-        # Advance a few frames
+        # Advance a few frames (I4.1: step explicitly before render)
         for _ in range(3):
+            sim.step(1.0 / 60)
             viz.headless_frame()
         assert sim.frame == 3
 
@@ -378,9 +540,10 @@ class TestVisualizerIntegration:
         sim = SimulationEngine(default_config)
         try:
             viz = Visualizer(sim, default_config, headless=False)
+            sim.step(1.0 / 60)  # step before render (I4.1)
             frame_before = sim.frame
             viz.frame()
-            assert sim.frame == frame_before + 1
+            assert sim.frame == frame_before  # rendering doesn't advance sim
         except Exception:
             pytest.skip("Windowed context creation failed (no display)")
 
@@ -404,15 +567,16 @@ class TestVisualizerIntegration:
         viz = Visualizer(sim, default_config, headless=False)
         assert viz.renderer.headless is False
 
+        sim.step(1.0 / 60)  # step before render (I4.1)
         frame_before = sim.frame
         viz.frame()  # lines 60-64 — no return value, no display
-        assert sim.frame == frame_before + 1
+        assert sim.frame == frame_before  # rendering doesn't advance sim
 
     # ── headless_frame() edge cases ────────────────────────────────
 
     def test_visualizer_headless_frame_paused_toggle(self, gpu_available,
                                                       default_config):
-        """Toggle paused mid-sequence: frames resume when unpaused."""
+        """Rendering works regardless of paused state (pause is caller's concern)."""
         if not gpu_available:
             pytest.skip("GPU not available")
         from pymurmur.simulation.engine import SimulationEngine
@@ -421,28 +585,33 @@ class TestVisualizerIntegration:
         sim = SimulationEngine(default_config)
         viz = Visualizer(sim, default_config, headless=True)
 
-        # Step 1-2: normal
+        # Step + render: normal (I4.1: step explicitly)
+        sim.step(1.0 / 60)
         viz.headless_frame()
+        sim.step(1.0 / 60)
         viz.headless_frame()
         assert sim.frame == 2
 
-        # Step 3: paused — no advance
+        # Step + render: paused — still renders
         viz.paused = True
-        viz.headless_frame()
-        assert sim.frame == 2
-
-        # Step 4: paused again — still no advance
-        viz.headless_frame()
-        assert sim.frame == 2
-
-        # Step 5: unpause — advance resumes
-        viz.paused = False
+        sim.step(1.0 / 60)
         viz.headless_frame()
         assert sim.frame == 3
 
+        # Step + render: paused again
+        sim.step(1.0 / 60)
+        viz.headless_frame()
+        assert sim.frame == 4
+
+        # Step + render: unpause
+        viz.paused = False
+        sim.step(1.0 / 60)
+        viz.headless_frame()
+        assert sim.frame == 5
+
     def test_visualizer_headless_frame_multi_advance(self, gpu_available,
                                                       default_config):
-        """10 consecutive headless_frame() calls advance frame counter by 10."""
+        """10 step+render cycles — rendering is pure, caller controls stepping."""
         if not gpu_available:
             pytest.skip("GPU not available")
         from pymurmur.simulation.engine import SimulationEngine
@@ -452,6 +621,7 @@ class TestVisualizerIntegration:
         viz = Visualizer(sim, default_config, headless=True)
 
         for _ in range(10):
+            sim.step(1.0 / 60)  # step before render (I4.1)
             img = viz.headless_frame()
             assert img is not None
 
@@ -472,7 +642,7 @@ class TestVisualizerIntegration:
 
         img = viz.headless_frame()
         assert img is not None
-        assert sim.frame == 1  # step still advances even with 0 birds
+        assert sim.frame == 0  # rendering doesn't advance sim
 
     # ── __init__ property validation ───────────────────────────────
 

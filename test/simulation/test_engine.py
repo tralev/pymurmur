@@ -66,32 +66,32 @@ def test_engine_reset(default_config):
 
 
 def test_engine_step_order(default_config):
-    """Extensions run before flock.step, metrics after."""
+    """Extensions run before flock.integrate, metrics after (I4.2)."""
     cfg = default_config
     cfg.num_boids = 10
     engine = SimulationEngine(cfg)
 
-    # Spy on the method order by wrapping step
+    # Spy on the method order by wrapping integrate
     order_log = []
 
     orig_ext = engine.extensions.pre_step
-    orig_flock_step = engine.flock.step
+    orig_integrate = engine.flock.integrate
     orig_collect = engine.metrics.collect
 
-    def spy_ext(flock):
+    def spy_ext(flock, ctx):
         order_log.append("extensions")
-        return orig_ext(flock)
+        return orig_ext(flock, ctx)
 
-    def spy_flock_step(config, dt):
+    def spy_integrate(config, dt):
         order_log.append("flock")
-        return orig_flock_step(config, dt)
+        return orig_integrate(config, dt)
 
     def spy_collect(flock, frame):
         order_log.append("metrics")
         return orig_collect(flock, frame)
 
     engine.extensions.pre_step = spy_ext
-    engine.flock.step = spy_flock_step
+    engine.flock.integrate = spy_integrate
     engine.metrics.collect = spy_collect
 
     engine.step()
@@ -203,3 +203,141 @@ def test_engine_run_headless_forever_stops_on_callback(default_config):
 
     assert frame_count[0] == 5
     assert engine.frame == 5
+
+
+# ── I4.3: CommandQueue unit tests ─────────────────────────────────
+
+from pymurmur.simulation.engine import CommandQueue
+
+
+class TestCommandQueue:
+    """I4.3: CommandQueue — pending add/remove/reset accumulation."""
+
+    def test_command_queue_enqueue_add_accumulates(self):
+        """I4.3 M5: enqueue_add(3) + enqueue_add(2) = 5 pending."""
+        cq = CommandQueue()
+        assert cq.pending_add == 0
+        cq.pending_add += 3
+        assert cq.pending_add == 3
+        cq.pending_add += 2
+        assert cq.pending_add == 5
+
+    def test_command_queue_enqueue_remove_accumulates(self):
+        """I4.3 M6: enqueue_remove(3) + enqueue_remove(2) = 5 pending."""
+        cq = CommandQueue()
+        assert cq.pending_remove == 0
+        cq.pending_remove += 3
+        assert cq.pending_remove == 3
+        cq.pending_remove += 2
+        assert cq.pending_remove == 5
+
+    def test_drain_commands_reset_clears_pending_add_remove(self, default_config):
+        """I4.3 M7: pending_reset=True clears pending_add/remove before reset()."""
+        cfg = default_config
+        cfg.num_boids = 20
+        engine = SimulationEngine(cfg)
+        engine.step()  # step once so metrics has history
+
+        # Queue add + remove + reset
+        engine.enqueue_add(10)
+        engine.enqueue_remove(5)
+        engine.enqueue_reset()
+
+        assert engine.commands.pending_add == 10
+        assert engine.commands.pending_remove == 5
+        assert engine.commands.pending_reset is True
+
+        # Drain — reset must clear pending_add/remove
+        engine.drain_commands()
+
+        assert engine.commands.pending_reset is False
+        assert engine.commands.pending_add == 0, (
+            "pending_add must be cleared when reset is processed"
+        )
+        assert engine.commands.pending_remove == 0, (
+            "pending_remove must be cleared when reset is processed"
+        )
+        assert engine.frame == 0  # reset happened
+
+    def test_drain_commands_processes_reset_before_add_remove(self, default_config, monkeypatch):
+        """I4.3 M8: drain_commands() processes reset, returns early, skips add/remove."""
+        from unittest.mock import MagicMock
+
+        cfg = default_config
+        cfg.num_boids = 10
+        engine = SimulationEngine(cfg)
+
+        # Spy on flock methods to verify they're NOT called when reset is pending
+        mock_add = MagicMock()
+        mock_remove = MagicMock()
+        monkeypatch.setattr(engine.flock, "add_boids", mock_add)
+        monkeypatch.setattr(engine.flock, "remove_boids", mock_remove)
+
+        # Queue reset + add + remove simultaneously
+        engine.enqueue_reset()
+        engine.enqueue_add(5)
+        engine.enqueue_remove(3)
+
+        # Drain — reset must clear pending_add/remove and return early
+        engine.drain_commands()
+
+        # Add/remove must NOT have been called (reset returns early)
+        mock_add.assert_not_called()
+        mock_remove.assert_not_called()
+
+        # After drain: queue is clean, flock is fresh
+        assert engine.commands.pending_reset is False
+        assert engine.commands.pending_add == 0
+        assert engine.commands.pending_remove == 0
+        assert engine.frame == 0
+
+    def test_step_calls_drain_commands_first(self, default_config):
+        """I4.3 M9: step() calls drain_commands() before extensions/index/forces."""
+        cfg = default_config
+        cfg.num_boids = 10
+        engine = SimulationEngine(cfg)
+
+        order_log = []
+
+        orig_drain = engine.drain_commands
+        orig_ext = engine.extensions.pre_step
+
+        def spy_drain():
+            order_log.append("drain")
+            return orig_drain()
+
+        def spy_ext(flock, ctx):
+            order_log.append("extensions")
+            return orig_ext(flock, ctx)
+
+        engine.drain_commands = spy_drain
+        engine.extensions.pre_step = spy_ext
+
+        engine.step()
+
+        assert order_log[0] == "drain", (
+            f"drain_commands must run FIRST. Got: {order_log}"
+        )
+        assert order_log[1] == "extensions", (
+            f"extensions must run SECOND. Got: {order_log}"
+        )
+
+    def test_reset_creates_new_empty_command_queue(self, default_config):
+        """I4.3 M10: reset() creates a fresh CommandQueue with no pending commands."""
+        cfg = default_config
+        cfg.num_boids = 10
+        engine = SimulationEngine(cfg)
+
+        old_queue = engine.commands
+        engine.enqueue_add(3)
+        engine.enqueue_remove(2)
+        assert old_queue.pending_add == 3
+        assert old_queue.pending_remove == 2
+
+        engine.reset()
+
+        new_queue = engine.commands
+        assert new_queue is not old_queue, "reset() must create a new CommandQueue"
+        assert new_queue.pending_add == 0
+        assert new_queue.pending_remove == 0
+        assert new_queue.pending_reset is False

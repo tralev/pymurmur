@@ -5,6 +5,9 @@ from copy import copy
 import numpy as np
 
 
+from test.helpers import _call_force  # noqa: E402
+
+
 def test_compute_all_forces_imports():
     """All 5 modes are importable from the forces package."""
     from pymurmur.physics.forces import compute_all_forces
@@ -64,7 +67,7 @@ def test_spatial_forces_produces_nonzero(default_config):
 
     # Rebuild index first
     flock.get_index().rebuild(flock.positions, flock.active)
-    spatial_forces(flock, cfg)
+    _call_force(spatial_forces, flock, cfg)
     assert not np.allclose(flock.accelerations[flock.active], 0.0)
 
 
@@ -88,7 +91,7 @@ def test_spatial_mode_all_weights_zero(default_config):
     flock = PhysicsFlock(cfg)
     flock.accelerations[:] = 0.0
     flock.get_index().rebuild(flock.positions, flock.active)
-    spatial_forces(flock, cfg)
+    _call_force(spatial_forces, flock, cfg)
     # Accelerations should be all-zero (no steering, no noise)
     assert np.allclose(flock.accelerations[flock.active], 0.0)
 
@@ -110,7 +113,7 @@ def test_spatial_mode_separation_only(default_config):
     flock = PhysicsFlock(cfg)
     flock.accelerations[:] = 0.0
     flock.get_index().rebuild(flock.positions, flock.active)
-    spatial_forces(flock, cfg)
+    _call_force(spatial_forces, flock, cfg)
 
     # Forces should be nonzero
     acc_active = flock.accelerations[flock.active]
@@ -135,7 +138,7 @@ def test_spatial_mode_alignment_only(default_config):
 
     flock = PhysicsFlock(cfg)
     flock.get_index().rebuild(flock.positions, flock.active)
-    spatial_forces(flock, cfg)
+    _call_force(spatial_forces, flock, cfg)
 
     acc_active = flock.accelerations[flock.active]
     assert not np.allclose(acc_active, 0.0)
@@ -159,7 +162,7 @@ def test_spatial_mode_cohesion_only(default_config):
     flock = PhysicsFlock(cfg)
     flock.accelerations[:] = 0.0
     flock.get_index().rebuild(flock.positions, flock.active)
-    spatial_forces(flock, cfg)
+    _call_force(spatial_forces, flock, cfg)
 
     acc_active = flock.accelerations[flock.active]
     assert not np.allclose(acc_active, 0.0)
@@ -183,7 +186,7 @@ def test_spatial_mode_noise_only(default_config):
     flock = PhysicsFlock(cfg)
     flock.accelerations[:] = 0.0
     flock.get_index().rebuild(flock.positions, flock.active)
-    spatial_forces(flock, cfg)
+    _call_force(spatial_forces, flock, cfg)
 
     acc_active = flock.accelerations[flock.active]
     # Noise should produce non-zero forces
@@ -209,7 +212,7 @@ def test_spatial_mode_force_clamped(default_config):
     flock = PhysicsFlock(cfg)
     flock.accelerations[:] = 0.0
     flock.get_index().rebuild(flock.positions, flock.active)
-    spatial_forces(flock, cfg)
+    _call_force(spatial_forces, flock, cfg)
 
     # Check that all acceleration magnitudes are ≤ max_force (within tolerance)
     acc_mags = np.linalg.norm(flock.accelerations, axis=1)
@@ -232,7 +235,7 @@ def test_spatial_mode_numba_fallback(default_config):
     flock.get_index().rebuild(flock.positions, flock.active)
 
     # Run on pure numpy path (numba may or may not be installed)
-    spatial_forces(flock, cfg)
+    _call_force(spatial_forces, flock, cfg)
     acc_active = flock.accelerations[flock.active]
     assert np.isfinite(acc_active).all()
     assert not np.allclose(acc_active, 0.0)
@@ -252,7 +255,7 @@ def test_spatial_mode_zero_active(default_config):
     flock.active[:] = False
     flock.accelerations[:] = 0.0
 
-    spatial_forces(flock, cfg)
+    _call_force(spatial_forces, flock, cfg)
     # Should be a no-op — no crash, no NaN
     assert np.allclose(flock.accelerations, 0.0)
 
@@ -270,7 +273,7 @@ def test_spatial_mode_single_bird(default_config):
     flock.accelerations[:] = 0.0
     flock.get_index().rebuild(flock.positions, flock.active)
 
-    spatial_forces(flock, cfg)
+    _call_force(spatial_forces, flock, cfg)
     # n < 2 → neighbour query returns empty → no steering → only noise
     assert np.isfinite(flock.accelerations).all()
 

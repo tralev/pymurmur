@@ -7,7 +7,7 @@ agrees on these data contracts.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Protocol
 
 import numpy as np
 
@@ -23,51 +23,22 @@ class ForceFunc(Protocol):
     def __call__(self, flock: "PhysicsFlock", config: "SimConfig") -> None: ...
 
 
-# ── numba JIT kernel signature ────────────────────────────────────
-# Receives flat arrays + scalar params. No Python objects.
-ForceKernel = Callable[
-    [
-        np.ndarray,  # positions      (N, 3) float32
-        np.ndarray,  # velocities     (N, 3) float32
-        np.ndarray,  # accelerations  (N, 3) float32
-        np.ndarray,  # active          (N,)  bool
-        np.ndarray,  # neighbor_idx   (N, k) int32
-        float,       # separation_weight
-        float,       # alignment_weight
-        float,       # cohesion_weight
-        float,       # noise_scale
-        float,       # v0
-        float,       # max_force
-    ],
-    None,
-]
+# ── Spatial index protocol ────────────────────────────────────────
+class SpatialIndex(Protocol):
+    """Protocol for spatial index implementations.
 
-
-# ── Flock state container ─────────────────────────────────────────
-@dataclass
-class FlockArrays:
-    """Structure-of-Arrays — flat numpy arrays, no per-bird objects.
-
-    Memory budget at 300K: ~13.5 MB (vs 60 MB for per-bird objects).
-    Enables vectorised numpy ops with zero Python per-bird loops.
+    Both SpatialHashGrid and KDTreeIndex conform to this interface.
     """
 
-    positions: np.ndarray      # (N, 3) float32
-    velocities: np.ndarray     # (N, 3) float32
-    accelerations: np.ndarray  # (N, 3) float32
-    seeds: np.ndarray          # (N,)  float32
-    last_theta: np.ndarray     # (N,)  float32  — internal opacity per bird (projection mode)
-    active: np.ndarray         # (N,)  bool     — True = alive, False = slot available for reuse
+    @property
+    def ready(self) -> bool: ...
+
+    def rebuild(self, positions: np.ndarray, active: np.ndarray) -> None: ...
+
+    def query_knn(self, pos: np.ndarray, k: int) -> np.ndarray: ...
 
     @property
-    def N_active(self) -> int:
-        """Count of currently active birds."""
-        return int(self.active.sum())
-
-    @property
-    def N_capacity(self) -> int:
-        """Total allocated slots (active + inactive)."""
-        return len(self.active)
+    def tree(self) -> object | None: ...
 
 
 # ── Math helpers (L0, numpy-only) ─────────────────────────────────

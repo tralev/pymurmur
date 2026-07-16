@@ -299,3 +299,19 @@ def test_metrics_zero_active():
     snap = collector.snapshot()
     assert snap.alpha == 0.0
     assert snap.speed_avg == 0.0
+
+
+def test_h2_disconnected_returns_inf():
+    """Two well-separated clusters → disconnected graph → H₂ = inf."""
+    pytest.importorskip("scipy")
+    from pymurmur.analysis.metrics import compute_h2
+
+    # Two clusters 1000 units apart with m=3 — no inter-cluster edges
+    cluster_a = np.array([[0, 0, 0], [10, 0, 0], [0, 10, 0], [10, 10, 0]], dtype=np.float32)
+    cluster_b = np.array([[1000, 0, 0], [1010, 0, 0], [1000, 10, 0], [1010, 10, 0]], dtype=np.float32)
+    positions = np.vstack([cluster_a, cluster_b])
+
+    h2_sq, h2 = compute_h2(positions, m=3)
+
+    assert h2_sq == float('inf'), f"Expected inf for disconnected graph, got {h2_sq}"
+    assert h2 == float('inf'), f"Expected inf for disconnected graph, got {h2}"

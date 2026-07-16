@@ -10,27 +10,6 @@ import pytest
 class TestSubsystemE:
     """Physics subsystem — forces, spatial index, memory budget."""
 
-    def test_flock_soa_memory_budget(self):
-        """FlockArrays at N=300K uses < 15 MB."""
-        from pymurmur.core.types import FlockArrays
-        import numpy as np
-
-        N = 300_000
-        arrays = FlockArrays(
-            positions=np.zeros((N, 3), dtype=np.float32),
-            velocities=np.zeros((N, 3), dtype=np.float32),
-            accelerations=np.zeros((N, 3), dtype=np.float32),
-            seeds=np.zeros(N, dtype=np.float32),
-            last_theta=np.zeros(N, dtype=np.float32),
-            active=np.ones(N, dtype=bool),
-        )
-        total = sum(arr.nbytes for arr in [
-            arrays.positions, arrays.velocities, arrays.accelerations,
-            arrays.seeds, arrays.last_theta, arrays.active,
-        ])
-        mb = total / (1024 * 1024)
-        assert mb < 15, f"FlockArrays at 300K: {mb:.1f} MB > 15 MB budget"
-
     def test_spatial_index_auto_select(self):
         """N < 5000 → SpatialHashGrid, N >= 5000 → KDTreeIndex."""
         from pymurmur.core.config import SimConfig
@@ -58,11 +37,10 @@ class TestSubsystemE:
         sim.run_headless(steps=5)
         assert sim.frame == 5
 
-    def test_numba_jit_fallback(self, default_config):
-        """When numba unavailable, numpy path produces valid results."""
+    def test_numpy_path_produces_valid_results(self, default_config):
+        """Numpy force path produces valid results."""
         from pymurmur.simulation.engine import SimulationEngine
 
-        default_config.use_numba = False
         sim = SimulationEngine(default_config)
         sim.run_headless(steps=10)
         assert sim.frame == 10

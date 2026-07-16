@@ -9,14 +9,20 @@ Usage:
     python test/regenerate_golden.py                  # All 5 modes
     python test/regenerate_golden.py --mode projection # Single mode
     python test/regenerate_golden.py --mode spatial --seed 42 --frames 60 --birds 20
+    python test/regenerate_golden.py --boundary sphere     # Sphere boundary goldens
     python test/regenerate_golden.py --dry-run          # Print what would happen
 
 Generated files:
-    test/data/golden_projection.npz   (30, 15, 3) float32 pos + vel
+    test/data/golden_projection.npz   (30, 15, 3) float32 pos + vel (toroidal)
     test/data/golden_spatial.npz
     test/data/golden_field.npz
     test/data/golden_vicsek.npz
     test/data/golden_influencer.npz
+    test/data/golden_projection_sphere.npz  (sphere boundary)
+    test/data/golden_spatial_sphere.npz
+    test/data/golden_field_sphere.npz
+    test/data/golden_vicsek_sphere.npz
+    test/data/golden_influencer_sphere.npz
 
 Determinism contract (P0.4): Same seed + config → bit-identical after N frames.
 Currently projection, spatial, and field are deterministic; vicsek and influencer
@@ -48,6 +54,8 @@ GOLDEN_MODES = [
     # TODO P5: add "angle" when angle mode ships
     # TODO P12: add "marl" when MARL mode ships
 ]
+BOUNDARY_MODES = ["toroidal", "sphere"]
+DEFAULT_BOUNDARY = "toroidal"
 DEFAULT_SEED = 77
 DEFAULT_BIRDS = 15
 DEFAULT_FRAMES = 30
@@ -64,6 +72,7 @@ def generate_golden(
     birds: int = DEFAULT_BIRDS,
     frames: int = DEFAULT_FRAMES,
     output_dir: Path = OUTPUT_DIR,
+    boundary: str = DEFAULT_BOUNDARY,
 ) -> Path:
     """Generate a single golden .npz file for *mode*.
 
@@ -89,8 +98,7 @@ def generate_golden(
     cfg.mode = mode
     cfg.num_boids = birds
     cfg.seed = seed
-    cfg.use_numba = False  # Deterministic: no JIT
-
+    cfg.boundary_mode = boundary
     engine = SimulationEngine(cfg)
 
     positions = []
@@ -105,7 +113,10 @@ def generate_golden(
     vel_stack = np.stack(velocities).astype(np.float32)
 
     os.makedirs(output_dir, exist_ok=True)
-    path = output_dir / f"golden_{mode}.npz"
+    if boundary == "toroidal":
+        path = output_dir / f"golden_{mode}.npz"
+    else:
+        path = output_dir / f"golden_{mode}_{boundary}.npz"
     np.savez(path, pos=pos_stack, vel=vel_stack)
 
     return path
@@ -171,6 +182,12 @@ def main():
         help=f"Output directory (default: {OUTPUT_DIR}).",
     )
     parser.add_argument(
+        "--boundary",
+        choices=BOUNDARY_MODES,
+        default=DEFAULT_BOUNDARY,
+        help=f"Boundary mode for golden generation (default: {DEFAULT_BOUNDARY}).",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print what would happen without generating files.",
@@ -180,17 +197,21 @@ def main():
     modes = GOLDEN_MODES if args.mode == "all" else [args.mode]
 
     print(f"Golden trajectory regeneration")
-    print(f"  Modes:   {', '.join(modes)}")
-    print(f"  Seed:    {args.seed}")
-    print(f"  Birds:   {args.birds}")
-    print(f"  Frames:  {args.frames}")
-    print(f"  Output:  {args.output_dir}")
+    print(f"  Modes:    {', '.join(modes)}")
+    print(f"  Boundary: {args.boundary}")
+    print(f"  Seed:     {args.seed}")
+    print(f"  Birds:    {args.birds}")
+    print(f"  Frames:   {args.frames}")
+    print(f"  Output:   {args.output_dir}")
     print()
 
     if args.dry_run:
         print("[DRY RUN] Would generate:")
         for mode in modes:
-            path = args.output_dir / f"golden_{mode}.npz"
+            if args.boundary == "toroidal":
+                path = args.output_dir / f"golden_{mode}.npz"
+            else:
+                path = args.output_dir / f"golden_{mode}_{args.boundary}.npz"
             nd = " ⚠️  non-deterministic (P0.4)" if mode in NONDETERMINISTIC else ""
             print(f"  {path}{nd}")
         return 0
@@ -206,14 +227,15 @@ def main():
                 birds=args.birds,
                 frames=args.frames,
                 output_dir=args.output_dir,
+                boundary=args.boundary,
             )
             verify_golden(path, (args.frames, args.birds, 3))
             size_kb = os.path.getsize(path) / 1024
             nd = " ⚠️  non-deterministic — will be fixed in P0.4" if mode in NONDETERMINISTIC else ""
-            print(f"  ✓ {mode:15s} → {path.name:30s}  {size_kb:6.1f} KB{nd}")
+            print(f"  ✓ {mode:15s} [{args.boundary:8s}] → {path.name:35s}  {size_kb:6.1f} KB{nd}")
             generated.append(mode)
         except Exception as e:
-            print(f"  ✗ {mode:15s} FAILED: {e}")
+            print(f"  ✗ {mode:15s} [{args.boundary:8s}] FAILED: {e}")
             errors.append(mode)
 
     print()

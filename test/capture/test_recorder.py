@@ -99,7 +99,7 @@ class TestRecorderOnFrame:
         assert len(rec.frames) == 0  # no FBO frames
 
     def test_on_frame_fbo_exception_silent(self, default_config, monkeypatch):
-        """FBO capture exception is caught silently — coverage of except Exception: pass."""
+        """FBO capture exception is caught silently (I6.3: RuntimeError for GPU failure)."""
         import builtins
         from pymurmur.capture.recorder import Recorder
         from pymurmur.simulation.engine import SimulationEngine
@@ -114,13 +114,13 @@ class TestRecorderOnFrame:
         # Block viz imports so the try block raises
         orig_import = builtins.__import__
         def _block_viz(name, *args, **kwargs):
-            if "viz.renderer" in name or "viz.camera" in name:
-                raise RuntimeError("Blocked for test")
+            if "viz.visualizer" in name:
+                raise ImportError("Blocked for test")
             return orig_import(name, *args, **kwargs)
         monkeypatch.setattr(builtins, "__import__", _block_viz)
 
         sim.step(1.0 / 60)
-        rec.on_frame(sim)  # enters FBO block → import fails → except Exception: pass
+        rec.on_frame(sim)  # enters FBO block → import fails → ImportError caught
 
         # Metrics still captured (before FBO block)
         assert len(rec.metrics_history) == 1
@@ -517,3 +517,514 @@ class TestRecorderFullIntegration:
         assert json_result is not None
         assert Path(csv_result).exists()
         assert Path(json_result).exists()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# I6 Missing Unit Tests — Renderer Caching (M1)
+# ═══════════════════════════════════════════════════════════════════
+
+
+class TestRecorderRendererCaching:
+    """M1: _renderer is cached — Visualizer created once, reused."""
+
+    @pytest.mark.gpu
+    def test_renderer_cached_across_multiple_captures(
+        self, default_config, gpu_available
+    ):
+        """M1: _capture_frame creates Visualizer once and reuses it.
+
+        If the guard `if self._renderer is None` is removed, every
+        _capture_frame call creates a new Visualizer+FBO — severe perf
+        regression. Verify identity is preserved across on_frame calls.
+        """
+        if not gpu_available:
+            pytest.skip("GPU not available")
+
+        from pymurmur.capture.recorder import Recorder
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = default_config
+        cfg.num_boids = 10
+        cfg.capture_with_viz = True
+        cfg.capture_every = 1
+        cfg.capture_width = 320
+        cfg.capture_height = 240
+
+        engine = SimulationEngine(cfg)
+        rec = Recorder(engine, cfg)
+
+        # First capture — renderer is None, so Visualizer is created
+        engine.step(1.0 / 60)
+        rec.on_frame(engine)
+        first_renderer = rec._renderer
+        assert first_renderer is not None, "Renderer must be created on first capture"
+
+        # Second capture — must reuse the same renderer
+        engine.step(1.0 / 60)
+        rec.on_frame(engine)
+        assert rec._renderer is first_renderer, (
+            "_renderer must be cached and reused across _capture_frame calls"
+        )
+
+        # Third capture — still the same
+        engine.step(1.0 / 60)
+        rec.on_frame(engine)
+        assert rec._renderer is first_renderer
+
+
+# ═══════════════════════════════════════════════════════════════════
+# I6 Missing Unit Tests — Error Handling (M2, M6, M7, M8, M9)
+# ═══════════════════════════════════════════════════════════════════
+
+
+class TestRecorderErrorHandling:
+    """M2, M6, M7, M8, M9: Error handling and edge cases."""
+
+    def test_on_frame_handles_sim_metrics_none(self, default_config):
+        """M8: on_frame() does not crash when sim.metrics is None.
+
+        If the engine has no MetricsCollector (detail_level=0 or mock),
+        the `if sim.metrics:` guard must prevent AttributeError.
+        """
+        from pymurmur.capture.recorder import Recorder
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = default_config
+        cfg.num_boids = 10
+        cfg.capture_with_viz = False
+        engine = SimulationEngine(cfg)
+        rec = Recorder(engine, cfg)
+
+        # Set metrics to None after engine creation.
+        # Don't call step() — it would crash on metrics.collect().
+        engine.metrics = None
+
+        # on_frame must handle None metrics gracefully
+        rec.on_frame(engine)  # must not raise AttributeError
+
+        # _frame_count still incremented, metrics_history unchanged
+        assert rec._frame_count == 1
+        assert rec.metrics_history == []
+
+    def test_on_frame_handles_empty_metrics_snapshot(self, default_config):
+        """M9: Empty metrics history → snapshot() returns FlockMetrics() defaults.
+
+        on_frame() calls sim.metrics.snapshot().to_dict() — even with
+        empty history, to_dict() must work on default FlockMetrics.
+        """
+        from pymurmur.capture.recorder import Recorder
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = default_config
+        cfg.num_boids = 10
+        cfg.capture_with_viz = False
+        engine = SimulationEngine(cfg)
+        rec = Recorder(engine, cfg)
+
+        # Call on_frame without stepping — metrics history is empty
+        # snapshot() returns FlockMetrics() with all defaults
+        rec.on_frame(engine)
+
+        assert len(rec.metrics_history) == 1
+        entry = rec.metrics_history[0]
+        # Default alpha is 0.0
+        assert entry["alpha"] == 0.0
+        # All default fields should be present
+        assert "speed_avg" in entry
+        assert "dispersion" in entry
+
+    def test_runtime_error_during_fbo_capture_is_caught(
+        self, default_config, monkeypatch
+    ):
+        """M6: RuntimeError from headless_frame() is caught silently.
+
+        I6.3: The except RuntimeError clause catches GPU failures
+        mid-capture without crashing the headless run.
+        """
+        from pymurmur.capture.recorder import Recorder
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = default_config
+        cfg.num_boids = 10
+        cfg.capture_with_viz = True
+        cfg.capture_every = 1
+        engine = SimulationEngine(cfg)
+        rec = Recorder(engine, cfg)
+
+        # Inject a mock renderer that raises RuntimeError on headless_frame
+        class _FailingRenderer:
+            def headless_frame(self):
+                raise RuntimeError("FBO exhausted")
+
+        rec._renderer = _FailingRenderer()
+
+        engine.step(1.0 / 60)
+        rec.on_frame(engine)  # must not raise
+
+        # Metrics still captured, frame count advanced, no frame added
+        assert len(rec.metrics_history) == 1
+        assert rec._frame_count == 1
+        assert len(rec.frames) == 0
+
+    def test_on_frame_does_not_throw_when_fbo_fails(
+        self, default_config
+    ):
+        """M2: on_frame() completes normally when FBO capture raises RuntimeError.
+
+        Uses a failing renderer so the REAL _capture_frame runs and
+        catches RuntimeError internally — verifying on_frame never
+        propagates GPU failures to the headless run loop.
+        """
+        from pymurmur.capture.recorder import Recorder
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = default_config
+        cfg.num_boids = 10
+        cfg.capture_with_viz = True
+        cfg.capture_every = 1
+        engine = SimulationEngine(cfg)
+        rec = Recorder(engine, cfg)
+
+        # Inject a renderer whose headless_frame always fails
+        class _FailingRenderer:
+            def headless_frame(self):
+                raise RuntimeError("Simulated FBO exhaustion")
+        rec._renderer = _FailingRenderer()
+
+        # on_frame must complete without raising
+        engine.step(1.0 / 60)
+        rec.on_frame(engine)
+
+        assert rec._frame_count == 1
+        assert len(rec.metrics_history) == 1
+        assert rec.frames == []
+
+    def test_non_runtimeerror_not_silently_swallowed(
+        self, default_config
+    ):
+        """M7: Non-RuntimeError exceptions propagate (not silently swallowed).
+
+        I6.3 replaced bare `except Exception: pass` with targeted catches.
+        ValueError/MemoryError must escape so they're not hidden.
+        """
+        from pymurmur.capture.recorder import Recorder
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = default_config
+        cfg.num_boids = 10
+        cfg.capture_with_viz = True
+        cfg.capture_every = 1
+        engine = SimulationEngine(cfg)
+        rec = Recorder(engine, cfg)
+
+        # Make _capture_frame raise ValueError (not RuntimeError)
+        def _broken_capture(sim):
+            raise ValueError("Should not be silently swallowed")
+        rec._capture_frame = _broken_capture
+
+        engine.step(1.0 / 60)
+        with pytest.raises(ValueError, match="Should not be silently swallowed"):
+            rec.on_frame(engine)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# I6 Missing Unit Tests — on_frame Contract (M3, M5, M16, M17)
+# ═══════════════════════════════════════════════════════════════════
+
+
+class TestRecorderOnFrameContract:
+    """M3, M5, M16, M17: on_frame() invariants and ordering."""
+
+    def test_on_frame_increments_frame_count_even_when_capture_fails(
+        self, default_config
+    ):
+        """M3: _frame_count advances even when _capture_frame catches RuntimeError.
+
+        _frame_count is incremented at the top of on_frame(), before
+        metrics or FBO capture. If reordered, a failing capture would
+        skip the increment, drifting the capture_every gate.
+
+        Uses a failing renderer so the real _capture_frame runs and
+        catches RuntimeError internally.
+        """
+        from pymurmur.capture.recorder import Recorder
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = default_config
+        cfg.num_boids = 10
+        cfg.capture_with_viz = True
+        cfg.capture_every = 3
+        engine = SimulationEngine(cfg)
+        rec = Recorder(engine, cfg)
+
+        # Inject a renderer that always fails — real _capture_frame
+        # catches RuntimeError, but _frame_count must still advance
+        class _FailingRenderer:
+            def headless_frame(self):
+                raise RuntimeError("FBO failure")
+        rec._renderer = _FailingRenderer()
+
+        for i in range(5):
+            engine.step(1.0 / 60)
+            rec.on_frame(engine)  # must not raise
+            assert rec._frame_count == i + 1, (
+                f"_frame_count must advance even when capture fails. "
+                f"Expected {i + 1}, got {rec._frame_count}"
+            )
+
+        assert len(rec.metrics_history) == 5  # metrics captured every frame
+        assert len(rec.frames) == 0  # all captures failed
+
+    def test_on_frame_increments_frame_count_even_on_import_error(
+        self, default_config, monkeypatch
+    ):
+        """M3: _frame_count increments even when viz import fails.
+
+        Uses the existing import-blocking approach from
+        test_on_frame_fbo_exception_silent but explicitly checks
+        _frame_count advancement.
+        """
+        import builtins
+        from pymurmur.capture.recorder import Recorder
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = default_config
+        cfg.num_boids = 10
+        cfg.capture_with_viz = True
+        cfg.capture_every = 1
+        engine = SimulationEngine(cfg)
+        rec = Recorder(engine, cfg)
+
+        orig_import = builtins.__import__
+        def _block_viz(name, *args, **kwargs):
+            if "viz.visualizer" in name:
+                raise ImportError("Blocked")
+            return orig_import(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, "__import__", _block_viz)
+
+        for i in range(3):
+            engine.step(1.0 / 60)
+            rec.on_frame(engine)
+            assert rec._frame_count == i + 1, (
+                f"_frame_count must advance even when capture fails. "
+                f"Expected {i + 1}, got {rec._frame_count}"
+            )
+
+        assert len(rec.metrics_history) == 3  # metrics unaffected
+        assert len(rec.frames) == 0  # viz blocked
+
+    def test_capture_every_larger_than_total_steps_captures_zero_frames(
+        self, default_config
+    ):
+        """M5: capture_every > total steps → 0 frames captured.
+
+        If the modulo gate has an off-by-one (e.g. _frame_count starts
+        at 0 and `0 % 100 == 0`), frame 0 captures when it shouldn't.
+        """
+        from pymurmur.capture.recorder import Recorder
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = default_config
+        cfg.num_boids = 10
+        cfg.capture_with_viz = False  # CPU-only, verify gating logic
+        cfg.capture_every = 100
+        engine = SimulationEngine(cfg)
+        rec = Recorder(engine, cfg)
+
+        engine.run_headless(steps=10, callback=rec.on_frame)
+
+        assert rec._frame_count == 10
+        assert len(rec.metrics_history) == 10  # every frame
+        assert len(rec.frames) == 0  # never hit capture_every threshold
+
+    def test_on_frame_metrics_captured_before_fbo(self, default_config):
+        """M16: Metrics must be captured before FBO on each on_frame call.
+
+        If someone reorders to capture FBO first and FBO fails, metrics
+        for that frame would be lost.
+        """
+        from pymurmur.capture.recorder import Recorder
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = default_config
+        cfg.num_boids = 10
+        cfg.capture_with_viz = True
+        cfg.capture_every = 1
+        engine = SimulationEngine(cfg)
+        rec = Recorder(engine, cfg)
+
+        order_log = []
+
+        # Spy on the internals to verify ordering
+        class _FailingRenderer:
+            def headless_frame(self):
+                order_log.append("fbo")
+                raise RuntimeError("FBO failure")
+
+        rec._renderer = _FailingRenderer()
+
+        engine.step(1.0 / 60)
+        rec.on_frame(engine)
+
+        # Metrics must have been captured despite FBO failure
+        assert len(rec.metrics_history) == 1, (
+            "Metrics must be captured before FBO — even if FBO fails"
+        )
+        assert "fbo" in order_log  # FBO was attempted (after metrics)
+
+    def test_on_frame_with_viz_false_never_calls_capture_frame(
+        self, default_config
+    ):
+        """M17: with_viz=False → _capture_frame is never called.
+
+        Spies on _capture_frame to verify the with_viz guard is
+        honored, not just that frames list stays empty.
+        """
+        from pymurmur.capture.recorder import Recorder
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = default_config
+        cfg.num_boids = 10
+        cfg.capture_with_viz = False
+        cfg.capture_every = 1
+        engine = SimulationEngine(cfg)
+        rec = Recorder(engine, cfg)
+
+        call_count = [0]
+        original = rec._capture_frame
+        def spy(sim):
+            call_count[0] += 1
+            return original(sim)
+        rec._capture_frame = spy
+
+        engine.run_headless(steps=5, callback=rec.on_frame)
+
+        assert call_count[0] == 0, (
+            f"_capture_frame must never be called when with_viz=False. "
+            f"Called {call_count[0]} times."
+        )
+        assert len(rec.metrics_history) == 5
+
+
+# ═══════════════════════════════════════════════════════════════════
+# I6 Missing Unit Tests — Save Edge Cases (M10, M11, M12, M13, M15)
+# ═══════════════════════════════════════════════════════════════════
+
+
+class TestRecorderSaveEdgeCases:
+    """M10, M11, M12, M13, M15: Save operation edge cases."""
+
+    def test_save_gif_creates_parent_directories(self, default_config, tmp_path):
+        """M10: save_gif creates parent dirs for nested output paths."""
+        from pymurmur.capture.recorder import Recorder
+        from pymurmur.simulation.engine import SimulationEngine
+        from PIL import Image
+
+        cfg = default_config
+        cfg.num_boids = 10
+        engine = SimulationEngine(cfg)
+        rec = Recorder(engine, cfg)
+        rec.frames = [Image.new("RGB", (20, 15))]
+
+        nested = tmp_path / "deep" / "nested" / "output.gif"
+        result = rec.save_gif(path=str(nested))
+
+        assert result is not None
+        assert nested.exists()
+        assert nested.stat().st_size > 0
+
+    def test_save_gif_frame_without_resize_handled(self, default_config, tmp_path):
+        """M11: Frames without .resize() fall through LANCZOS guard.
+
+        The list comprehension: `f.resize(...) if hasattr(f, "resize") else f`
+        must not crash when a frame lacks .resize().
+        """
+        from pymurmur.capture.recorder import Recorder
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = default_config
+        cfg.num_boids = 10
+        engine = SimulationEngine(cfg)
+        rec = Recorder(engine, cfg)
+
+        # Mock frame without .resize() but with .save()
+        class _RawFrame:
+            def save(self, path, **kwargs):
+                # Write minimal GIF bytes
+                with open(path, "wb") as f:
+                    f.write(b"GIF89a\x01\x00\x01\x00\x00\x00\x00;")
+
+        rec.frames = [_RawFrame(), _RawFrame()]
+
+        out = tmp_path / "no_resize.gif"
+        result = rec.save_gif(path=str(out))
+        assert result == str(out)
+        assert out.exists()
+
+    def test_save_metrics_csv_creates_parent_directories(
+        self, default_config, tmp_path
+    ):
+        """M12: save_metrics_csv creates parent dirs for nested paths."""
+        from pymurmur.capture.recorder import Recorder
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = default_config
+        cfg.num_boids = 10
+        engine = SimulationEngine(cfg)
+        rec = Recorder(engine, cfg)
+        rec.metrics_history = [{"alpha": 0.5, "speed_avg": 3.2}]
+
+        nested = tmp_path / "a" / "b" / "metrics.csv"
+        result = rec.save_metrics_csv(path=str(nested))
+
+        assert result is not None
+        assert nested.exists()
+
+    def test_save_metrics_json_ndarray_tolist_branch(
+        self, default_config, tmp_path
+    ):
+        """M13: Values with .tolist() are converted (ndarray branch).
+
+        The save_metrics_json_numpy_scalar test covers .item(), but
+        the .tolist() branch for ndarray values is untested.
+        """
+        import numpy as np
+        from pymurmur.capture.recorder import Recorder
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = default_config
+        cfg.num_boids = 10
+        engine = SimulationEngine(cfg)
+        rec = Recorder(engine, cfg)
+
+        # Simulate angular_momentum as ndarray (has .tolist(), no .item())
+        arr = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+        rec.metrics_history = [{"angular_momentum": arr, "alpha": 0.5}]
+
+        out = tmp_path / "ndarray.json"
+        result = rec.save_metrics_json(path=str(out))
+        assert result is not None
+
+        with open(out) as f:
+            data = json.load(f)
+        assert data["metrics"][0]["angular_momentum"] == [1.0, 2.0, 3.0]
+        assert data["metrics"][0]["alpha"] == 0.5
+
+    def test_save_metrics_json_creates_parent_directories(
+        self, default_config, tmp_path
+    ):
+        """M15: save_metrics_json creates parent dirs for nested paths."""
+        from pymurmur.capture.recorder import Recorder
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = default_config
+        cfg.num_boids = 10
+        engine = SimulationEngine(cfg)
+        rec = Recorder(engine, cfg)
+        rec.metrics_history = [{"alpha": 0.5}]
+
+        nested = tmp_path / "x" / "y" / "metrics.json"
+        result = rec.save_metrics_json(path=str(nested))
+
+        assert result is not None
+        assert nested.exists()

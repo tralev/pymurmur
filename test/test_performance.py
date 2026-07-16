@@ -1,11 +1,10 @@
 """Performance benchmarks — validate FPS/memory budgets per mode and scale.
 
-All tests marked @pytest.mark.slow — run on PR merge or nightly only.
+Only test_300k_allocation_and_step is marked @pytest.mark.slow — the others
+are fast smoke checks that belong in the fast suite.
 """
 
 import pytest
-
-pytestmark = pytest.mark.slow
 
 
 class TestPerformanceBenchmarks:
@@ -116,6 +115,7 @@ class TestPerformanceBenchmarks:
         mb = total / (1024 * 1024)
         assert mb < 50, f"Memory N=16K: {mb:.1f} MB > 50 MB budget"
 
+    @pytest.mark.slow
     def test_300k_allocation_and_step(self):
         """300K birds: allocates without crash, memory < 30 MB, runs steps."""
         from pymurmur.core.config import SimConfig

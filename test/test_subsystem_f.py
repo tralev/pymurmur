@@ -90,11 +90,11 @@ class TestSubsystemF:
         assert isinstance(snap.alpha, (int, float))
 
     def test_presets_all_valid_fields(self):
-        """Every preset dict contains only valid SimConfig field names."""
+        """Every preset dict contains only valid SimConfig field names (I7.1)."""
         from pymurmur.analysis.presets import PRESETS
-        from pymurmur.core.config import SimConfig
+        from pymurmur.core.config import _ALL_FIELD_NAMES
 
-        valid = set(SimConfig().__dataclass_fields__.keys())
+        valid = _ALL_FIELD_NAMES
         for name, preset in PRESETS.items():
             unknown = set(preset.keys()) - valid
             assert not unknown, f"Preset '{name}' has unknown fields: {unknown}"

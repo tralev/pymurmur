@@ -1,13 +1,13 @@
 # ═══════════════════════════════════════════════════════════════════════
-# murmuration_nested.yaml — REFERENCE DRAFT of the D1 target config schema
+# murmuration_nested.yaml — REFERENCE DRAFT of the nested target config schema
 # ═══════════════════════════════════════════════════════════════════════
-# STATUS: NOT LOADABLE by the current (pre-D1) loader, which flattens
+# STATUS: NOT LOADABLE by the flat-loader era, which flattens
 # section keys and would mis-read this file (e.g. boundary.mode would
 # collide with the top-level force mode; capture.width with domain.width).
 # It lives in conf/examples/ (outside the conf/*.yaml glob) precisely so
 # it cannot be selected via --config or --list-configs today.
 #
-# PURPOSE: the worked example for roadmap phase D1 — YAML section names map
+# PURPOSE: the worked example for roadmap phase P0 — YAML section names map
 # 1:1 to SimConfig sub-dataclass field names; every key inside a section
 # maps 1:1 to that sub-config's fields. Unknown keys must WARN, never drop
 # silently. When D1 lands, this file becomes conf/murmuration.yaml and the
@@ -189,9 +189,6 @@ viz:
   window_width: 1200
   window_height: 800
   theme: ink               # ink | inverse | paper | graphite | heading
-  trails: "off"            # off | velocity | accumulation | ring
-  trail_length: 12         # ring-trail history K
-  point_sprites: false     # sphere impostors instead of meshes
   per_bird_color: false    # per-bird HSV hue from seeds
   dual_view: false         # two simultaneous viewpoints (15/15 + 45/45)
   background: flat         # flat | gradient
@@ -215,10 +212,8 @@ capture:
 
 # ── Performance ─────────────────────────────────────────────────────
 perf:
-  use_numba: false         # JIT force kernels (install extra: pymurmur[numba])
   fastmath: false          # ONLY honoured when metrics.detail_level == 0
   num_threads: -1          # -1 = all cores (index queries / kernels)
   spatial_index: auto      # auto | hash_grid | kdtree
   instance_buffer_chunk: 50000
-  adaptive_quality: true   # governor ladder: trails → render scale → N
   target_fps: 60

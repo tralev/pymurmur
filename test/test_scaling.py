@@ -1,11 +1,10 @@
 """Scaling validation — verify O(N), O(N log N), O(1) complexity claims.
 
-All tests marked @pytest.mark.slow.
+All scaling tests run small-N sweeps that complete quickly (< 0.5s each),
+so they are NOT marked slow and run in the fast suite.
 """
 
 import pytest
-
-pytestmark = pytest.mark.slow
 
 
 class TestScalingValidation:

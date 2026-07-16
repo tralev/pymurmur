@@ -4,10 +4,26 @@
 `sci_roadmap.md`, `test_sci_roadmap.md` (retired). Target architecture:
 [`arch.md`](arch.md). Provenance for every item: the audit corpus in
 **`sci/`**. Inline citation shorthand used throughout resolves there:
-*todo_claude* → `sci/todo_claude.md`, *todo_claude1/2* →
-`sci/todo_claude1.md` / `sci/todo_claude2.md`, *git0…git7* →
-`sci/todo_claude_git0.md` … `sci/todo_claude_git7.md` (per-source expanded
-specs, cited as *[→gitN Rx]*). The consolidated 27-section science reference
+*todo_claude1/2* →
+`sci/todo_claude1.md` / `sci/todo_claude2.md`. *todo_claude* (the original
+predecessor gap analysis — its E4 preset labels now inlined in S5.1) and
+*todo_claude3* (the audit
+of the consolidated reference against the codebase) were verified
+item-by-item and retired — mappings in Appendix A; their citations below
+are provenance labels. The per-source expanded
+specs (*git0…git7*, cited inline as *[→gitN Rx]*) have **all been retired**
+after item-by-item verification against this file — their mappings live in
+Appendix A, their citations below are provenance labels, and every data
+table or formula they carried uniquely is now inlined in the D/S-items:
+git0 (master consolidation), git1 (murmuratR — marker + stretching test
+into S2.E5/Track E), git2 (collective-motion — preset vector +
+order-transition test as S2.D4), git3 (rystrauss/boids — preset in S2.B2,
+`unit` kernel in S1.5), git4 (PyNBoids — preset as S2.C8, scene/
+screensaver mechanics in App. B), git5 (Starlings — winged-mesh vertex
+table in S4.4, preset in S2.B1, H&H math in App. B), git6
+(crs48/murmuration — anchor coefficients, flow/fold triples, ripple
+origins, threat constants, init/preset tables in S2.A2–A9), git7
+(BirdMurmuration — marl preset + reward formula in S7.1/S3.9). The consolidated 27-section science reference
 (`resulting_sci.md`) was fully absorbed — its coverage was verified
 section-by-section against this roadmap and the codebase, so it has been
 retired; its per-source detail survives in the `todo_claude_sci1…11.md`
@@ -58,7 +74,9 @@ seeded `np.random.Generator`), `flock.center`, `flock.is_predator`,
 `hash01(x) = fract(sin(x·12.9898)·43758.5453)`,
 `smoothstep(a,b,x) = t²(3−2t), t = clamp((x−a)/(b−a), 0, 1)`,
 `fibonacci_sphere(n)` (golden-angle near-uniform unit vectors, Level-0 atom —
-see D0.4), `normalize3` (0-safe), `limit3(v, m)`. All in
+see D0.4), `normalize3` (0-safe), `limit3(v, m)` (scale by `m/|v|` only when
+`|v| > m` — the correct "cap at length m"), `isfinite3(a)` (row-wise
+finiteness gate `(N,3) → (N,) bool` — the D4 NaN-guard atom). All in
 `pymurmur/core/types.py`, unit-tested before first use.
 
 ---
@@ -119,7 +137,9 @@ class FlockConfig:
     v0: float = 4.0; max_force: float = 0.15
     visual_range: float = 70.0
     seed: int | None = None
-    velocity_init: str = "fixed"       # fixed | cube | speed_uniform | tangential
+    velocity_init: str = "fixed"       # fixed | cube | speed_uniform | tangential | drift (S2.A9)
+    position_init: str = "box"         # box | sphere | sphere_shell | gaussian | grid | blob
+                                       # (selector implemented in init_positions; S2.B9)
     speed_min_factor: float = 0.3      # promoted from the 0.3 hardcode in integrate()
     n_predators: int = 0               # species column (D3)
 
@@ -130,18 +150,21 @@ class FlockConfig:
                              noise_scale, acceleration_scale, separation_distance,
                              neighbor_filter, influence_count, alignment_radius_ratio,
                              separation_kernel, noise_mode, speed_mode,
+                             flow_weight,     # grid-tier curl flow (S2.B11)
                              parameter_jitter, jitter_separation/cohesion/alignment,
                              predator_* (boosts, escape_factor)
 @dataclass FieldConfig:      unit_scale, chase_strength, shell_influence, target_pull,
                              drift_pull, tangent_pull, flow_pull, wave_gain, inertia,
-                             separation, alignment, cohesion, flow
+                             separation, alignment, cohesion, flow,
+                             disabled_terms   # per-term toggles (S2.A5)
 @dataclass VicsekConfig:     couplage, diffusion, time_step, velocity, radius_influence,
                              radius_avoid, radius_predators, weight_afraid,
                              predator_noise_ratio, detect_ratio, velocity_predator
 @dataclass InfluencerConfig: rank_exponent, substeps, scale, influence_mode,
                              near_dist_sq, init, separation,
                              traj_primary_amp, traj_secondary_amp, traj_periods,
-                             traj_phase, traj_z_bias   # optional path-shaping (S2.E1)
+                             traj_phase, traj_z_bias,  # optional path-shaping (S2.E1)
+                             pilot_enabled, shell_radius, pilot_speed  # S2.E6
 @dataclass AngleConfig:      turn_rate, max_turn_rate, turn_threshold, jitter_deg,
                              margin, speed_mode, base_speed, neighbors,
                              sep/align/range_radius_bodies
@@ -153,9 +176,12 @@ class FlockConfig:
                              seasonal_size, peak_size, predator_presence,
                              wander_*, ripple_*
 @dataclass MetricsConfig:    detail_level, interval, bird_mass_kg, cruise_speed_ms,
-                             acc_peak_ms2, readout_smooth, altitude_target
+                             acc_peak_ms2, readout_smooth, altitude_target,
+                             history_cap    # ring-buffer cap (T6.3 soak)
 @dataclass VizConfig:        fps, window_width/height, theme, trails, trail_length,
                              point_sprites, per_bird_color, dual_view, background,
+                             background_top/bottom,      # gradient sky colours (S4.5)
+                             bird_mesh, flap_period,     # mesh registry + flap (S4.4/S4.4a)
                              show_grid, auto_rotate, hud
 @dataclass CaptureConfig:    width, height, frames, every, fps, output, metrics_csv,
                              metrics_json, with_viz, sweep, prewarm
@@ -328,8 +354,14 @@ integrate(flock, config, dt, *,
 
 Band floor reads `cfg.flock.speed_min_factor`. Safety rails at callers:
 visualizer clamps `dt ∈ [0, 1/20]` behind a fixed-timestep accumulator;
-engine applies an `np.isfinite` position guard (offenders reset to
-`flock.center`). Boundary handlers keep their shapes but `sphere*` centres
+engine applies an `isfinite3` position guard (offenders reset to
+`flock.center`). Third rail *(crs48-v2 §18 — zero-allocation step)*:
+steady-state allocation hygiene — hot-path force primitives and
+`integrate()` accept/reuse preallocated scratch (`out=`-style buffers
+owned by the flock, e.g. `flock.scratch3: (capacity,3) float32`) instead
+of allocating fresh `(N,3)` arrays every frame; transient numpy
+temporaries are acceptable, unbounded per-frame growth is not. Boundary
+handlers keep their shapes but `sphere*` centres
 on the **domain centre** (bug fix — currently origin-centred, so every
 bird is permanently "outside").
 
@@ -337,7 +369,9 @@ bird is permanently "outside").
 (speed_mode × move × inertia ∈ {0, 0.8}) combinations vs hand-computed
 expectations; per-bird `max_speed` respected; `speed_min_factor` honored;
 toroidal wrap exactness; margin containment; sphere centred on C
-(regression); NaN guard heals.
+(regression); NaN guard heals; allocation hygiene (`@slow`) — tracemalloc
+delta between frame 100 and frame 600 of a headless N = 2 000 run
+< 1 MB (no per-frame `(N,3)` churn accumulating).
 
 **Accept:** matrix green; centre-initialised flock stays centred in sphere
 mode; NaN injection self-heals. *(Physics-visible: re-pin sphere golden.)*
@@ -402,12 +436,16 @@ class Extension(ABC):
 ```
 
 `ExtensionManager.pre_step(flock, ctx)` re-reads `ctx.config` each frame
-(live toggles work); Ecology's `_predator_active` becomes a public
-property; the Threat FSM (S2.A8) replaces `Predator` under this protocol.
+(live toggles work); Ecology's behavioural state becomes a **public read
+surface** — `predator_active`, `hour`, `day`, `roost_position` properties
+(the useful residue of the predecessor's `ext` dict: HUD, metrics and
+tests read simulated-calendar state without reaching into privates); the
+Threat FSM (S2.A8) replaces `Predator` under this protocol.
 
 **Tests (T3.4):** extensions receive real dt/frame/rng; flipping
 `threat.mode` / `ecology.roosting_enabled` mid-run takes effect next frame;
-`threat_prox` published shape `(N,)` in [0,1]; `predator_active` public.
+`threat_prox` published shape `(N,)` in [0,1]; `predator_active`, `hour`,
+`day`, `roost_position` public and consistent with the advance rate.
 
 ## D7 — Renderer contract  *(1 day)*
 
@@ -425,14 +463,14 @@ class Renderer3D:
     def _build_vao(self): ...            # at init AND after every buffer growth (E2)
     def begin_frame(self, camera, viewport=None, fade=False): ...
     def draw_birds(self, flock): ...     # packs pos/vel/is_predator/seeds
-    def draw_layer(self, name, ...): ... # threat marker, ring trails, HUD quads
+    def draw_layer(self, name, ...): ... # threat/influencer markers, ring trails, HUD quads
 ```
 
 Contract items: headless FBO **with depth attachment** (E1 — captures
 currently render in draw order); matrix uploads via `_mat4_bytes` =
 `np.array(m.to_list(), np.float32).tobytes()` (E3, macOS PyGLM layout
-hazard); `theme` and mesh (`tetra|winged|impostor|ellipsoid|cone|arrow`,
-S4.4a) from `config.viz`;
+hazard); `theme` and mesh (`tetra|winged|impostor|ellipsoid|cone|arrow|
+points`, S4.4a) from `config.viz`;
 dual-view = two `(camera, viewport)` passes; HUD = orthographic pixel-space
 pass at frame end. `Visualizer.frame()` becomes **render-only** (it
 currently steps the simulation — the loop owner steps), letting `Recorder`
@@ -596,7 +634,17 @@ dispersion/gyration translation-invariant; `[0,1]`-metrics within bounds;
 permutation invariance (shuffling bird order changes nothing).
 
 ## T5 — Viz/capture suites — folded into D7 (above).
-## T6 — Perf/quality guards — folded into D8 (above).
+## T6 — Perf/quality guards — folded into D8 (above); plus:
+
+**T6.3 Soak / bounded-memory test** *(crs48-v2 §21)*
+(`test/test_soak.py`, `@slow`, nightly): one long headless run
+(≥ 20 000 frames, Recorder + metrics attached, N ≈ 500) — tracemalloc
+growth after a 500-frame warm-up < 5 % of the warm-up footprint; the two
+known unbounded accumulators become capacity-capped ring buffers
+(`MetricsCollector.history` capped by `cfg.metrics.history_cap`,
+Recorder frame list capped by `cfg.capture.frames`) and the test asserts
+their lengths saturate at the caps; positions finite and in-domain
+throughout (T0.3 invariants re-checked at soak scale).
 
 ---
 
@@ -644,13 +692,28 @@ renormalises the pair. *impl:* `ProjectionMode.step`;
 (and symmetric); behavioural: φn = 0.2 keeps residual heading variance >
 φn = 0 (same seed).
 
-**S1.5 Force-kernel corrections** *(git0 W3.1)* — *math:* separation
-`Σ r̂/d²` (unit vector — current is 1/d); cohesion `normalize(p̄−p_i)`
-(currently unbounded); `noise_force` output ×scale (δ currently
-discarded). *impl:* `physics/forces/_base.py`. *tests*
-(`test/physics/forces/test_kernels.py`): one neighbour at d = 2 →
-separation magnitude 1/4; cohesion magnitude ≤ 1 always; noise mean
-magnitude ≈ scale (±10 %, 10⁴ draws), zero at scale 0.
+**S1.5 Force-kernel corrections** *(git0 W3.1; crs48-v2 §2.3)* — *math:*
+separation `Σ r̂/d²` (unit vector — current is 1/d), with kernel selector
+`cfg.spatial.separation_kernel: "sum" | "mean" | "unit"` — `mean` divides
+the summed force by `max(1, n_found)` (crs48-v2 form: dense regions
+*average* instead of accumulate, so kick magnitude stays bounded as
+neighbour count grows); `unit` is the rystrauss form —
+`normalize(Σ −(p_j − p_i))` over `d < separation_distance`, the raw
+displacement sum normalised **once at the end** (direction-only steering,
+no distance weighting at all); `sum` keeps current semantics and stays
+the default; cohesion
+`limit3(p̄−p_i, 1)` — capped at unit length, sub-unit approach vectors pass
+through unscaled (currently unbounded for far centroids); alignment in
+the Reynolds *steering* form `normalize(v̄ − v_i)` (desired-minus-current
+then normalise — the current code computes `normalize(v̄) − normalize(v_i)`,
+a different vector whenever speeds differ); `noise_force`
+output ×scale (δ currently discarded). *impl:* `physics/forces/_base.py`.
+*tests* (`test/physics/forces/test_kernels.py`): one neighbour at d = 2 →
+separation magnitude 1/4; mean kernel with k equidistant neighbours == sum
+kernel / k; cohesion magnitude ≤ 1 always AND == |p̄−p_i| when that is < 1
+(no inflation of short vectors); alignment unit-length and parallel to
+`v̄ − v_i` for a hand pair with unequal speeds; noise mean magnitude ≈
+scale (±10 %, 10⁴ draws), zero at scale 0.
 
 **S1.6 Steric clamp** *(todo_claude §14)* — *math:* `‖F‖ ≤ max_force`
 after the 1/d² sum. *impl:* `physics/steric.py` (`max_force` param; caller
@@ -704,55 +767,120 @@ heading(t) = normalize(path(t+0.75) − path(t))
 (‖h(t+ε)−h(t)‖ < 0.05); attractor in-domain over 10⁴ frames.
 
 **S2.A2 Blob anchors + phase weights** — *math:* five Lissajous anchors
-about `flock.center` (coefficients: git6 R3);
+about `flock.center` (source-verified coefficients; ×U about C):
+```
+B₀ = C + ( sin(t·0.19)·0.74,      sin(t·0.31+0.8)·0.48,  cos(t·0.23)·0.62 )·U
+B₁ = C + ( cos(t·0.17+1.6)·0.68,  sin(t·0.37+2.1)·0.54,  sin(t·0.29+0.4)·0.72 )·U
+B₂ = C + ( sin(t·0.27+2.7)·0.58,  cos(t·0.21+1.2)·0.42,  cos(t·0.33+2.5)·0.68 )·U
+B₃ = C + ( cos(t·0.24+3.4)·0.70,  sin(t·0.33+0.6)·0.50,  sin(t·0.18+1.4)·0.58 )·U
+B₄ = C + ( sin(t·0.14+4.4)·0.48,  sin(t·0.47+2.3)·0.62,  cos(t·0.26+4.0)·0.70 )·U
+```
 `φᵢ = fract(seedᵢ·3.71 + t·0.022 + sin(seedᵢ·19 + t·0.11)·0.09)`;
-`w_k = max(0, 1 − wrap(φ, c_k)·7.5)²`, c_k ∈ {0,.2,.4,.6,.8};
-`T_legacy = Σ B_k w_k / Σ w_k` (Σw > 0 provably). *tests:*
+`w_k = max(0, 1 − wrap(φ, c_k)·7.5)²`, c_k ∈ {0,.2,.4,.6,.8}, cyclic
+`wrap(φ, c) = min(|φ−c|, 1−|φ−c|)`;
+`T_legacy = Σ B_k w_k / Σ w_k` (Σw > 0 provably: 7.5·0.1 < 1). Vectorised:
+weights `(N,5)`, `T = (w @ B)/w.sum(1, keepdims=True)`. *tests:*
 `Σ_k w_k(φ) > 0` fuzzed; anchors at fixed t match hand values;
 2 000 birds → k-means finds ≥ 4 clusters at t = 30 s; per-bird target
 variance > 0.
 
-**S2.A3 Leader/chaser** — *math:* 7 seed groups; lagged anchor (git6 R4);
-`lag = hash01(seed+9.17)(1.1+2.4·chase)`; leaders
-`hash01(seed+5.91) ≥ 0.84` (~16 %); golden-angle shells
-(`ga = 2.39996323`, `y = 1−2·fract((slot+0.5)·0.618034 + gs·0.13)`,
-`shell = fract((slot+1)·0.754877)^{1/3}`,
-breath `1+sin(t·0.13+gs·12)·0.035`);
+**S2.A3 Leader/chaser** — *math:* 7 seed groups,
+`gs = floor(seed·7)/7`, `phase = gs·2π`; the group's lagged anchor:
+```
+anchor(t, gs) = C + ( cos(phase + t·0.21)·0.50 + sin(t·0.13 + phase·2.3)·0.16,
+                      sin(phase·1.7 + t·0.19)·0.34 + cos(t·0.11 + phase)·0.12,
+                      sin(phase + t·0.16)·0.46 + cos(t·0.23 + phase·1.4)·0.14 )·U
+lag = hash01(seed+9.17)·(1.1+2.4·chase)     → primary  = anchor(t−lag, gs)
+secondary = anchor(t−lag, fract(gs + 1/7));   sec_mix = hash01(seed+3.33)·0.5
+```
+leaders `hash01(seed+5.91) ≥ 0.84` (~16 %),
+`leader_target = C + wander_heading(t)·(0.18 + hash01(seed+7.1)·0.18)·U`;
+golden-angle stratified shells (`slot` = the bird's stable seed-order rank
+within its group): `ga = 2.39996323`,
+`y = 1−2·fract((slot+0.5)·0.618034 + gs·0.13)`, `ring = √max(0, 1−y²)`,
+`θ = slot·ga + gs·2π`, `shell = fract((slot+1)·0.754877)^{1/3}`,
+`radius = (0.16+shell·0.34)(0.68+chase·0.34)(0.92+sep·0.045)·U`,
+breath `1+sin(t·0.13+gs·12)·0.035`,
+`offset = (cos θ·ring, y, sin θ·ring)·radius·breath`;
+`follower_target = lerp(primary, secondary, sec_mix) + offset`;
+`chase_target = leader ? leader_target : follower_target`;
 `T = lerp(T_legacy, chase_target, chase)` — activates
-`cfg.field.chase_strength`. *tests:* leader fraction 0.16 ± 0.02 over 10⁴
+`cfg.field.chase_strength`. Seed-only quantities (lag, role, group, slot,
+sec_mix) cached in `reset()`. *tests:* leader fraction 0.16 ± 0.02 over 10⁴
 seeds; group membership stable; chase = 0 ≡ S2.A2 targets (allclose);
 chase = 0.8 → 7-cluster structure, leaders' anchor-distance < followers'.
 
-**S2.A4 Shell + cavity** — *math:*
+**S2.A4 Shell + cavity** — *math:* with `Δ = p − T`, `d = ‖Δ‖`, `d̂ = Δ/d`
+(guard d > 1e-6):
 `R_blob = (0.24 + (0.5+0.5 sin(seed·41+t·0.29))·0.16 + sin(φ·2π+t·0.17)·0.05)U`;
-`F = −d̂(d−R_blob)·coh·1.35(1−chase)`; inner floor
-`R_blob(0.28+(1−chase)·0.18+sep·0.012)`, push-out ×`sep·1.4`. *tests:*
+`F = −d̂(d−R_blob)·coh·1.35(1−chase)·shell_influence`; inner floor
+`R_blob(0.28+(1−chase)·0.18+sep·0.012)`, push-out `d̂(inner−d)·sep·1.4`
+when `d < inner`. *tests:*
 settled blob — central voxel density < 0.3× shell band; R_blob FFT shows
 both documented oscillation frequencies.
 
 **S2.A5 Remaining terms (full 13-term composition)** — *math:* slot
-repulsion offsets **±{1,7,31}** mod-wrapped, kernel
+repulsion offsets **±{1,7,31}** mod-wrapped
+(`other = positions[(i+o) mod n_active]`, active-compacted order), kernel
 `((r_slot−d)/r_slot)²` inside `r_slot = (0.07+sep·0.02)U`, gain
 `sep(0.14+chase·0.05)`; tangential
-`normalize(axis×(p−T))·align·0.035(1−chase)` (drifting seed axis);
+`normalize(axis×(p−T))·align·0.035(1−chase)·tangent_pull` with drifting
+seed axis `axis = normalize(sin(t·0.13+seed·7),
+0.72+sin(t·0.19+seed·3)·0.28, cos(t·0.17+seed·5))`;
 buoyancy (z-up)
 `F_z += (sin(8d/U−1.1t+17·seed)·0.09 + 0.24(T_z−p_z)/U)(0.75+0.25·flow)`;
-curl flow (normalized sin+cos pairs ×0.08); fold band (spatial 2.4–3.7,
-temporal 0.43–0.73, × ripple envelope sum); drag
+curl flow, with `q = (p−C)/U`:
+```
+flow = ( sin(q_y·2.8 + t·0.24 + seed) + cos(q_z·2.1 − t·0.17),
+         sin(q_z·2.3 + t·0.20)        − cos(q_x·1.9 + t·0.24),
+         sin(q_x·2.6 − t·0.16)        + cos(q_y·2.2 + t·0.24) )
+F_flow = normalize(flow)·flow_w·0.08·flow_pull      (flow_w = cfg.field.flow,
+                                                     here and in S2.A6)
+```
+fold noise (the finer second band, coupled to ripple activity):
+```
+fold = ( sin(q_y·3.7 + t·0.73 + seed) + cos(q_z·2.9 − t·0.51),
+         sin(q_z·3.1 − t·0.67 + seed) − cos(q_x·2.4 + t·0.43),
+         sin(q_x·3.3 + t·0.59 + seed) + cos(q_y·2.6 − t·0.47) )
+F_fold = fold·flow_w·flow_pull·ripple_envelope_sum        (S2.A6 export)
+```
+drag
 `−v·chase(0.08+0.02·flow)`; drift alignment to `heading(t)·v0`; target
-pull `(T−p)/U·coh·target_pull`. *tests:* each term unit-pinned on hand
-inputs (slot kernel zero outside r_slot & continuous at it; buoyancy
-z-only; drag anti-parallel; flow/fold normalized pre-gain); 10⁴-frame
-NaN/speed fuzz all-terms-on; tangential on → nonzero sign-stable angular
-momentum about blob axes.
+pull `(T−p)/U·coh·target_pull`; boundary containment (the composition's
+own term — distinct from the S2.B7 asymptotic wall): for
+`d = ‖p−C‖ > 1.45U`, `F −= r̂·(d−1.45U)·1.6` — a *linear* overshoot
+spring, zero inside `1.45U` (crs48 soft spherical boundary; keeps the
+blob free-floating rather than hard-projected). **Composition contract** *(crs48-v2 §14 —
+functional `ForceTerm`/`composeForces`)*: the 13 terms are pure, named
+functions `(flock, cfg, cache) → (N,3)` registered in an ordered
+`FIELD_TERMS` table; `FieldMode.step` composes them by reduction, and
+`cfg.field.disabled_terms: list[str]` (default `[]`, live-mutable) skips
+entries at runtime — per-term isolation for benchmarks/A-B comparison
+without mode forks, and each term individually unit-testable. *tests:*
+each term unit-pinned on hand inputs (slot kernel zero outside r_slot &
+continuous at it; buoyancy z-only; drag anti-parallel; flow/fold normalized
+pre-gain; boundary zero at d = 1.44U, linear in overshoot at 2U vs 3U —
+slope 1.6); full step force == Σ of individual term outputs on a frozen
+state; disabling one term changes the sum by exactly that term's
+contribution; unknown name in `disabled_terms` warns and is ignored;
+10⁴-frame NaN/speed fuzz all-terms-on; tangential on → nonzero sign-stable
+angular momentum about blob axes.
 
-**S2.A6 Ripples** — *math:* trains {0, 9.33, 18.67};
+**S2.A6 Ripples** — *math:* three trains, offsets o ∈ {0, 9.33, 18.67} s,
+per-train `τ = (t − o) mod 28` (28 s cycle);
 `env = ss(0.6,1.7,τ)(1−ss(6.2,8.8,τ))`; `radius = (0.16+0.16τ)U`;
-`width = (0.11+0.012τ)U`; moving Lissajous origins about C; twist
-`+(heading×F_r)·0.28`; gain `flow(0.13+0.04·waveGain)`. *impl:* vectorised
+`width = (0.11+0.012τ)U`; moving origin
+`origin = C + (sin(t·0.17+o)·0.46, cos(t·0.13+o·1.7)·0.25,
+cos(t·0.19+o·0.6)·0.42)·U`; with `r = ‖p−origin‖`,
+`δ = |r−radius|/width`, `amount = exp(−δ²)·env`:
+`F_radial = (p−origin)/r·amount`, twist `+(heading×F_radial)·0.28`, total
+`F_ripple = (F_radial + twist)·flow_w·(0.13+0.04·waveGain)`; export
+`ripple_envelope_sum = Σ_trains amount` (consumed by S2.A5's fold term).
+*impl:* vectorised
 in `FieldMode`; `extensions/ripple.py` a thin wrapper for other modes.
 *tests:* env zero outside [0.6, 8.8], peak in [1.7, 6.2]; origins move;
-paused-flock radial histogram shows 3 rings; < 5 ms at N = 100 k.
+paused-flock radial histogram shows 3 rings; envelope sum matches a
+hand-computed 3-train value at fixed t; < 5 ms at N = 100 k.
 
 **S2.A7 Inertia / bounded panic / blackening** — *math:* inertia lerp
 (D4); panic ceiling
@@ -763,17 +891,31 @@ paused-flock radial histogram shows 3 rings; < 5 ms at N = 100 k.
 *tests:* max speed ≤ 2.35·v0 across 10⁴ panic frames; wake-region pair
 distance drops during a pass; inertia 0.8 → per-frame |Δ‖v‖| < 0.2·v0.
 
-**S2.A8 Threat FSM + force bundle** — *math (source-verified):*
+**S2.A8 Threat FSM + force bundle** — *math (source-verified):* persistent
+state `{pos, vel, dir, turn_axis, phase ∈ {approach, egress}}`; speed
+`2·v0·(1+0.5·mom)`, moved `pos += dir·speed·dt`;
 `capture = max(0.18, 0.72R)U`; `pass = (0.92+2.6R+1.32·mom)U`;
-`clear = pass(0.72+0.16·mom)` + heading gate `dot < −0.12`; turn rate
-`(0.54+0.025·accel)(1−0.24·mom)` (orbit 0.42·…); sign-aligned EMA turn
-axis; Rodrigues `rotate_toward` capped at `rate·dt`; egress arc
-`broad = R·(0.36 chase | 0.24 orbit)·U`, lift `sin(0.18t+0.7)·broad`,
-drift `cos(0.13t+1.4)·broad·0.72`; force bundle with `broad = √prox`:
+`clear = pass(0.72+0.16·mom)`; approach→egress at
+`dist_to_center ≤ capture`; egress→approach at `dist > clear` AND heading
+gate `dot(dir, to_center̂) < −0.12`; target = approach ?
+`flock.center` : `center + dir·pass + arc`; steer response ×
+`1.86+(1−mom)·0.48` (approach) / `0.34+(1−mom)·0.44` (egress); turn rate
+`(0.54+0.025·accel)(1−0.24·mom)` rad/s (orbit 0.42·…); sign-aligned EMA
+turn axis — `desired = normalize(dir × to_center̂)`, negate if
+`dot(prev, desired) < 0`, `axis ← normalize(lerp(prev, desired, amt))`;
+Rodrigues `rotate_toward` capped at `rate·dt` (any ⊥ axis when
+parallel/anti-parallel); egress arc
+`broad = R·(0.36 chase | 0.24 orbit)·U`, lift
+`turn_axis·sin(0.18t+0.7)·broad`, drift
+`normalize(turn_axis×dir)·cos(0.13t+1.4)·broad·0.72`; force bundle on
+birds within `d < 2R·U`, `prox = 1 − d/(2R·U)`, `broad = √prox`,
+`â = (p−p_threat)/d`:
 push `â·strength(2.5+1.7·vacuole)·broad`; wake
 `(â−dir·0.35)·min(1.8, ‖v_t‖/v0)·strength·broad·0.42`; split
 `(−â_y, â_x, 0.28/1.45·â_z)·splitGain·broad·1.45` (horizontal tear,
-z-up); wave `v̂·waveGain·broad·0.22`. Modes off/cursor/orbit/autonomous.
+z-up); wave `v̂·waveGain·broad·0.22`. Modes off/cursor/orbit/autonomous
+(`cursor` = threat at the S5.4 mouse-ray median-depth point; falls back
+to orbit headless).
 *impl:* `extensions/predator.py → Threat(Extension)`; publishes
 `ctx.threat_prox`; **rendered** via the flag channel (currently the
 predator is invisible). *tests:* `rotate_toward` Rodrigues-exact and
@@ -783,12 +925,28 @@ region horizontally biased (xy-extent > z-extent); `threat_prox ∈ [0,1]`
 shape (N,); *(gl)* red marker visible in all themes.
 
 **S2.A9 Blob init + presets** — *math:* 5 fixed centres
-((−0.48,0.18,0.12) …), ∛-uniform shells `r = cbrt(u)(0.22+u'·0.28)U`,
-jitter 0.045U, drift-biased tangential velocities; presets
-quiet_roost / lava_lamp / ink_cloud / predator_ripple / vacuole /
-silk_sheet / storm_turn as `conf/field_*.yaml` (full vectors: git6 R12).
-*tests:* frame-0 lobes; init densities equal across N (±10 %); presets
-load with documented values.
+`(−0.48,0.18,0.12) (0.36,−0.20,−0.28) (0.12,0.34,0.42) (−0.16,−0.30,0.34)
+(0.48,0.16,0.18)` (×U about C, assigned `i mod 5`), ∛-uniform shells
+`r = cbrt(u)(0.22+u'·0.28)U`, jitter `U(−1,1)·0.045U` per axis —
+**position part implemented** (`boid.py::init_positions("blob")`);
+remaining: drift-biased tangential velocities
+`v = ((0.34+U(−1,1)·0.08), U(−1,1)·0.16, (0.08+U(−1,1)·0.08))·v0·0.5 +
+jitter(0.05·v0)` (coherent initial flow, wired to
+`velocity_init: "drift"`), and the presets as `conf/field_*.yaml`
+(columns: N, speed×v0, sep, align, coh, chase, inertia, noise, flow,
+trail, threat):
+```
+quiet_roost      3000  0.48 0.85 0.65 1.85 0.72 0.82 0.03  0.18 velocity     off
+lava_lamp       16000  defaults (pure blob dynamics, chase 0)
+ink_cloud       18000  0.62 0.92 0.90 1.80 0.82 0.84 0.035 0.30 accumulation autonomous
+predator_ripple 12000  0.78 1.05 1.05 1.15 0.64 0.70 0.08  0.48 velocity     orbit
+vacuole         10000  0.68 1.12 0.92 1.25 0.76 —    —     0.42 accumulation autonomous (vacuole_strength 0.9)
+silk_sheet      14000  0.46 0.92 1.10 1.10 0.68 0.88 0.025 0.24 velocity     off
+storm_turn      16000  0.90 1.10 1.15 1.25 0.42 0.58 0.10  0.72 velocity     autonomous
+```
+*tests:* frame-0 lobes; init densities equal across N (±10 %); drift init
+mean velocity within 5 % of `(0.34, 0, 0.08)·v0·0.5` over 10⁴ birds;
+presets load with the tabled values.
 
 ### Track B — Reynolds variants (Starlings + rystrauss)  *(git5, git3; ≈3½ days)*
 Files: `physics/forces/spatial.py`, `physics/forces/_base.py`,
@@ -805,24 +963,52 @@ neighbor_filter` to `knn | hybrid | global` *(sci7 §3.2–3.3)*: the `global`
 degenerate case steers alignment/cohesion toward the **whole-flock** mean
 velocity / CoM (no radius, no kNN) — the same behaviour the `marl` mode's
 embedded rules use (S7.1), exposed here as a general spatial-mode option for
-studying global vs local coupling. *tests:* hand cluster — neighbour set
+studying global vs local coupling. Ship
+`conf/murmuration_starlings.yaml` — the source-parity preset exercising
+the whole track: `mode: spatial`, `flock: {num_boids: 150, v0: 4.0,
+visual_range: 80}`, `spatial: {separation_weight: 3.0,
+cohesion_weight: 0.2, alignment_weight: 0.02, noise_scale: 0.05,
+neighbor_filter: hybrid, influence_count: 7,
+alignment_radius_ratio: 0.75, speed_mode: fixed, parameter_jitter: true}`,
+`boundary: {mode: sphere, sphere_radius: 300, avoidance_factor: 0.05}`,
+`viz: {bird_mesh: winged, background: gradient}`. *tests:* hand cluster —
+neighbour set
 respects radius AND cap; alignment set ⊆ cohesion set; `global` → every
-bird's cohesion target equals the flock CoM.
+bird's cohesion target equals the flock CoM; preset loads with the listed
+values and settles into cohesive rotating groups inside the sphere within
+500 frames (`@slow` behavioural smoke).
 
 **S2.B2 Update-order fidelity** — order: predator boost(×1.4) →
 `acceleration_scale`(0.3) → limit(max_force) → `v += a` → velocity noise
 `(U³−0.5)·noise_scale` (when `noise_mode="velocity"`) → ceiling limit →
-move; `speed_mode ∈ {band, ceiling, fixed}`. *tests:* monkeypatched-stage
-order recording; "ceiling" allows |v| < 0.3v0; "fixed" → |v| ≡ v0.
+move; `speed_mode ∈ {band, ceiling, fixed}` (effective predator damping
+1.4×0.3 = 0.42 vs prey 0.30 — boost before scale, order matters). Ship
+`conf/murmuration_boids.yaml` — the rystrauss source-parity preset:
+`mode: spatial`, `flock: {num_boids: 150, v0: 6, max_force: 1,
+visual_range: 100}`, `spatial: {separation_weight: 4.5,
+alignment_weight: 0.65, cohesion_weight: 0.75, acceleration_scale: 0.3,
+separation_kernel: unit, noise_mode: velocity, speed_mode: ceiling,
+separation_distance: 20}`, `boundary: {mode: toroidal,
+use_toroidal_distance: true}` (predators spawned via right-click).
+*tests:* monkeypatched-stage
+order recording; "ceiling" allows |v| < 0.3v0; "fixed" → |v| ≡ v0; preset
+loads with the listed values and reaches α > 0.6 within 300 frames
+(`@slow` behavioural smoke).
 
 **S2.B3 Predator boids (species)** — boosts 1.8× speed / 1.5× perception /
 1.4× acceleration; escape
 `normalize(p_prey−p_pred)·cfg.spatial.predator_escape_factor (10⁷)`
-**replacing** separation; **hard-zero** align+cohesion when any predator
-is perceived; predators flock among themselves. *tests:* hand
+**replacing** separation (min-image difference on toroidal domains; the
+subsequent max-force limit caps it — its job is to *win the sum*, not set
+the magnitude); **hard-zero** align+cohesion when any predator
+is perceived; predators flock among themselves; whenever the species
+column is populated, α/dispersion (and the other flock observables) are
+computed over **prey only** in every mode (generalises S2.D3 beyond
+vicsek). *tests:* hand
 neighbourhood → align/coh contributions exactly zero; escape wins the sum
 pre-limit; flash-expansion (mean NN distance doubles in 30 frames); two
-predators' pair distance stabilises.
+predators' pair distance stabilises; α of an aligned prey flock is
+unchanged by adding one orthogonal predator (prey-only metrics).
 
 **S2.B4 Physical metrics** — `k_v = cruise_ms/v0` (8.94 m/s default),
 `k_a = acc_peak/max_force` (40 m/s²), m = 0.075 kg; `F = m·k_a⟨|a|⟩` (N);
@@ -879,12 +1065,23 @@ params; seasonal N tracks the curve over a simulated year;
 `predator_present` deterministic same-day-same-result and yearly frequency
 0.296 ± 0.03, seeded-rng frequency 0.296 ± 0.01 over 10⁴ draws.
 
-**S2.B9 Velocity-init variants** *(todo_claude E12)* — `cube`:
+**S2.B9 Init variants (velocity + position)** *(todo_claude E12;
+crs48 §13)* — *velocity* — `cube`:
 `(U³−0.5)·2v0` (E|v| ≈ 0.816·v0); `speed_uniform`: uniform direction ×
 `U(min(1, 0.3v0), v0)`; `tangential`: `normalize(p−C)×random_unit ·
-U(1, v0)`; selector `cfg.flock.velocity_init`. *tests:* cube mean ≈
+U(1, v0)`; selector `cfg.flock.velocity_init`. *position* — selector
+`cfg.flock.position_init`; `box | sphere_shell | gaussian | grid | blob`
+are **implemented** (`physics/boid.py::init_positions`, blob = S2.A9's
+∛-shells about 5 centres) — remaining work: declare the config field
+(D1 FlockConfig, so T1.2 sees a reader) and add the filled **`sphere`**
+variant — volume-uniform ball about C: `r = ∛u·0.88·R_dom`
+(`R_dom = 0.4·min(W,H,D)`), direction uniform on S² (`random_unit_sphere`)
+— the ∛ law gives constant density in 3D (a shell-free single-cloud
+start; `sphere_shell` is surface-only). *tests:* cube mean ≈
 0.816·v0 (±5 %, 10⁴ birds); speed_uniform in-band, non-constant;
-tangential ⊥ radial (dot < 1e-5).
+tangential ⊥ radial (dot < 1e-5); sphere init — radial-bin counts ∝ r²
+(±15 %, 10⁴ birds), max r ≤ 0.88·R_dom, all in-domain; each
+position_init value produces n in-domain points and is seed-reproducible.
 
 **S2.B10 Numba force kernels + precision policy** *(arch.md two-pass;
 dead `use_numba`)* — two-pass: batched index query (Python/scipy) →
@@ -898,6 +1095,30 @@ observables are exported; lazy import; numpy path stays the reference.
 *tests:* numba ≡ numpy within `atol=1e-5` (fastmath off), same seeds,
 N = 2 000; exporting metrics with fastmath on raises/warns; `@slow`
 N = 50 k step within arch.md budget ×2.
+
+**S2.B11 Grid-tier flow + deterministic seed noise** *(crs48 §3.5/§15 —
+the grid-mode counterparts of the field terms)* — *math:* the **same curl
+flow primitive** S2.A5 uses (per-axis normalized sin+cos pairs, e.g.
+`f_x = sin(p_y·2.8 + t·0.24 + seed) + cos(p_z·2.1 − t·0.17)`, cyclic in
+(x,y,z), `F = normalize(f)·gain`) offered to **spatial mode** at the
+documented grid gain **0.22** behind `cfg.spatial.flow_weight`
+(default 0 = off — one shared Level-0 function, two composers, no
+duplicate math); **seed-sinusoidal noise** as
+`cfg.spatial.noise_mode: "seed_sinusoidal"` — wire the **existing but
+unconsumed** `core/types.py::seed_noise3(seeds, t)` atom (deterministic
+per-bird sinusoids, bounded ±0.18/axis — functionally the doc's
+`(sin(seed+t·1.17), sin(seed·1.31+t·1.41), cos(seed·0.73−t·1.23))·0.18`
+with different frequency constants), output ×`noise_scale/0.18` so
+`noise_scale` keeps its magnitude meaning; deterministic ⇒ same-seed
+replay covers the noise term too (T4.3). *impl:* curl-flow atom in
+`physics/forces/_base.py` (S2.A5's FieldMode imports it);
+`SpatialMode.step` adds both terms; no dead atom remains (Micro→Macro
+rule). *tests* (`test/physics/forces/test_spatial_variants.py`):
+flow output unit-length pre-gain, varies with p, t, and seed;
+`flow_weight = 0` → bit-identical to baseline; seed_sinusoidal —
+per-axis bound `noise_scale` respected, same (seeds, t) → identical
+output, two same-seed runs bit-identical with noise on; FieldMode and
+SpatialMode flow terms agree on identical inputs up to their gains.
 
 ### Track C — Angle mode (PyNBoids paradigm)  *(git4; ≈2 days)*
 Files: `physics/forces/angle.py::AngleMode` (new; `speed_mode="fixed"`,
@@ -945,6 +1166,18 @@ neighbour sets == full-rebuild sets over 500 random-walk frames; touches
 `radii_in_bodies`). *tests:* doubling boid_size doubles all three
 thresholds; 2×-scale behavioural smoke.
 
+**S2.C8 Angle-mode preset** — ship `conf/murmuration_angle.yaml` with the
+source-parity values: `mode: angle`, `flock: {num_boids: 200,
+boid_size: 9}`, `boundary: {mode: margin}`, `angle: {turn_rate: 120,
+max_turn_rate: 200, turn_threshold: 0.5, jitter_deg: 4, margin: 42,
+speed_mode: linear, base_speed: 150, neighbors: 7,
+sep_radius_bodies: 1, align_radius_bodies: 5, range_radius_bodies: 12}`,
+`viz: {per_bird_color: true, trails: ring}` (these doubles as the
+AngleConfig defaults). *tests:* preset loads with the listed values; the
+mode golden (T0.2, registry-parametrized) pins its trajectory; margin
+containment at these speeds (10⁴ frames, zero escapes — S2.C4's test run
+on the shipped preset).
+
 ### Track D — Vicsek predator–prey  *(git2 R2–R5; ≈2 days)*
 Files: `physics/forces/vicsek.py`; tests
 `test/physics/forces/test_vicsek_species.py`.
@@ -974,6 +1207,17 @@ contacts.
 
 **S2.D3 Prey-only metrics in vicsek mode** — *test:* α of aligned prey +
 one orthogonal predator == 1.0.
+
+**S2.D4 Preset parity + order transition** — `conf/murmuration_vicsek.yaml`
+(exists; loads correctly once D1 lands) carries the source-parity vector:
+`n_preys = 100, n_predators = 1, R_inf = 5, R_avoid = 1, R_pred = 5,
+v = v_pred = 1, Δt = 1, D = 0.8, η = 0.8, w_afraid = 3, detect_ratio = 1.5,
+predator_noise_ratio = 0.2`, domain 40³ (source half-width W = 20).
+*tests:* preset sentinel values load as written (D1-T2.2); order
+transition — settled α(η = 0.95, D = 0.05) > 0.8 AND
+α(η = 0.05, D = 2.0) < 0.3 at N = 200 after 300 settle steps (both
+phase-diagram corners behave; complements S1.7's D-liveness test);
+vicsek golden re-pinned with S1.7 in the same commit.
 
 ### Track E — Influencer (murmuratR)  *(git1; ≈1½ days)*
 Files: `physics/forces/influencer.py::InfluencerMode`
@@ -1021,9 +1265,41 @@ directions** (first blend heads every bird at the target, weighted).
 *tests:* init density equal across N ∈ {100, 1 000, 8 000} (±10 %);
 frame-0 headings ∝ influence toward target.
 
-**S2.E5 Diagnostics** — per-frame `min/max ‖p − T‖` →
-`FlockMetrics.target_dist_min/max` + window title. *tests:* CSV contains
-both columns, min ≤ max, finite.
+**S2.E5 Diagnostics + influencer marker** — per-frame `min/max ‖p − T‖` →
+`FlockMetrics.target_dist_min/max` + window title
+(`dT=[{min:.0f},{max:.0f}]` in influencer mode). **Render the influencer**
+(the source never sees its own target — in 3D it's invaluable for
+debugging): one extra instance appended to the packed buffer at `T(tick)`
+with velocity = its finite-difference direction, flagged through the D7
+flag channel (red/larger, same mechanism as the threat marker). *tests:*
+CSV contains
+both columns, min ≤ max, finite; *(gl)* marker visible and tracing a
+smooth curve the flock chases.
+
+**Track-E signature test (emergent stretching)** — after 500 settled
+steps on the shipped preset, the flock's extent along the target's
+velocity direction exceeds its mean transverse extent: the leading
+eigenvector of the position covariance is roughly parallel to `T'(t)`
+(|dot| > 0.7) — the core-leads/tail-lags morphology that is this model's
+headline behaviour (`@slow`, `test/physics/forces/test_influencer.py`).
+
+**S2.E6 Pilotable flock** *(crs48 §7.2 — the VR pilot's desktop port;
+the influencer target is the natural host)* — *math:* a user-steered
+**pilot point** `P` with heading `ĥ` replaces the Lissajous target when
+`cfg.influencer.pilot_enabled`; per bird, with `Δ = P − p`, `d = ‖Δ‖`:
+`F = ĥ·align·0.12 + Δ·coh·0.22 + (Δ/d)·(d − shell_radius)·0.42`
+(third term is signed — pulls in beyond the shell, pushes out inside it,
+so birds orbit a sphere of radius `cfg.influencer.shell_radius·U` around
+the pilot rather than collapsing onto it). *impl:* pilot state on
+`InfluencerMode` (position + heading), driven through the D8 command
+queue from `input_control` keys (arrows/WASD move `P` at `pilot_speed·U`
+per second in the camera frame; headless path can enqueue the same
+commands — scriptable choreography). *tests*
+(`test/physics/forces/test_influencer.py`): force zero-crossing exactly
+at `d = shell_radius·U` for the radial term; settled flock's median
+`‖p − P‖` within ±20 % of the shell radius; pilot displacement commands
+move the settled flock centroid in the commanded direction; disabled ⇒
+S2.E1 trajectory unchanged (allclose).
 
 ## S3 — Metrics & analysis suite  *(≈2 days; after D3)*
 Files: `analysis/metrics.py`, `analysis/rewards.py`,
@@ -1062,7 +1338,9 @@ disconnected → 0.0; telescoping sum property.
 **S3.5 Hull-volume τρ** *(todo_claude §11)* —
 `ρ = N / ConvexHull(positions).volume` (0 if degenerate/< 4 points); ring
 buffer (sample every 10 frames, 500 slots);
-`τ = interval·(0.5 + Σ_{lag≥1} r(lag))`, stop at first `r ≤ 0`. *tests:*
+`τ = interval·(0.5 + Σ_{lag≥1} r(lag))`, stop at first `r ≤ 0` **or at
+lag = 0.25·buffer, whichever comes first** (the predecessor's cap — keeps
+τ finite on slowly-varying series that never cross zero). *tests:*
 cube hull = edge³ ± 1e-3; coplanar → 0; constant series → τ == 0 (not
 NaN); period-P oscillation → τ ∈ [P/6, P].
 
@@ -1107,16 +1385,33 @@ overshoot 0 inside, > 0 for planted outliers; altitude_deviation 0 for a flat
 sheet at `z_target`, grows with vertical spread; L translation-invariant;
 normalized L O(1) across ×10 domain scale (±10 %).
 
-**S3.9 Rewards module** — `analysis/rewards.py`: weighted composite over
-named metric terms; `reward_faithful_signs` flag (source's +alignment
-quirk vs corrected both-negative); shared by MARL (S7) and EvoFlock
+**S3.9 Rewards module** — `analysis/rewards.py`:
+`compute_reward(flock, config) → float`, pure numpy, no gym dependency —
+the weighted composite (weights = `cfg.marl.reward_*`, defaults
+w_a = w_c = 1, extension terms 0):
+```
+R = ±w_a·velocity_deviation − w_c·dispersion          (core two terms)
+    − w_L·‖Σᵢ (pᵢ−CoM)×vᵢ‖/N                          (excess-rotation penalty)
+    − w_b·boundary_overshoot − w_z·altitude_deviation  (containment, altitude)
+```
+core sign: `+w_a` under `reward_faithful_signs=True` (the source's
+quirk — the agent trades deviation against compactness), `−w_a`
+corrected (both negative, maximum 0 at perfect order); every term is an
+S3.8/existing metric — no new physics. Shared by MARL (S7) and EvoFlock
 scalarization. *tests:* perfect flock → corrected reward 0 (max);
-faithful flag flips the alignment sign; per-term weight linearity.
+faithful flag flips the alignment sign; per-term weight linearity
+(doubling one weight doubles exactly that term's contribution).
 
 **S3.10 Export schema** — `FlockMetrics.to_dict()` (D9.2) adopted
 end-to-end; new fields (suggested_m, nematic, msd_curve, target_dist_*,
-*_real) included. *tests:* JSON round-trip; pinned key set; Recorder CSV
-headers == schema.
+*_real) included. **Mode-gated observables export honestly**: fields only
+a specific mode populates (Θ/Θ′ from projection's `last_theta`,
+`target_dist_*` from influencer) are `None`/absent in other modes — never
+stale zeros masquerading as measurements (0.0 reads as "perfectly
+transparent", not "not measured"). *tests:* JSON round-trip; pinned key
+set; Recorder CSV
+headers == schema; a spatial-mode run exports `theta = None` (CSV: empty
+cell), a projection-mode run exports a float.
 
 **S3.11 EMA-smoothed readout** *(predecessor audit; FlockMetrics3D)* — the
 HUD/title/console readout smooths the fast fields (α, Θ, Θ′, L, σ_r) with a
@@ -1153,23 +1448,46 @@ that reads on solid meshes where the disc-`r²` rim does not apply). *tests:*
 near bird renders larger & more opaque than far (pixel-area/alpha probe);
 edge-on mesh pixels (low N·V) brighter than face-on.
 
-**S4.3 Trails ×3** (`cfg.viz.trails`) — *velocity:* impostor stretched
+**S4.3 Trails ×4** (`cfg.viz.trails`) — *velocity:* impostor stretched
 along `proj(p) − proj(p − v·len·0.12)`; head
 `max(0.28, 1/(1+2.8s))`; tail `0.22+1.35s`; wave
 `sin(prog(5.4+3.4·speed01)+seed)·wav·s·0.18`. *accumulation:* fade quad at
 `clamp(0.24 − 0.19·persist − 0.09·vis, 0.018, 0.32)`
 (persist = clamp(len/5), vis = clamp(opacity)); depth-only clear, then
 draw. *ring:* K = `trail_length` past positions (from `prev_positions`
-lineage) as shrinking/fading sprites. *tests:* velocity — lit extent
-along motion > ⊥; accumulation — persists ≈ 1/fadeOpacity frames, clears
-when paused; ring — K sprites monotone size/alpha; `off` pixel-identical
-baseline.
+lineage) as shrinking/fading sprites. *lines (CPU fallback — crs48-v2
+§9.4; shader-free, the natural first implementation and the S4.10
+ladder's cheap tier):* 5 segments per bird traced backward along velocity,
+segment span `trailScale = 0.1·trail_length` (vertex k at
+`p − v̂·trailScale·prog`, `prog = k/5`); ribbon wave displaces vertices
+along the camera-plane perpendicular `(−v_y, v_x, 0)/√(v_x²+v_y²)`
+(z-up; fall back to `(1,0,0)` when v_x = v_y = 0) by
+`sin(prog·2π·2.6 + seed)·waveScale·prog²` — amplitude vanishing at the
+head; one `LINES` VAO of 2·5 vertices per bird, CPU-filled each frame
+from positions/velocities, drawn depth-test-off with uniform alpha
+through the flat-colour pipeline (no new shaders — only the
+`prev_positions`-style buffer D3 already provides). *tests:* velocity —
+lit extent along motion > ⊥; accumulation — persists ≈ 1/fadeOpacity
+frames, clears when paused; ring — K sprites monotone size/alpha; lines —
+buffer holds exactly 10 vertices/bird, head-vertex wave displacement zero,
+segment extent anti-parallel to v, degenerate vertical-v bird produces
+finite vertices; `off` pixel-identical baseline.
 
-**S4.4 Winged mesh + flap** — 6-triangle body+wings+tail (vertex table:
-git5 R6; forward +Z, wingspan ±8 on X); per-vertex flap weight (1.0 at
-wing tips); `u_Flap = ±0.5` toggled every `⌊frame/flap_period⌋`
+**S4.4 Winged mesh + flap** — 6-triangle body+wings+tail; mesh space
+forward = +Z, up = +Y, wingspan ±8 on X (source-verified vertex table):
+```
+T  = ( 0.0, 0.0,  3.0)  body tip        WL = (−8.0, 0.0, −1.0)  L wing tip (flap 1.0)
+B1 = (−1.0, 0.0, −3.0)  back left       WR = ( 8.0, 0.0, −1.0)  R wing tip (flap 1.0)
+B2 = ( 1.0, 0.0, −3.0)  back right      RL = (−0.8, 0.1,  0.8)  L wing root
+B3 = ( 0.0, 1.0, −3.0)  back top        RR = ( 0.8, 0.1,  0.8)  R wing root
+faces: (T,B1,B2) (T,B2,B3) (T,B3,B1) body · (B1,B3,B2) tail cap ·
+       (RL,WL,B1) (RR,B2,WR) wings          (flat face normals suffice)
+```
+per-vertex flap weight (1.0 at WL/WR, else 0);
+`u_Flap = ±0.5` toggled every `⌊frame/flap_period⌋`
 (period 100); applied to mesh-y **before** the LookAt rotation
-(local-up flap). *tests:* geometry counts; tip y toggles at exact frame
+(local-up flap; renderer receives `sim.frame` via `begin_frame`). *tests:*
+geometry counts; tip y toggles at exact frame
 boundaries; bird flying +z flaps in world-xy.
 
 **S4.4a Mesh-registry entries + theme material sets** *(sci9 §3–4;
@@ -1182,15 +1500,25 @@ is the extension seam, arch.md §12)* —
 - **Cone / arrow procedural meshes** *(Options A/B)*: registry entries beside
   `tetra | winged | impostor | ellipsoid` — proves the mesh table is truly
   pluggable (no shader branching; one entry each).
+- **`points` render tier + count-based recommendation** *(crs48 §6.3)*: a
+  raw `GL_POINTS` registry entry (per-instance position + hue only,
+  `gl_PointSize ∝ boid_size/depth`, flat colour — the cheapest tier for very
+  large N), and a pure function
+  `recommend_render_mode(n) → "instanced" | "impostor" | "points"`
+  (thresholds ≈ n ≤ 10 k instanced meshes, ≤ 60 k impostors, above →
+  points) logged at startup and available to the S4.10 governor as an
+  optional ladder step after count reduction.
 - **Theme-driven material sets**: promote the Blinn-Phong `ambient`/`diffuse`
   pair from the hardcoded `(0.15,0.17,0.22)/(0.65,0.68,0.78)` constants to a
   per-theme table (e.g. dark scheme `diffuse (0,0.8,0) / ambient (0,0.2,0)`),
   driven by `cfg.viz.theme` (which D7 already threads to the renderer) so mesh
   shading matches the scheme rather than one fixed palette.
-*tests:* each registered mesh (`tetra|winged|impostor|ellipsoid|cone|arrow`)
-renders one frame without GL error (`@gl` smoke); a bird at 2·v0 renders
-longer along its heading than at 0.5·v0 (ellipsoid stretch); switching
-`theme` changes the sampled mesh ambient/diffuse (pixel probe).
+*tests:* each registered mesh (`tetra|winged|impostor|ellipsoid|cone|arrow|
+points`) renders one frame without GL error (`@gl` smoke); a bird at 2·v0
+renders longer along its heading than at 0.5·v0 (ellipsoid stretch);
+switching `theme` changes the sampled mesh ambient/diffuse (pixel probe);
+`recommend_render_mode` pinned at the three thresholds and monotone (pure
+logic, no GL).
 
 **S4.5 Gradient sky** — fullscreen quad, top (0.60, 1, 1) → bottom
 (0.686, 0.933, 0.933), theme-overridable; drawn first, depth off.
@@ -1229,12 +1557,16 @@ depths.
 frame loss. *tests:* folded into D7-T5.4/5.5 + first-captured-frame
 dispersion < unwarmed frame-0.
 
-**S4.10 Adaptive quality** — EMA `avg = 0.92·avg + 0.08·min(250, frame_ms)`;
-budget `1000/max(24, target_fps)`; healthy if `avg ≤ 1.12·budget`; risks
-cpu/vertex/fragment → classification; ladder (trails off → render scale
+**S4.10 Adaptive quality** — EMA `avg = 0.92·avg + 0.08·min(250, frame_ms)`
+(spike-capped, floor 0.01); budget `1000/max(24, target_fps)`; healthy if
+`avg ≤ 1.12·budget`; risk rules → classification: *cpu* — python force
+path at high N (field/spatial modes, numba off); *vertex* — N > 30 000;
+*fragment* — trails on or very large window/pixel ratio; more than one
+risk (or none) → *mixed*; ladder (trails off → render scale
 −0.15 floor 0.75 → N −18 % floor 512) when fps < 78 % of target for
 ≥ 1.8 s, one step per 1.8 s. *tests:* synthetic series → ladder order,
-spacing, per-action effects, recovery stop (pure logic, no GL).
+spacing, per-action effects, recovery stop; classifier pinned on the four
+rule combinations (pure logic, no GL).
 
 **S4.11 Fixed-timestep accumulator + interpolation** —
 `acc += clamp(frame_dt, 0, 1/20); while acc ≥ dt_phys: step(dt_phys)`;
@@ -1248,12 +1580,18 @@ Files: `analysis/presets.py`, `viz/{input_control,hud,visualizer}.py`,
 `test/test_cli.py` (no GL).
 
 **S5.1 Preset keys a–h,w** *(todo_claude E4)* — the predecessor's exact
-table (a: 0.04/0.80/6/proj · b: 0.18/0.70/7/proj · c: 0.06/0.45/3/proj ·
-d: 0.25/0.55/8/spatial · e: 0.10/0.75/6/proj · f: 0.02/0.85/3/proj ·
-w: 0.08/0.82/10/spatial · h: 0.35/0.58/9/spatial) with labels/
-descriptions printed on apply; key range skips `g` (grid). *tests:*
+table (key: φp/φa/σ/mode — label):
+a: 0.04/0.80/6/proj — *3D Pearce Default* · b: 0.18/0.70/7/proj —
+*Ball of Birds* · c: 0.06/0.45/3/proj — *Storm Cloud* ·
+d: 0.25/0.55/8/spatial — *3D Stream* · e: 0.10/0.75/6/proj —
+*Vertical Column* · f: 0.02/0.85/3/proj — *3D Acro* ·
+w: 0.08/0.82/10/spatial — *Spiral Vortex* · h: 0.35/0.58/9/spatial —
+*3D Void*. `analysis/presets.py` is **replaced** with this table (fields:
+label, phi_p, phi_a, sigma, mode, description) +
+`apply_preset(config, key) → label`, printed on apply; key range skips
+`g` (grid). *tests:*
 synthetic KEYDOWN 'b' → config equals the row; 'g' still toggles grid;
-description printed (capsys).
+label + description printed (capsys).
 
 **S5.2 Full title readout** *(E6)* — mode, N, φp/φa/σ,
 `α Θ Θ' L σr`, τρ, FPS (+ physical units), rebuilt every 20th frame.
@@ -1272,9 +1610,14 @@ field; TAB restores orbit-drag.
 `(x, y, −1, 0)`; `r̂ = normalize((V⁻¹·ray_eye).xyz)`;
 `depth = median((p_i − o)·f̂)`; `spawn = o + r̂·depth/(r̂·f̂)` →
 `SpawnAt` command; right-click → predator; `C` clear; `Q` quit;
+click-vs-drag disambiguation — spawn on click (down+up within a 5 px
+movement threshold), orbit on drag, so left-drag camera control and
+left-click spawning coexist; spawned birds get the S2.B9 `cube` velocity
+`limit3((U³−0.5)·2v0, v0)`;
 PageUp/Dn: `flock.v0 ± 0.1` floor 0.3 (live). *tests:* synthetic-camera
 unprojection hand-computed; right-click sets is_predator; C survives
-metrics; PageUp floor respected.
+metrics; a 4 px down-move-up sequence spawns, a 20 px one orbits;
+PageUp floor respected.
 
 **S5.5 CLI + facade** — repeatable `--set key.subkey=value` typed against
 the nested schema + `--print-config`; `--fullscreen`;
@@ -1325,7 +1668,11 @@ plateau ≤ 4, ramp 4→5, 0 above); speed on `speed_real` band
 `score = clamp(0.8 + (κ_avg/0.1)·0.2, 0.8, 1.0)`; hypervolume
 `F = Π max(o_k, 0.01)`. *tests:* trapezoid pinned at d/body ∈ {1.9→0,
 2.5→1, 4→1, 5→0}; helix trajectory κ matches analytic ± 2 %; speed uses
-`speed_real`.
+`speed_real`; *ramp ablation (`@slow`, optional experiment — Reynolds
+§10.6):* a short evolution with binary-threshold objectives (1 inside
+each band, 0 outside) vs the trapezoids, same seeds — trapezoid run
+reaches ≥ the binary run's best fitness with lower variance across
+islands (the ramps supply selection gradient).
 
 **S6.4 SDF obstacle layer** — `physics/obstacles.py`: sphere
 `‖p−c‖−r`; box `max(|p|−b)` (componentwise); cylinder; union = min,
@@ -1341,10 +1688,19 @@ avoidance, ≈ 0 with evolved weights (`@slow`).
 `w_fwd·sign(v* − |v|)·û`; per-behaviour `max_dist_{sep,align,coh}` and
 `angle_{sep,align,coh}` perception cones (cos α ∈ [−1, 1]);
 `fly_away_max_dist`; predictive avoidance (`min_time_to_collide`
-look-ahead); fixed k = 7 topological neighbours; integer gene for σ;
-`flock.speed_min_factor` as a gene. *tests:* forward force sign flips
-around v*; cones exclude behind-cone birds (hand geometry); k enforced;
-σ integer after decode.
+look-ahead); **static SDF-gradient avoidance** — steer
+`w_static·(−∇SDF(p))·max(0, 1 − |SDF(p)|/fly_away_max_dist)` when within
+`fly_away_max_dist` of a surface (the reader for the currently-dead
+`static_avoid_weight` gene; predictive + static together retire both
+dead `setattr` genes the audit flagged); fixed k = 7 topological
+neighbours; integer gene for σ; `flock.speed_min_factor` as a gene;
+GA-range entries for pymurmur-native params (`σ` integer, `blind_deg`,
+`anisotropy`, `speed_min_factor` — tuning our own projection model with
+the same harness). *tests:* forward force sign flips
+around v*; cones exclude behind-cone birds (hand geometry); static
+avoidance zero beyond `fly_away_max_dist`, anti-parallel to ∇SDF inside
+it; k enforced; σ integer after decode; every gene in the range table is
+read by physics (no dead genes — AST/attribute check mirroring T1.2).
 
 **S6.6 Protocol** — persist best genome + Pareto front + per-run seeds +
 objective scores to `output/evolved.yaml`; ship confined
@@ -1364,8 +1720,19 @@ mode: control applies first (D8: `v += a_ext·action_scale·v_cap`,
 component clip ±v_cap), **move**, then rules prep the *next* step:
 `v += rule_weight·(F_sep(d < separation_radius·U) + (v̄ − v) +
 (CoM − p))` with rule_weight 0.01 (global neighbourhood — no radius on
-align/cohere). *tests:* two-step hand trace shows positions at step k
-depend on rules from k−1 only; 0.01 scaling; clip bounds.
+align/cohere). `MarlMode.speed_mode = "none"` — the source dynamics have
+no speed floor/ceiling beyond the component clip, so integrate applies
+move + boundary only. Conveniences: `run_headless(controller=...)`
+accepts a `Callable[[SimulationEngine], np.ndarray]` supplying `control`
+per step; ship `conf/murmuration_marl.yaml` (`mode: marl`,
+`flock: {num_boids: 200, seed: 42}`, `boundary: {mode: open}`,
+`marl: {action_scale: 0.1, velocity_cap: 0.1, rule_weight: 0.01,
+separation_radius: 0.2, episode_steps: 500}` — the source-verified
+constants — and `viz: {dual_view: true}`).
+*tests:* two-step hand trace shows positions at step k
+depend on rules from k−1 only; 0.01 scaling; clip bounds; no band clamp
+applied (a bird at 0.05·v0 keeps its speed); preset loads with the
+documented values.
 
 **S7.2 Gymnasium wrapper** — lazy import; `MurmurationEnv(config)`:
 `observation_space = Box(−1, 1, (6N,))` — `concat((p−C)/3U, v/v_cap)`;
@@ -1425,23 +1792,62 @@ emergent alignment, S7.3 trained-beats-random) pass nightly.
 
 # Appendix A — Input-coverage traceability
 
-**todo_claude.md** — Part 1: §1→S1.1 · §2→S1.2 · §3→S1.3 · §4→S1.1 ·
-§5→S2.B8 · §6→S2.B8 · §7→S2.B8 · §8→S2.B8 · §9→S3.3 · §10→S1.8+S3.4 ·
+**todo_claude.md** (original predecessor gap analysis; verified
+item-by-item and now merged/retired) — Part 1: §1→S1.1 · §2→S1.2 ·
+§3→S1.3 · §4→S1.1 ·
+§5→S2.B8 · §6→S2.B8 · §7→S2.B8 · §8→S2.B8 · §9→S3.3 · §10→S1.8+S3.4
+(the `compute_h2` disconnected→`inf` prerequisite is **implemented**,
+`analysis/metrics.py`; η(m) itself remains S3.4) ·
 §11→S3.5 · §12→S3.6 · §13→S3.7 · §14→S1.6 · §15→S3.8. Part 2: T1→S1.1
 tests · T2→S1.2 · T3→S1.3 · T4→S1.1a · T5→S1.1 property · T6→S1.6 ·
 T7→S2.B8 · T8→S3.3 · T9→S1.8+S3.4 · T10→S3.5 · T11→S3.7 · T12→T4.4 ·
 T13→T0.3 · T14→T0.2/D0 · T15→T1.5 · T16→T1.4. Part 3: E1–E3→D7 ·
-E4→S5.1 · E5→S1.4 · E6→S5.2 · E7–E10→S4.9 · E11→D5 · E12→S2.B9 ·
-E13→S1.8. Part 4 → absorbed into D/S phasing.
+E4→S5.1 (**table + labels inlined there**) · E5→S1.4 · E6→S5.2 ·
+E7–E10→S4.9 · E11→D5 · E12→S2.B9 ·
+E13→S1.8. Part 4 → absorbed into D/S phasing. Its "where pymurmur is
+already ahead" notes (modulo wrap, sphere modes, richer predator FSM,
+extra metrics, plugin architecture) were honoured — none of those were
+regressed toward the reference.
 
 **todo_claude1.md** — §1→D1+T1.2 · §2→D6/D8 · §3→D5 · §4→D9 ·
 §5→D7/D9.2/S4.9 · §6→D6/D2/D3/D1/D9 · §7→D0.2/T1.1–1.2.
 **todo_claude2.md** — §1→D3/D5/T3.1/T4.1 · §2→S1.1/S1.5/S2.B6/D2-hygiene ·
 §3→D3(rng) · §4→D9.4/S5.1/D7/S4.3 · §5→D2/D9.1/D1/D7 ·
 §6→D7/T4.1/D9.6/test-pyramid.
+**todo_claude3.md** (audit of `resulting_sci.md` vs codebase; verified
+item-by-item and now merged/retired) — A: §1 occlusion/Θ-union/δ̂→
+S1.1–S1.3 · §2 φn→S1.4 · §3 ecology (temperature coupling, logistic dusk,
+config fields)→S2.B8, Goodenough flee + 2·v₀ predator speed→S2.A8 ·
+§4 metrics: units/energy→S2.B4, nematic→S3.1, MSD min-image→S3.2,
+τρ reconciled to the reference trapezoid method→S3.5, number density→
+S3.7, shape→m*→S3.3, **Θ-as-N/A in non-projection modes→S3.10** (new).
+B: §5 Reynolds→S2.B1/B2/B7 · §6 vicsek species→S2.D1/D2 · §7 influencer→
+S2.E1–E4 · §8 field/blob + composeForces→S2.A2–A6 + S2.A5 contract ·
+§9 angle mode→S2.C1–C5. C: §10 predator models→S2.A7/A8 + S2.B3 + S5.4 ·
+§11 EvoFlock→S6.1–6.6 · §12 partitioning→D5/S2.B6/S2.C6 · §13 GPU
+tiers→App. B. D: §14→S4.1/S4.2 · §15 trails→S4.3 · §16 sweep→S4.9 ·
+§17 perf→S4.10/D8.3 · §18 rails→D4 · §19 interaction/presets→S5.1–5.4 +
+S2.A9 · §20 init/PRNG→S2.B9/S2.A9/D3 · §21 benchmark + env overrides→
+D9.3/S5.5/S4.9. Out-of-scope notes superseded by later decisions:
+MARL→**in scope** (decision 3, S7); VR pilot forces→S2.E6;
+C++/OpenMP→numba (S2.B10).
 
-**git1 (murmuratR)** — R0→D1 · R1→D2/S2.E1 · R2→S2.E1 · R3→S2.E2 ·
-R4→S2.E3 · R5→S2.E4 · R6→S2.E5 · R7→S4.7/S4.8 · R8→S2.E tests.
+**git1 (murmuratR)** (`todo_claude_git1.md`, verified item-by-item and now
+merged/retired) — R0 config fields + loader→D1 InfluencerConfig (nested
+config supersedes the flat prefix fix) · R1 persistent tick→S2.E1 + D2
+instance state (mode re-instantiation on mode-switch is the deliberate D2
+contract, superseding the source's keep-ticks-across-modes) ·
+R2 verbatim Lissajous + domain embedding→S2.E1 · R3 move-then-steer at
+unit speed (branch-free guards, one-step lag)→S2.E2 + D4
+`move=False`/`fixed` · R4 rank influence (0.055 floor) + distance
+alternative→S2.E3 · R5 density-scaled Gaussian init + zero directions→
+S2.E4 (σ-law **partially implemented**, `init_positions("gaussian")`) ·
+R6 distance diagnostics→S2.E5 · R7 alpha-accumulation→S4.7, ortho
+projection presets (keys 7/8/9)→S4.8, **influencer marker→S2.E5 + D7
+draw_layer** (new) · R8 preset→`conf/murmuration_influencer.yaml`
+(**exists**, loads once D1 lands; T2.2 covers), tests→S2.E1–E5 inline +
+**Track-E emergent-stretching signature test** (new), golden re-pin→D0
+policy.
 **murmuratR 2nd-pass** (`todo_claude_sci6.md`, now merged) — §1.3 persistent
 tick + protocol state slot→S2.E1/D2 · move-then-steer→S2.E2 · §2 Lissajous
 (divisor freqs, two-scale amplitudes, +40 bias, C-centred)→S2.E1 · **§2.3
@@ -1449,8 +1855,20 @@ tunable trajectory params→S2.E1** (new optional `traj_*` fields) · §3
 direction-state/distance-influence/rank-by-target/0.055-floor→S2.E2/E3 · §5
 density init + zero directions→S2.E4 · §6 substep semantics + distance
 diagnostics→S2.E2/E5 · §8 alpha-accum→S4.7, ortho views + fixed framing→S4.8.
-**git2 (collective-motion)** — R0→D1 · R1→S1.7 · R2→D3/S2.D1 · R3→S2.D1 ·
-R4→S2.D1 · R5→S2.D2 · R6→D5 · R7→S3.1 · R8→S3.2 · R9→S4.6 · R10→tests.
+**git2 (collective-motion)** (`todo_claude_git2.md`, verified item-by-item
+and now merged/retired) — R0 config fields + loader→D1 VicsekConfig
+(nested config supersedes the flat prefix fix) · R1 corrected update
+(memory term, √(2DΔt), tangent-plane noise + rationale, fixed speed)→
+S1.7/D4 · R2 species layer→D3 (`is_predator` **implemented**, P0.6) +
+S2.D1 (prey-only coupling, per-species speeds, two species trees) ·
+R3 fear-weighted prey→S2.D1 · R4 predator hunting (no couplage,
+0.2× noise, random-walk fallback, all-predator early-out)→S2.D1 ·
+R5 asymmetric collisions (`np.add.at`, min-image, post-move pre-wrap)→
+S2.D2 · R6 min-image everywhere→D5 · R7 nematic Q-tensor + sweep
+option→S3.1 · R8 unwrapped MSD(τ) + crossover→S3.2 (+S3.10 fields) ·
+R9 species render (red ×1.5 flag, heading-hue debug)→S4.6/D7 ·
+R10 preset vector + order-transition test→**S2.D4** (inlined; the conf
+file exists), invariants→S1.7/T0.3/T4.3, golden re-pin→S1/D0 policy.
 **collective-motion 2nd-pass** (`todo_claude_sci8.md`, now merged) — §0 config
 loader→D1 · §1 Vicsek core (memory term, √(2DΔt) amplitude, tangent-plane
 noise, fixed-speed contract)→S1.7/D4 · §2 predator-prey (fear blend,
@@ -1459,9 +1877,21 @@ S2.D1/D1-VicsekConfig/D3 · §3 asymmetric collisions (np.add.at, min-image
 before wrap)→S2.D2 · §4 MSD(τ) crossover + min-image + nematic Q-tensor→
 S3.2/S3.1 · §5 prey/predator distinction + heading-hue→S4.6 · §6 phase-diagram
 quick-snapshot mode→**S3.1**.
-**git3 (rystrauss/boids)** — R0→D1 · R1→S2.B2(+S1.5) · R2→D5 · R3→S2.B3 ·
-R4→S2.B6 · R5→S5.4 · R6→S5.5 · R7→D9.3/S5.5 ·
-R8→S4.6/D7/S2.B9/S4.11 · R9→tests.
+**git3 (rystrauss/boids)** (`todo_claude_git3.md`, verified item-by-item
+and now merged/retired) — R0 config fields + loader→D1 (nested config
+supersedes the flat prefix fix) · R1 faithful pipeline→S2.B2 (order +
+damping note), kernels→S1.5 (**`unit` separation kernel added**:
+`normalize(Σ −(p_j−p_i))`, direction-only), ceiling→D4 · R2 corrected
+toroidal distance (`abs`-before-wrap, the source's sign bug as the
+cautionary tale) + boxsize + min_image→D5 · R3 predator boids→S2.B3
+(min-image escape + **prey-only metrics generalised across modes**;
+`is_predator` column **implemented**, P0.6) · R4 two-phase parallel→
+S2.B6 · R5 mouse spawn/clear→S5.4 (**click-vs-drag threshold + spawn
+velocity added**) + D8.2 commands · R6 CLI `--set`/flags→S5.5 ·
+R7 facade + benchmark→D9.3/S5.5 · R8 predator render/theme wire/cube
+init/fixed timestep→S4.6/D7/S2.B9/S4.11 · R9 preset→**S2.B2**
+(`murmuration_boids.yaml`, values inlined), toroidal regression→D5 test,
+determinism→T4.3, golden re-pin→D0 policy.
 **rystrauss/boids 1st-pass** (`todo_claude_sci5.md`, verified — **no additions
 needed**) — the source git3 was built from; all items already mapped:
 §1 toroidal distance→D5/F4 · §2 predator boids→S2.B3 · §4 parallel→S2.B6/
@@ -1476,9 +1906,17 @@ toroidal kd-tree→D5, facade/benchmark→S5.5, CLI/spawn→S5.4/S5.5/S2.B6). Pa
 unique: render interpolation→S4.11 · fastmath policy→S2.B10 · ghost-cell wrap→
 redundant (D5 modulo keys meet the goal) · speed-stretched ellipsoid + cone/
 arrow meshes + theme material sets→**S4.4a** · Fresnel rim→**S4.2**.
-**git4 (PyNBoids)** — R0→D1/D2 · R1→S2.C1 · R2→S2.C2 · R3→S2.C3 ·
-R4→S2.C4 · R5→S2.C5 · R6→S2.C6/D5 · R7→S4.3 · R8→S2.C7/S4.6 ·
-R9→excluded (App. B) · R10→tests.
+**git4 (PyNBoids)** (`todo_claude_git4.md`, verified item-by-item and now
+merged/retired) — R0 config + mode registration→D1 AngleConfig/D2 registry ·
+R1 steering core→S2.C1 (`rotate_about` atom **implemented**,
+`core/types.py`) · R2 unified neighbour modes→S2.C2 · R3 adaptive
+speed→S2.C3 · R4 edge avoidance + turn-rate scaling→S2.C4 · R5 heading
+jitter→S2.C5 · R6 incremental grid + squared-dist kNN→S2.C6/D5 ·
+R7 pixel-fade → S4.3 accumulation, ring buffer→S4.3 ring ·
+R8 body-unit radii→S2.C7, per-bird HSV hue→S4.6 · R9 scenes/screensaver/
+overlay→App. B (**mechanics recorded there**) · R10 preset→**S2.C8**
+(`murmuration_angle.yaml`, values inlined = AngleConfig defaults), tests
+inline per item, mode golden→T0.2.
 **PyNBoids 2nd-pass** (`todo_claude_sci4.md`, verified — one addition) —
 §1 angle steering→S2.C1 · §2 gated neighbour modes→S2.C2 · §3 adaptive speed→
 S2.C3 · §4 cardinal edge avoidance→S2.C4 · §5 heading jitter→S2.C5 ·
@@ -1486,9 +1924,18 @@ S2.C3 · §4 cardinal edge avoidance→S2.C4 · §5 heading jitter→S2.C5 ·
 accumulation, ring-buffer trails→S4.3, **64³ volumetric (exotic)→S4.7** ·
 §9 multi-flock + §11 screensaver + §12 desktop-overlay→excluded (App. B) ·
 §10 body-unit radii→S2.C7 · §13 per-bird hue→S4.6, mesh selector→S4.4a.
-**git5 (Starlings)** — R0→D1 · R1→S2.B1/S1.5/D4-fixed · R2→S2.B7/D4 ·
-R3→S2.B4 · R4→S2.B5 · R5→S5.2/S5.3/S5.4 · R6→S4.4 · R7→S4.5 ·
-R8→excluded (App. B) · R9→tests.
+**git5 (Starlings)** (`todo_claude_git5.md`, verified item-by-item and now
+merged/retired) — R0 config fields→D1 (Spatial/Metrics configs;
+`bird_mesh`/`flap_period`/`background_top/bottom` added to VizConfig) ·
+R1 hybrid filter + dual radii→S2.B1, exact kernels→S1.5 (**alignment
+steering form `normalize(v̄−v_i)` added**), fixed speed→D4 ·
+R2 sphere centring + asymptotic wall→S2.B7/D4 · R3 physical metrics +
+acceleration stash→S2.B4/D3 · R4 parameter jitter→S2.B5 ·
+R5 sliders/speed keys/20-frame readout→S5.3/S5.4/S5.2 (console mirror via
+S5.6 logging) · R6 winged flap mesh→S4.4 (**vertex table inlined**) ·
+R7 gradient sky→S4.5 · R8 H&H flight physics→App. B (**starting math
+inlined**) · R9 preset→**S2.B1** (`murmuration_starlings.yaml`, values
+inlined), tests inline per item, golden re-pin→D0 policy.
 **Starlings 2nd-pass** (`todo_claude_sci3.md`, verified — **no additions
 needed**) — the source git5 was built from; all items mapped: §1 kernel fixes
 (sep 1/d², cohesion normalize, noise ×scale)→S1.5, fixed-speed→S2.B/D4 ·
@@ -1497,12 +1944,85 @@ mass metrics→S2.B4 · §4 hybrid dual-constraint filter + split radii +
 accept-first→S2.B1 · §5 parameter jitter→S2.B5 · §6 speed keys/sliders/
 metrics panel→S5.4/S5.3/S5.2 · §7 winged mesh + flap + gradient sky→S4.4/S4.5 ·
 §8 Hildenbrandt–Hemelrijk flight physics→excluded (App. B).
-**git6 (crs48/murmuration)** — R0→D1 · R1→D3 · R2→S2.A1 · R3→S2.A2 ·
-R4→S2.A3 · R5→S2.A4 · R6→S2.A5 · R7→S2.A6 · R8→S2.A7/D4 · R9→S2.A8/D6 ·
-R10→S4.1–4.3/D7 · R11→S4.10/D8/D4-rails · R12→S2.A9 ·
-out-of-scope→App. B.
-**git7 (BirdMurmuration)** — R0→D1 · R1→D8 · R2→S7.1 · R3→S7.2 ·
-R4→S3.8/S3.9 · R5→S7.3 · R6→S4.8/S4.9 · R7→tests.
+**git6 (crs48/murmuration)** (`todo_claude_git6.md`, verified item-by-item
+and now merged/retired; every data table it carried is inlined) —
+R0 config fields→D1 Field/Threat/Ecology(wander) configs ·
+R1 smoothed centre→D3 · R2 wander verbatim math→S2.A1 · R3 anchors +
+phase weights→S2.A2 (**B₀…B₄ coefficients inlined**) · R4 leader/chaser→
+S2.A3 (**anchor/secondary/radius/leader-target formulas inlined**) ·
+R5 shell + cavity→S2.A4 (incl. shell_influence) · R6 remaining terms→
+S2.A5 (**axis/flow/fold triples inlined**; composition contract + boundary
+term added in the sci1/sci2 rounds) · R7 ripples→S2.A6 (**28 s cycle,
+exp(−δ²) kernel, origin coefficients, envelope-sum export inlined**) ·
+R8 inertia/panic/blackening→S2.A7 + D4 · R9 threat FSM→S2.A8 (**state,
+speed, steer-response, prox-range constants inlined**) + D6 threat_prox ·
+R10 impostors/depth cues/trails/themes→S4.1–4.3 + D7 · R11 perf ladder +
+rails→S4.10 (**risk rules inlined**) + D8.3 + D4 · R12 init + presets→
+S2.A9 (**drift-velocity vector + 7-preset table inlined**; position init
+implemented in `boid.py`, `velocity_init: "drift"` added to D1) ·
+out-of-scope (WebGPU ping-pong blueprint, XR)→App. B.
+**crs48/murmuration 1st-pass (v1)** (`todo_claude_sci1.md`, now merged) —
+§1 backend tiers→S2.B10 (numba gate) + S4.10 (count ladder) + App. B (GPU
+compute/texture arithmetic) · §2.1–2.8 blob anchors/phase weights/leader-
+chaser/shell/slot/ripple/buoyancy/cavity/fold→S2.A2–A6 (v2-pinned
+constants where v1 and v2 differ, e.g. the inner-radius coefficient) ·
+§3.1–3.3 inertia/bounded panic/blackening→D4 + S2.A7 · §3.4 tangential→
+S2.A5 · §3.5 curl flow→S2.A5 (field, 0.08) + **S2.B11** (grid, 0.22 —
+new) · §3.6 drag + §3.7 composition→S2.A5 · §4 predator (smoothed state,
+egress, rotate_toward, pass/arc, wake, split, wave, modes)→S2.A8 +
+ThreatConfig · §5 trails→S4.3 + S4.10 ladder · §6.1–6.2 impostors/depth
+cues→S4.1/S4.2 · §6.3 render tiers→**S4.4a `points` +
+`recommend_render_mode`** (new) · §7.2 pilot forces→**S2.E6 pilotable
+flock** (new) · §7.5 rails→D4 (dt clamp, `isfinite3`, zero-allocation) ·
+§8 wander→S2.A1 · §9 theme wire→D7, impostor shading→S4.1 · §10 presets→
+S2.A9 (`--list-configs` **implemented**) · §11 perf→S4.10/D8.3 · §12
+invariants/soak/visual smoke/classification→T0.3/T6.3/T5.3/T6.2 · §13
+init: blob/shell/gaussian/grid modes + `position_init` selector→
+**implemented** (`boid.py::init_positions`), filled-sphere ∛ variant +
+config field→**S2.B9** (extended) · §14 smoothed centre→D3
+(**partially implemented**, P0.5) · §15 ForceTerm composition→S2.A5
+contract; separation `/max(1,found)` + cohesion `limit3`→S1.5;
+seed-sinusoidal noise→**S2.B11** (wires the implemented-but-unconsumed
+`seed_noise3` atom); soft spherical boundary 1.45U/1.6→**S2.A5 boundary
+term** (new; S2.B7's asymptotic wall is the other source's law); vacuole
+threat push→S2.A8 (v2 √prox form supersedes).
+**crs48/murmuration 2nd-pass (v2)** (`todo_claude_sci2.md`, now merged) —
+Part 1 shared with git6/sci1 above (backend tiers→S2.B10/S4.10 + App. B ·
+blob anchors/leader-chaser/shell/13-term/ripples→S2.A2–A6 ·
+inertia/panic/blackening→S2.A7/D4 · threat FSM→S2.A8 · wander→S2.A1 ·
+GPU trails/impostors/depth cues→S4.1–4.3 · themes→D7/S4.4a · functional
+force composition→**S2.A5 composition contract** · smoothed centre→D3 ·
+perf cascade→S4.10/D8 · dt-clamp/NaN rails→D4, **zero-allocation
+step→D4 third rail** · invariant/smoke tests→T0.3/T5, **soak→T6.3** ·
+VR→App. B). Part 2 unique: §1.3 capability probing→**implemented**
+(`__main__.probe_capabilities`, `--probe`, `test/analysis/test_probe.py`) ·
+§2.3 separation `/max(1,found)` + cohesion unit cap→**S1.5** (`mean`
+kernel variant; `limit3` form) · §3.5 slot cutoff `r_slot=(0.07+sep·0.02)U`
++ modulo wrap→S2.A5 · §4.4 zero-speed determinism→**implemented**
+(`boid.py` deterministic `(minSpeed,0,0)` fallback + rng threading) ·
+§5.3 Rodrigues/turn rates/sign-aligned EMA axis→S2.A8 + global helpers ·
+§5.6 threat bundle `broad=√prox`→S2.A8 (+ThreatConfig) · §9.4 CPU line
+trails→**S4.3 `lines` mode** · §12 blob init→S2.A9 (vectors now inlined
+there) · §13 Mulberry32→skip; PCG64 via D3 (decision recorded) · §16.1
+preset vectors + inertia/noise/flow/trail/threat columns→S2.A9 (table now
+inlined there; parameter dependencies exist in D1 configs) ·
+§19 `limitLength3`/
+`isFinite3`→global helpers (`limit3`, `isfinite3`) · §20 WebGPU compute→
+App. B, billboard quads→S4.1 · §21.1 settings clamping + preset
+round-trip→D1 T2.1/T2.4.
+**git7 (BirdMurmuration)** (`todo_claude_git7.md`, verified item-by-item
+and now merged/retired) — R0 config fields→D1 MarlConfig + S3.9 weights ·
+R1 control hook (`control=0` identity, component clip, `speed_mode="none"`
+semantics, `run_headless(controller=…)`)→D8.1/T3.5/**S7.1** · R2 deferred
+global rules + one-step-lag contract→S7.1 (+S2.B1 `global` filter) ·
+R3 gym spaces/seeded reset/truncation (source constants: N = 200,
+obs (6N,), action (3N,), `v ~ U(−0.1,0.1)³·U`)→S7.2 · R4 reward terms +
+both sign conventions + velocity_deviation/boundary_overshoot→**S3.9**
+(five-term formula inlined)/S3.8 · R5 PPO train/rollout scripts + IPPO
+scaling note→S7.3 · R6 dual-view (15°/15° + 45°/45°) + matplotlib
+GPU-free fallback→S4.8/S4.9/D7-T5.4 · R7 `murmuration_marl.yaml`
+preset→**S7.1** (values inlined), tests→S7.1–7.3 inline, mode golden→T0.2
+(registry-parametrized).
 **BirdMurmuration 2nd-pass** (`todo_claude_sci7.md`, now merged) — A: gym env→
 S7.2 · control hook→D8 · deferred two-layer rules→S7.1 · gated train/rollout
 scripts→S7.3. B: velocity_deviation + boundary_overshoot→S3.8 · **altitude
@@ -1510,10 +2030,36 @@ deviation `Σ|z−z_target|`→S3.8** (was missing) · rewards module→S3.9 ·
 hard-radius separation→S2.B1 · **general `neighbor_filter: global`→S2.B1**
 (was only in the marl mode) · dual-view→S4.8 · matplotlib GPU-free fallback→
 S4.9. C: PPO training + centralized-policy-at-scale → excluded (Appendix B).
-**git0** — F0–F8→D1/D3/D2/D4/D5/D7/D3/D8/D3 · W1→S1.1–1.4+S2.B7/B8 ·
-W2→S2.A · W3→S1.5+S2.B · W4→S2.C · W5→S1.7+S2.D+S3.1/3.2 · W6→S2.E ·
-W7→S7+S3.8/3.9+S4.8/4.9 · W8→S6 · W9→S1.8+S3 · W10→S4 · W11→S5 ·
-P0–P8 phasing superseded here.
+**Reynolds 2026 EvoFlock 2nd-pass** (`todo_claude_sci10.md`, now merged) —
+already implemented at audit time: SSGA islands ×4 + 0.05 migration,
+hypervolume ε-floor, Pareto extraction, pop/step defaults, GA-level seed,
+`run(n_runs)`; since implemented: **SDF primitive layer**
+(`physics/obstacles.py`: sphere/box/cylinder, union/subtract, gradient,
+zero-crossing, kinematic correction — S6.4's math, integrate hook +
+counter still S6.4). Mapping: §1 SSGA deviations (crossover, evaluate-
+all-3 + founders + fitness cache, negative selection, worst-of-4
+`eval_parallel`)→S6.1/S6.2 · §2 objectives (NN-distance separation +
+exact ramps→S6.3; obstacle infra→S6.4; speed scaling→S6.3+S2.B4, forward
+force→S6.5; true κ→S6.3 (+D3 acceleration stash); no-alignment headline
+experiment→S6.6) · §3 model genes (forward/max_dist/angle cones/
+fly_away/min_time_to_collide/k=7/σ-integer/speed_min_factor→S6.5;
+**static_avoid SDF-gradient steering + no-dead-genes guard→S6.5** (new);
+**blind_deg/anisotropy GA ranges→S6.5** (new)) · §4 determinism
+(evolved.yaml persistence + per-run seeds→S6.6; deterministic parallel
+min-reduction→S6.2) · §5 confined/open configs→S6.6 · §6 research
+backlog: **ramp ablation→S6.3 test** (new); CMA-ES/GP/non-uniform
+agents/non-reciprocal/stigmergy→App. B (recorded, with the black-box
+evaluator-API takeaway noted there).
+**git0** (`todo_claude_git0.md`, master consolidation — verified
+item-by-item and now merged/retired; no gaps found, since this roadmap was
+derived from it) — F0–F8→D1/D3/D2/D4/D5/D7/D3/D8/D3 (F0's flat-prefix
+loader sketch and F2's `mode_state` dict deliberately superseded by the
+user-confirmed nested-config (D1) and ForceMode-class (D2) decisions) ·
+W1→S1.1–1.6+S1.4+S2.B7/B8 · W2→S2.A1–A9 · W3→S1.5+S2.B1–B9+S5.3–5.5+
+S4.4/4.5 · W4→S2.C1–C7+S4.6 (W4.8→App. B) · W5→S1.7+S2.D+S3.1/3.2 ·
+W6→S2.E1–E5 · W7→S7+S3.8/3.9+S4.8/4.9 · W8→S6.1–6.6 · W9→S1.8+S3.3–3.8 ·
+W10→S4.1–4.3/4.7–4.11+D7 · W11→S5.1–5.5 · P0–P8 phasing superseded by
+Part IV; P8 optional tier→App. B.
 **arch.md** — module map/rules→D9 · numba two-pass→S2.B10 · scaling
 table→S2.B10+D8-T6.1 · force-mode table→registry-generated (D9.6).
 
@@ -1527,13 +2073,52 @@ Goodenough's 0.296 rate → **S2.B8**. Everything else in the predecessor
 (H₂/η(m)/m*, hull-τρ, silhouette Θ′, ecology functions, density estimators,
 occlusion/steric, boundary/determinism/golden tests, presets, camera) was
 already covered by the S/T/D items above.
+**predecessor 2nd-pass** (`todo_claude_sci11.md`, source-level port audit,
+now merged) — §1 rendering regressions (VAO rebuild after growth, headless
+FBO depth attachment, `to_list()` mat4 upload)→D7/T5.1 · §2.3 cinematic
+sweep exact formulas + §10.2–10.4 GIF flags/pre-warm/env overrides→S4.9 +
+D7-T5.5 · §4.1 φ-constraint enforcement→S1.4 · §5 a–h,w preset table→S5.1 ·
+§3.5 full title readout→S5.2 · §6.2–6.3 modulo cell keys + radius-driven
+query range→D5 · §7.3 `U(1, v0)` speed dispersion→S2.B9 `speed_uniform` ·
+§16 `max_visibility` occlusion cutoff→S1.1 · §8 fibonacci sphere→D0.4
+(**implemented**, `core/types.py`) · §9.1/9.3 median-centroid one-sided-trim
+R_g + number density→S3.7 · §13.2 thickness √(λ₃/λ₁)→S1.8 · §13.3
+shape→m*→S3.3 · §14.3 η(m)→S3.4 (m₀-generalised form) · §14.1 `max(A,Aᵀ)`→
+S1.8 · §15 hull-τρ ring-buffer autocorrelation→S3.5 (**+0.25·buffer stop
+cap** — new) · §12 ecology formulas (logistic dusk, cold boost,
+critical-mass smoothstep, stochastic rng option)→S2.B8 · §7 superseded:
+`features.py` toggles→config dispatch (no action); `ext` dict→D6
+ExtensionManager, its state-visibility residue→**D6 public
+`hour`/`day`/`roost_position` surface** (new).
 
 # Appendix B — Deliberately excluded (scope decision)
 
-Screensaver + desktop-overlay modes (git4 R9); GPU-compute simulation
+Screensaver + desktop-overlay modes (git4 R9 — recorded: screensaver =
+`scripts/screensaver.py` polling idle every 60 s (macOS:
+`ioreg -c IOHIDSystem` HIDIdleTime) and spawning/killing a fresh
+`python -m pymurmur` subprocess; desktop overlay = one
+`PIL.ImageGrab.grab()` screenshot drawn as a fullscreen textured quad
+behind the flock — a live transparent overlay needs per-OS compositing
+the source never did); GPU-compute simulation
 backends (WebGPU/GPGPU blueprints, git6); Hildenbrandt–Hemelrijk flight
-physics (git5 R8); CMA-ES benchmark and GP model evolution (EvoFlock
-research directions); multi-flock parallax scenes (git4 R9); VR/XR
+physics (git5 R8 — starting math recorded for a future
+`physics/extensions/flight.py`, gated `flight_physics: bool`: gravity
+`a += (0,0,−g)`; lift `a += (0,0, k_L·|v|²)` with k_L tuned so lift = g
+at |v| = v0; drag `a += −k_D·(|v|−v0)·v̂` — relaxes speed toward cruise,
+replacing the hard clamp; banking — cap lateral acceleration at
+`a_lat ≤ g·tan(φ_max)`; roost pull gated by the S2.B8 dusk factor;
+acceptance: level flight at v0 self-sustains, slowed birds descend,
+speed distribution unimodal around v0 with no clamp); EvoFlock research
+directions (Reynolds §10): CMA-ES
+benchmark, GP model evolution, non-uniform agents (per-bird ±10 %
+perturbation of mass/max_force/speed — would ride on D3-style per-bird
+columns), non-reciprocal interactions, stigmergy (spatial trail markers
+read by later birds) — all kept feasible by S6's black-box
+params-in → scalar-out evaluator interface, which survives a model swap;
+multi-flock parallax scenes (git4 R9 — recorded: a `MultiScene` driver in
+`scripts/` owning two `SimulationEngine`s and one renderer, two instance
+draws per frame, per-flock tint via the S4.6 hue channel; blocked only by
+the one-engine-one-flock architecture, deliberately unchanged); VR/XR
 (arch.md "does not do"). Each stays documented in its source spec under
 `sci/` if scope changes.
 

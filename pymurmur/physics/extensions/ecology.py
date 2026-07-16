@@ -11,17 +11,20 @@ from typing import TYPE_CHECKING
 from ._base import Extension
 
 if TYPE_CHECKING:
+    from ...core.config import SimConfig
     from ..flock import PhysicsFlock
+    from ._base import StepContext
 
 
 class Ecology(Extension):
     """Day/night cycle with dusk roosting behaviour."""
 
-    def __init__(self) -> None:
+    def __init__(self, config: SimConfig) -> None:
         self._day: float = 172.0   # summer solstice
-        self._dt: float = 1.0 / 600.0  # ~1 day per 10 seconds at 60fps
-        self._roost_pos = np.array([500.0, 350.0, 40.0], dtype=np.float32)
-        self._predator_active: bool = True  # default active; updated in apply()
+        self._day_dt: float = 1.0 / 600.0  # ~1 day per 10 seconds at 60fps
+        self._roost_pos = np.array(config.ecology_roost, dtype=np.float32)
+        self._critical_mass = config.ecology_critical_mass
+        self.predator_active: bool = True  # updated in apply(); public for I5.4
         self._last_int_day: int = int(self._day)
 
     def day_length(self, day: float) -> float:
@@ -44,15 +47,15 @@ class Ecology(Extension):
         # Use upper bits for uniformity, threshold at ~30%
         return (h >> 24) < 77  # 77/256 ≈ 30%
 
-    def apply(self, flock: PhysicsFlock) -> None:
+    def apply(self, flock: PhysicsFlock, ctx: StepContext) -> None:
         """Advance day and apply dusk roost pull."""
-        self._day += self._dt
+        self._day += self._day_dt
 
         # Check for predator presence on day boundary
         int_day = int(self._day)
         if int_day != self._last_int_day:
             self._last_int_day = int_day
-            self._predator_active = self.predator_present(int_day)
+            self.predator_active = self.predator_present(int_day)
 
         day_len = self.day_length(self._day)
         dusk = 12.0 + day_len / 2.0
@@ -64,7 +67,7 @@ class Ecology(Extension):
             # Critical mass: dampen roost pull below ~500 birds
             n_active = flock.active.sum()
             # Smoothstep: 0 at N=0, 1 at N=500, clamped above 500
-            t = min(n_active / 500.0, 1.0)
+            t = min(n_active / self._critical_mass, 1.0)
             mass_factor = t * t * (3.0 - 2.0 * t)
             ramp *= mass_factor
 

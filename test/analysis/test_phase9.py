@@ -38,7 +38,7 @@ class TestShapePCA:
         assert 0.7 < thickness < 1.35, f"Sphere thickness={thickness:.3f}, expected ~1"
 
     def test_line_has_large_aspect(self):
-        """Points on a line with tiny noise -> aspect >> 1."""
+        """Points on a line with tiny noise -> aspect >> 1, thickness → 0 (P1.9)."""
         rng = np.random.default_rng(42)
         positions = np.column_stack([
             np.linspace(0, 100, 50),
@@ -48,7 +48,8 @@ class TestShapePCA:
 
         aspect, thickness = compute_shape(positions)
         assert aspect > 10, f"Line aspect={aspect:.3f}, expected >10"
-        assert 0.5 < thickness < 2.0, f"Line thickness={thickness:.3f}, expected ~1"
+        # P1.9: thickness = sqrt(λ₃/λ₁) ∈ (0,1]. For a noisy line, λ₃≪λ₁ → thickness ≈ 0
+        assert 0.0 < thickness < 0.2, f"Line thickness={thickness:.3f}, expected <0.2"
 
     def test_perfect_line_degenerate_guard(self):
         """Clean zero-noise line hits degenerate guard -> large aspect, thickness 0."""
@@ -63,7 +64,7 @@ class TestShapePCA:
         assert thickness == 0.0
 
     def test_pancake_shape(self):
-        """Wide rectangular pancake with thin z -> large aspect AND thickness."""
+        """Wide rectangular pancake with thin z -> large aspect, thin thickness (P1.9)."""
         rng = np.random.default_rng(42)
         positions = np.column_stack([
             rng.uniform(-200, 200, 100),
@@ -73,7 +74,8 @@ class TestShapePCA:
 
         aspect, thickness = compute_shape(positions)
         assert aspect > 5, f"Pancake aspect={aspect:.3f}, expected >5"
-        assert thickness > 5, f"Pancake thickness={thickness:.3f}, expected >5"
+        # P1.9: thickness = sqrt(λ₃/λ₁). Thin z → λ₃≪λ₁ → thickness ≈ 0
+        assert 0.0 < thickness < 0.1, f"Pancake thickness={thickness:.3f}, expected <0.1"
 
     def test_small_n_returns_one(self):
         """N < 3 -> return (1, 1)."""

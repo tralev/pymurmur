@@ -1,0 +1,69 @@
+# field_storm_turn.yaml — Phase 3 field mode preset
+# Fast, autonomous threat — high-speed flock with weak chase,
+# strong separation, and an autonomous predator driving storm-like turns.
+# Roadmap ref: P3.10 preset table (N=16K, v0=0.90, sep=1.10, align=1.15, coh=1.25, chase=0.42)
+
+# ── Domain ──────────────────────────────────────────────────────────
+domain:
+  width: 1200.0
+  height: 800.0
+  depth: 500.0
+
+# ── Flock ───────────────────────────────────────────────────────────
+flock:
+  num_boids: 16000
+  v0: 0.90
+  boid_size: 4.0
+
+# ── Mode ────────────────────────────────────────────────────────────
+mode: field
+
+# ── Field Parameters ────────────────────────────────────────────────
+field:
+  field_separation: 1.10
+  field_alignment: 1.15
+  field_cohesion: 1.25
+  field_chase_strength: 0.42      # weak chase — autonomy dominates
+  # Fast storm — high noise, strong flow, panic-ready
+  noise: 0.05
+  field_flow: 0.35
+  target_pull: 0.16
+  drift_pull: 0.08
+  tangent_pull: 0.045
+  wave_gain: 0.05
+  ripple_trains: 3
+  inertia: 0.76
+  shell_influence: 0.70
+  # Fast turns need responsive boundary:
+  boundary_radius_factor: 1.6
+
+# ── Extensions ──────────────────────────────────────────────────────
+extensions:
+  wander_enabled: true
+  predator_enabled: true    # autonomous threat
+  ripple_enabled: true      # storm pulse waves
+
+wander:
+  attractor_speed: 0.16
+  attractor_radius: 450.0
+
+predator:
+  predator_threat_radius: 100.0
+  predator_strength: 1.5
+  predator_momentum: 0.7
+  predator_split_gain: 0.9
+
+# ── Seed ────────────────────────────────────────────────────────────
+seed: 42
+
+# ── Boundary Mode ───────────────────────────────────────────────────
+boundary_mode: sphere
+
+# ── Performance ─────────────────────────────────────────────────────
+performance:
+  spatial_index: none
+
+# ── Metrics ─────────────────────────────────────────────────────────
+metrics:
+  detail_level: 1
+  interval: 60

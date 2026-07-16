@@ -36,48 +36,46 @@ class Recorder:
         self.frames: list[object] = []       # PIL Images
         self.metrics_history: list[dict] = []
         self._frame_count: int = 0
-        self._renderer: object | None = None  # cached headless renderer
-        self._camera: object | None = None    # cached orbit camera
+        self._renderer: object | None = None  # cached headless Visualizer
 
     def on_frame(self, sim: SimulationEngine) -> None:
         """Called every frame by run_headless() callback.
 
-        Captures metric snapshots every frame and FBO renders
-        every capture_every frames when with_viz is enabled.
+        Captures metric snapshots every frame (via to_dict) and
+        FBO renders every capture_every frames when with_viz is enabled.
         """
         self._frame_count += 1
 
-        # Always capture metrics
+        # Always capture metrics (I6.5: use to_dict for JSON-safe serialization)
         if sim.metrics:
-            self.metrics_history.append(sim.metrics.snapshot().__dict__)
+            self.metrics_history.append(sim.metrics.snapshot().to_dict())
 
         # Capture FBO frame every capture_every frames
         if self.with_viz and self._frame_count % self.every == 0:
-            try:
-                from ..viz.renderer import Renderer3D
-                from ..viz.camera import OrbitCamera
+            self._capture_frame(sim)
 
-                # Cache the headless renderer to avoid recreating GPU context
-                if self._renderer is None:
-                    self._renderer = Renderer3D(
-                        width=self.config.window_width,
-                        height=self.config.window_height,
-                        headless=True,
-                    )
-                    self._camera = OrbitCamera(
-                        target=(self.config.width / 2,
-                                self.config.height / 2,
-                                self.config.depth / 2),
-                    )
+    def _capture_frame(self, sim: SimulationEngine) -> None:
+        """Compose Visualizer for headless frame capture (I6.1)."""
+        try:
+            from ..viz.visualizer import Visualizer
+        except ImportError:
+            return  # viz not available, skip frame capture
 
-                self._renderer.begin_frame(self._camera)
-                self._renderer.draw_birds(sim.flock)
-                self._renderer.end_frame()
-                img = self._renderer.capture_frame()
-                if img is not None:
-                    self.frames.append(img)
-            except Exception:
-                pass  # viz not available, skip frame capture
+        try:
+            if self._renderer is None:
+                # Use capture dimensions, not window dimensions (I6.2)
+                self._renderer = Visualizer(
+                    sim, self.config, headless=True,
+                    width=self.config.capture_width,
+                    height=self.config.capture_height,
+                )
+
+            img = self._renderer.headless_frame()
+            if img is not None:
+                self.frames.append(img)
+        except RuntimeError:
+            # FBO/GPU failure — skip this frame, don't crash the run
+            pass
 
     def save_gif(self, path: str | None = None, fps: int = 20) -> str | None:
         """Assemble captured frames into an animated GIF.

@@ -34,11 +34,10 @@ class TestConfigFileValidation:
                 assert field in data, f"{path.name}: missing '{field}'"
 
     def test_config_performance_fields_present(self):
-        """All 7 configs have performance.use_numba and performance.spatial_index."""
+        """All 7 configs have performance.spatial_index."""
         for path in ALL_CONFIGS:
             data = _load_config(path)
             perf = data.get("performance", {})
-            assert "use_numba" in perf, f"{path.name}: perforce.use_numba missing"
             assert "spatial_index" in perf, f"{path.name}: perforce.spatial_index missing"
 
     def test_config_metrics_fields_present(self):
@@ -80,14 +79,6 @@ class TestConfigFileValidation:
             data = _load_config(path)
             ext = data.get("extensions", {})
             assert ext.get("wander") is True, "field config should have wander enabled"
-
-    def test_300k_config_numba_enabled(self):
-        """murmuration_300k.yaml has performance.use_numba: true."""
-        path = CONF_DIR / "murmuration_300k.yaml"
-        if path.exists():
-            data = _load_config(path)
-            perf = data.get("performance", {})
-            assert perf.get("use_numba") is True, "300K config should have numba enabled"
 
     def test_300k_config_kdtree(self):
         """murmuration_300k.yaml has performance.spatial_index: kdtree."""

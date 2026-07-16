@@ -108,7 +108,6 @@ wander:
 # Field mode is already O(1) per bird — fastest at any scale.
 # numba is NOT needed (numpy vectorised is sufficient even at 300K).
 performance:
-  use_numba: false            # field mode uses O(1) force terms — numpy is fast enough
   spatial_index: none         # auto | hash_grid | kdtree | none (no neighbor queries in field mode)
   instance_buffer_chunk: 50000  # GPU buffer growth increment (birds per reallocation)
 
@@ -128,7 +127,6 @@ visual:
   show_grid: false
   auto_rotate: true        # demo mode: orbit camera for field display
   theme: ink
-  trails: velocity         # motion streaks help show blob dynamics
 
 # ── Capture Settings ────────────────────────────────────────────────
 capture:

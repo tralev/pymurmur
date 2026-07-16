@@ -136,6 +136,72 @@ class TestPhaseBoundary:
         assert np.isnan(boundary[0])
 
 
+class TestDAxis:
+    """D-axis behaviour: phase boundary η_c(D) monotonic in D."""
+
+    @pytest.mark.slow
+    def test_phase_boundary_monotonic_in_d(self):
+        """η_c(D) should rise with D — more noise needs more coupling to order."""
+        result = sweep_vicsek_phase(
+            eta_range=(0.0, 1.0),
+            d_range=(0.1, 3.0),
+            n_eta=8,
+            n_d=5,
+            n_boids=40,
+            steps=120,
+            seed=42,
+        )
+        boundary = result.boundary_eta
+        # Ignore NaN boundary points
+        valid = ~np.isnan(boundary)
+        assert valid.sum() >= 3, (
+            f"Too few valid boundary points ({valid.sum()}/{len(boundary)}); "
+            f"cannot check D-axis monotonicity. boundary={boundary}"
+        )
+        valid_boundary = boundary[valid]
+        valid_d = result.d_grid[valid]
+        # η_c should be monotonically increasing with D
+        diffs = np.diff(valid_boundary)
+        drops = np.sum(diffs < -0.10)
+        assert drops == 0, (
+                f"Phase boundary not monotonic in D: boundary={valid_boundary}, D={valid_d}"
+            )
+
+    def test_boundary_at_zero_d_is_low(self):
+        """At D≈0, the boundary η_c should be very low (easy to order)."""
+        result = sweep_vicsek_phase(
+            eta_range=(0.0, 1.0),
+            d_range=(0.0, 0.0),
+            n_eta=10,
+            n_d=1,
+            n_boids=40,
+            steps=120,
+            seed=42,
+        )
+        # At D=0, any η>0 should order almost immediately
+        if not np.isnan(result.boundary_eta[0]):
+            assert result.boundary_eta[0] < 0.3, (
+                f"At D=0 expected low η_c, got {result.boundary_eta[0]}"
+            )
+
+    def test_boundary_at_high_d_is_high(self):
+        """At high D, the boundary η_c should be high (needs strong coupling)."""
+        result = sweep_vicsek_phase(
+            eta_range=(0.0, 1.0),
+            d_range=(3.5, 3.5),
+            n_eta=10,
+            n_d=1,
+            n_boids=40,
+            steps=120,
+            seed=42,
+        )
+        # At high D, it takes stronger coupling to order
+        if not np.isnan(result.boundary_eta[0]):
+            assert result.boundary_eta[0] > 0.3, (
+                f"At high D expected higher η_c, got {result.boundary_eta[0]}"
+            )
+
+
 class TestSaveLoad:
     """Round-trip save/load."""
 

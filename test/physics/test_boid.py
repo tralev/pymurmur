@@ -5,6 +5,7 @@ import numpy as np
 
 from pymurmur.physics.boid import (
     BoidView,
+    init_velocities_blob,
     integrate,
     random_positions,
     random_unit_sphere,
@@ -631,6 +632,58 @@ def test_ceiling_mode_fuzz():
     print(f"\n✓ 200 seeds ceiling-mode: all speeds ≤ {v0}")
 
 
+def test_band_mode_fuzz_all_boundaries():
+    """P0.3: 50 seeds × 4 boundary modes — band mode invariant holds.
+
+    Band mode (default): speeds ∈ [0.3·v0, v0], positions in bounds
+    if toroidal, no NaN. This fills the gap — only toroidal was fuzzed.
+    """
+    W, H, D = 1000.0, 700.0, 400.0
+    v0 = 4.0
+    v_min = 0.3 * v0  # 1.2
+
+    for mode in ("toroidal", "open", "margin", "sphere"):
+        for seed in range(50):
+            rng_i = np.random.default_rng(seed)
+            pos = rng_i.uniform(0, [W, H, D], (30, 3)).astype(np.float32)
+            vel = rng_i.uniform(-2 * v0, 2 * v0, (30, 3)).astype(np.float32)
+            acc = rng_i.uniform(-1, 1, (30, 3)).astype(np.float32)
+            active = rng_i.uniform(0, 1, 30) > 0.1
+
+            integrate(pos, vel, acc, active, W, H, D, v0, mode,
+                      1.0 / 60.0, speed_mode="band")
+
+            speeds = np.linalg.norm(vel[active], axis=1)
+            # Toroidal: tight bounds (no boundary-induced velocity changes)
+            # Non-toroidal: margin/open can nudge velocity, use relaxed bounds
+            # Sphere: skip speed bounds — sphere boundary projects birds back
+            #   with velocity kicks that can far exceed v0 (by design)
+            if mode == "toroidal":
+                assert (speeds >= v_min - 1e-4).all(), (
+                    f"{mode} seed={seed}: min speed={speeds.min():.4f} < {v_min}"
+                )
+                assert (speeds <= v0 + 1e-4).all(), (
+                    f"{mode} seed={seed}: max speed={speeds.max():.4f} > {v0}"
+                )
+            elif mode != "sphere":
+                assert (speeds >= v_min * 0.95).all(), (
+                    f"{mode} seed={seed}: min speed={speeds.min():.4f} < {v_min*0.95:.2f}"
+                )
+                assert (speeds <= v0 * 1.05).all(), (
+                    f"{mode} seed={seed}: max speed={speeds.max():.4f} > {v0*1.05:.2f}"
+                )
+            assert not np.isnan(pos).any(), f"{mode} seed={seed}: NaN in positions"
+            assert not np.isnan(vel).any(), f"{mode} seed={seed}: NaN in velocities"
+
+            # Toroidal: positions must remain in bounds
+            if mode == "toroidal":
+                assert (pos[:, 0] >= 0).all() and (pos[:, 0] < W).all()
+                assert (pos[:, 1] >= 0).all() and (pos[:, 1] < H).all()
+                assert (pos[:, 2] >= 0).all() and (pos[:, 2] < D).all()
+
+    print(f"\n✓ 4 modes × 50 seeds band-mode: speeds in [{v_min},{v0}], no NaN")
+
+
 def test_inertia_fuzz_inactive_preserved():
     """Inertia > 0 with mixed active/inactive: inactive rows unchanged."""
     W, H, D = 1000.0, 700.0, 400.0
@@ -1165,3 +1218,77 @@ def test_init_positions_grid_non_cubic():
     assert (pos[:, 0] >= 0).all() and (pos[:, 0] <= 900.0).all()
     assert (pos[:, 1] >= 0).all() and (pos[:, 1] <= 630.0).all()
     assert (pos[:, 2] >= 0).all() and (pos[:, 2] <= 360.0).all()
+
+
+# ── P3.10 Blob Velocity Init ──────────────────────────────────────
+
+
+def test_blob_velocities_differ_from_random_sphere():
+    """P3.10: Blob velocities are not isotropic — they differ from
+    random_unit_sphere and exhibit a measurable forward drift bias."""
+    N = 500
+    v0 = 4.0
+    rng = np.random.default_rng(42)
+
+    # Blob velocities: drift-biased tangential per spec
+    v_blob = init_velocities_blob(N, v0, rng)
+
+    # Non-blob default: random_unit_sphere scaled by v0 * 0.8
+    rng2 = np.random.default_rng(42)
+    v_sphere = random_unit_sphere(N, rng2) * v0 * 0.8
+
+    # ── The two distributions must differ ──
+    assert not np.allclose(v_blob, v_sphere, atol=1e-6), (
+        "blob velocities must differ from random sphere velocities"
+    )
+
+    # ── Shape and dtype ──
+    assert v_blob.shape == (N, 3)
+    assert v_blob.dtype == np.float32
+
+    # ── Forward drift bias: mean x must be measurably positive ──
+    # Expected: 0.34 * v0 * 0.5 = 0.68 at v0=4.0
+    mean_x = v_blob[:, 0].mean()
+    assert mean_x > 0.3, (
+        f"blob velocities must have positive x-drift, got mean_x={mean_x:.4f}"
+    )
+
+    # ── x-component is always positive (range: [0.26*v0*0.5, 0.42*v0*0.5]) ──
+    assert (v_blob[:, 0] > 0).all(), (
+        "all blob x-velocities must be positive (forward drift)"
+    )
+
+    # ── y is centered at zero (range: [-0.16*v0*0.5, 0.16*v0*0.5]) ──
+    mean_y = v_blob[:, 1].mean()
+    assert abs(mean_y) < 0.15, (
+        f"blob y-velocities must be centered near zero, got mean_y={mean_y:.4f}"
+    )
+
+    # ── z has slight upward bias: 0.08 * v0 * 0.5 = 0.16 ──
+    mean_z = v_blob[:, 2].mean()
+    assert mean_z > 0.0, (
+        f"blob z-velocities must have slight upward bias, got mean_z={mean_z:.4f}"
+    )
+
+    # ── Contrast: random sphere has ~zero mean on all axes ──
+    sphere_mean_x = v_sphere[:, 0].mean()
+    sphere_mean_y = v_sphere[:, 1].mean()
+    sphere_mean_z = v_sphere[:, 2].mean()
+    assert abs(sphere_mean_x) < 0.15, (
+        f"random sphere x-mean should be near zero, got {sphere_mean_x:.4f}"
+    )
+    assert abs(sphere_mean_y) < 0.15, (
+        f"random sphere y-mean should be near zero, got {sphere_mean_y:.4f}"
+    )
+    assert abs(sphere_mean_z) < 0.15, (
+        f"random sphere z-mean should be near zero, got {sphere_mean_z:.4f}"
+    )
+
+
+def test_blob_velocities_seeded():
+    """P3.10: Same seed → same blob velocities (deterministic init)."""
+    rng1 = np.random.default_rng(99)
+    rng2 = np.random.default_rng(99)
+    v1 = init_velocities_blob(100, 4.0, rng1)
+    v2 = init_velocities_blob(100, 4.0, rng2)
+    np.testing.assert_array_equal(v1, v2)

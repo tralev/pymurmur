@@ -11,6 +11,9 @@ from pymurmur.physics.forces.influencer import influencer_forces
 from pymurmur.physics.flock import PhysicsFlock
 
 
+from test.helpers import _call_force  # noqa: E402
+
+
 class TestInfluencerMode:
     """JerBoon cosmic influencer — Lissajous target, no neighbours."""
 
@@ -25,7 +28,7 @@ class TestInfluencerMode:
 
         flock = PhysicsFlock(cfg)
         flock.accelerations[:] = 0.0
-        influencer_forces(flock, cfg)
+        _call_force(influencer_forces, flock, cfg)
 
         acc_mags = np.linalg.norm(flock.accelerations[flock.active], axis=1)
         assert np.all(acc_mags > 1e-6), (
@@ -43,7 +46,7 @@ class TestInfluencerMode:
         flock.accelerations[:] = 0.0
 
         np.random.seed(42)
-        influencer_forces(flock, cfg)
+        _call_force(influencer_forces, flock, cfg)
 
         # All birds pulled toward same target → acc directions should be consistent
         active_idx = np.where(flock.active)[0]
@@ -70,7 +73,7 @@ class TestInfluencerMode:
         flock.accelerations[:] = 0.0
 
         np.random.seed(42)
-        influencer_forces(flock, cfg)
+        _call_force(influencer_forces, flock, cfg)
 
         active_pos = flock.positions[flock.active]
         com = np.mean(active_pos, axis=0)
@@ -106,7 +109,7 @@ class TestInfluencerMode:
             def rebuild(self, *a, **kw): pass
 
         flock._index = SpyIndex()
-        influencer_forces(flock, cfg)  # should not crash
+        _call_force(influencer_forces, flock, cfg)  # should not crash
 
         acc_mags = np.linalg.norm(flock.accelerations[flock.active], axis=1)
         assert np.all(acc_mags > 1e-6)
@@ -122,7 +125,7 @@ class TestInfluencerMode:
         flock.active[:] = False
 
         old_acc = flock.accelerations.copy()
-        influencer_forces(flock, cfg)
+        _call_force(influencer_forces, flock, cfg)
         assert np.allclose(flock.accelerations, old_acc)
 
     def test_single_bird(self):
@@ -136,7 +139,7 @@ class TestInfluencerMode:
         flock.accelerations[:] = 0.0
 
         np.random.seed(42)
-        influencer_forces(flock, cfg)
+        _call_force(influencer_forces, flock, cfg)
 
         acc_mag = np.linalg.norm(flock.accelerations[0])
         assert acc_mag > 0
@@ -151,7 +154,7 @@ class TestInfluencerMode:
 
         flock = PhysicsFlock(cfg)
         flock.accelerations[:] = 0.0
-        influencer_forces(flock, cfg)
+        _call_force(influencer_forces, flock, cfg)
 
         acc_mags = np.linalg.norm(flock.accelerations[flock.active], axis=1)
         assert np.all(acc_mags <= cfg.max_force + 1e-6), (
@@ -172,14 +175,14 @@ class TestInfluencerMode:
         flock1 = PhysicsFlock(cfg1)
         flock1.accelerations[:] = 0.0
         cfg1.influencer_substeps = 1
-        influencer_forces(flock1, cfg1)
+        _call_force(influencer_forces, flock1, cfg1)
         mag1 = np.linalg.norm(flock1.accelerations[flock1.active], axis=1).mean()
 
         np.random.seed(42)
         flock2 = PhysicsFlock(cfg2)
         flock2.accelerations[:] = 0.0
         cfg2.influencer_substeps = 3
-        influencer_forces(flock2, cfg2)
+        _call_force(influencer_forces, flock2, cfg2)
         mag2 = np.linalg.norm(flock2.accelerations[flock2.active], axis=1).mean()
 
         # Each substep adds force — 3 substeps should give >2x the force
@@ -197,7 +200,7 @@ class TestInfluencerMode:
         flock = PhysicsFlock(cfg)
         flock.accelerations[:] = 0.0
         np.random.seed(42)
-        influencer_forces(flock, cfg)
+        _call_force(influencer_forces, flock, cfg)
 
         acc_mags = np.linalg.norm(flock.accelerations[flock.active], axis=1)
         # All birds should have similar force magnitudes (same influence)
@@ -219,7 +222,7 @@ class TestInfluencerMode:
         flock.accelerations[:] = 0.0
         old_acc_inactive = flock.accelerations[~flock.active].copy()
 
-        influencer_forces(flock, cfg)
+        _call_force(influencer_forces, flock, cfg)
 
         assert np.allclose(flock.accelerations[~flock.active], old_acc_inactive)
         acc_mags = np.linalg.norm(flock.accelerations[flock.active], axis=1)
@@ -234,6 +237,6 @@ class TestInfluencerMode:
 
         flock = PhysicsFlock(cfg)
         flock.accelerations[:] = 0.0
-        influencer_forces(flock, cfg)
+        _call_force(influencer_forces, flock, cfg)
 
         assert np.allclose(flock.accelerations, 0.0)

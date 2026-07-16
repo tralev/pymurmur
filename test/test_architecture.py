@@ -28,11 +28,12 @@ from pathlib import Path
 # ── Third-party modules (always allowed) ──────────────────────────
 
 STDLIB = {
-    "abc", "ast", "builtins", "collections", "copy", "dataclasses",
-    "enum", "functools", "hashlib", "itertools", "json", "logging",
-    "math", "operator", "os", "pathlib", "pickle", "re", "sys",
-    "time", "typing", "warnings", "weakref", "__future__", "inspect",
-    "textwrap", "argparse", "csv", "io", "struct", "threading",
+    "abc", "ast", "builtins", "collections", "concurrent", "copy",
+    "dataclasses", "enum", "functools", "hashlib", "itertools", "json",
+    "logging", "math", "operator", "os", "pathlib", "pickle", "re",
+    "sys", "time", "typing", "warnings", "weakref", "__future__",
+    "inspect", "textwrap", "argparse", "csv", "io", "struct",
+    "threading",
 }
 
 THIRD_PARTY = {
@@ -71,13 +72,21 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     },
 
     # ── Tier 2: physics/forces (L1, L0) ──
+    "pymurmur.physics.forces._mode": {
+        "pymurmur.core.types",
+        "pymurmur.core.config",
+    },
     "pymurmur.physics.forces._base": {
         "pymurmur.core.types",
+        "pymurmur.core.config",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
+        "pymurmur.physics.flock",
+        "pymurmur.physics.extensions._base",
     },
     "pymurmur.physics.forces.spatial": {
         "pymurmur.core.types",
+        "pymurmur.physics.forces._mode",
         "pymurmur.physics.forces._base",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
@@ -86,6 +95,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     },
     "pymurmur.physics.forces.projection": {
         "pymurmur.core.types",
+        "pymurmur.physics.forces._mode",
         "pymurmur.physics.forces._base",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
@@ -94,6 +104,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     },
     "pymurmur.physics.forces.field": {
         "pymurmur.core.types",
+        "pymurmur.physics.forces._mode",
         "pymurmur.physics.forces._base",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
@@ -104,6 +115,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     },
     "pymurmur.physics.forces.vicsek": {
         "pymurmur.core.types",
+        "pymurmur.physics.forces._mode",
         "pymurmur.physics.forces._base",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
@@ -112,6 +124,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     },
     "pymurmur.physics.forces.influencer": {
         "pymurmur.core.types",
+        "pymurmur.physics.forces._mode",
         "pymurmur.physics.forces._base",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
@@ -122,6 +135,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.core.types",
         "pymurmur.core.config",
         "pymurmur.physics.flock",
+        "pymurmur.physics.forces._mode",
         "pymurmur.physics.forces._base",
         "pymurmur.physics.forces.spatial",
         "pymurmur.physics.forces.projection",
@@ -177,6 +191,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.core.types",
         "pymurmur.core.config",
         "pymurmur.physics.flock",
+        "pymurmur.physics.forces",
         "pymurmur.physics.extensions",
         "pymurmur.analysis.metrics",
     },
@@ -290,11 +305,6 @@ FORBIDDEN_EDGES: list[tuple[str, str]] = [
 # ── KNOWN VIOLATIONS — not yet fixed, scheduled per roadmap phases ──
 
 KNOWN_VIOLATIONS: list[tuple[str, str, str]] = [
-    # P2: physics/flock.py has `from .forces import compute_all_forces` inside step()
-    ("pymurmur.physics.flock", "pymurmur.physics.forces", "P2"),
-    # P2.3: spatial.py and vicsek.py build private cKDTree indexes
-    ("pymurmur.physics.forces.spatial", "pymurmur.physics.forces", "P2"),
-    ("pymurmur.physics.forces.vicsek", "pymurmur.physics.forces", "P2"),
     # viz/visualizer.py TYPE_CHECKING-imports simulation.engine (reference only)
     ("pymurmur.viz.visualizer", "pymurmur.simulation.engine", "accepted_ref"),
 ]
@@ -328,7 +338,7 @@ PHASE_EDGES = {
     },
     "P3": {
         "pymurmur.physics.forces.field": {"pymurmur.core.types", "pymurmur.physics.flock"},
-        "pymurmur.physics.extensions.predator": {"pymurmur.core.types", "pymurmur.physics.flock"},
+        "pymurmur.physics.extensions.predator": {"pymurmur.core.types", "pymurmur.physics.flock", "pymurmur.physics.forces"},
         "pymurmur.physics.extensions.wander": {"pymurmur.core.types"},
         "pymurmur.physics.extensions.ripple": {"pymurmur.core.types", "pymurmur.physics.flock"},
     },
@@ -348,7 +358,6 @@ PHASE_EDGES = {
         "pymurmur.viz.renderer": {"pymurmur.core.types", "pymurmur.physics.flock", "pymurmur.analysis.presets"},
         "pymurmur.viz.shaders": set(),
         "pymurmur.viz.camera": set(),
-        "pymurmur.viz.trails": {"pymurmur.core.types", "pymurmur.physics.flock"},
         "pymurmur.viz.visualizer": {"pymurmur.core.types"},
         "pymurmur.capture.recorder": {"pymurmur.simulation.engine", "pymurmur.viz.visualizer", "pymurmur.core.types"},
         "pymurmur.capture.mpl_recorder": {"pymurmur.core.types"},
@@ -378,9 +387,6 @@ PHASE_EDGES = {
 # the phase resolves the underlying issue.
 
 PHASE_VIOLATION_REMOVALS = {
-    "P2": [
-        ("pymurmur.physics.flock", "pymurmur.physics.forces._base"),
-    ],
     "P8": [
         ("pymurmur.viz.visualizer", "pymurmur.simulation.engine"),
     ],
@@ -450,17 +456,23 @@ def _is_external(module_name: str) -> bool:
     return top in THIRD_PARTY or top in STDLIB
 
 
-def _module_is_allowed(source: str, target: str) -> bool:
-    """Check if an import from *source* to *target* is allowed."""
+def _module_is_allowed(source: str, target: str, in_tc: bool = False) -> bool:
+    """Check if an import from *source* to *target* is allowed.
+
+    TYPE_CHECKING imports are exempt from forbidden-edge checks — the
+    type-flow contract allows type-only references that would be cycles
+    at runtime.
+    """
     if _is_external(target):
         return True
     if source in ("pymurmur.__init__", "pymurmur.__main__"):
         return True
 
-    for f_src, f_tgt in FORBIDDEN_EDGES:
-        if source == f_src or source.startswith(f_src + "."):
-            if target == f_tgt or target.startswith(f_tgt + "."):
-                return False
+    if not in_tc:
+        for f_src, f_tgt in FORBIDDEN_EDGES:
+            if source == f_src or source.startswith(f_src + "."):
+                if target == f_tgt or target.startswith(f_tgt + "."):
+                    return False
 
     matched_prefix = None
     for prefix in ALLOWED_EDGES:
@@ -657,7 +669,7 @@ def test_all_imports_within_allowed_edges():
     known: list[str] = []
 
     for source, target, lineno, in_tc in edges:
-        if _module_is_allowed(source, target):
+        if _module_is_allowed(source, target, in_tc):
             continue
         tc_note = " (TYPE_CHECKING)" if in_tc else ""
         detail = f"  {source}:{lineno} → {target}{tc_note}"
@@ -764,7 +776,7 @@ def test_no_cKDTree_in_forces():
             f"\n❌ cKDTree construction found in forces/:\n"
             + "\n".join(failures)
             + "\n\nSpatial index construction belongs in physics/flock.py "
-            + "(D5, P2.3). Forces modules must use flock.index.\n"
+            + "(P0.2). Forces modules must use flock.index.\n"
         )
         raise AssertionError(msg)
 

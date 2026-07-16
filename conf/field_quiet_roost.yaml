@@ -1,0 +1,56 @@
+# field_quiet_roost.yaml — Phase 3 field mode preset
+# Slow, cohesive blob — small flock, gentle forces, minimal wander.
+# Roadmap ref: P3.10 preset table (N=3K, v0=0.48, sep=0.85, align=0.65, coh=1.85, chase=0.72)
+
+# ── Domain ──────────────────────────────────────────────────────────
+domain:
+  width: 1000.0
+  height: 700.0
+  depth: 400.0
+
+# ── Flock ───────────────────────────────────────────────────────────
+flock:
+  num_boids: 3000
+  v0: 0.48
+  boid_size: 4.0
+
+# ── Mode ────────────────────────────────────────────────────────────
+mode: field
+
+# ── Field Parameters ────────────────────────────────────────────────
+field:
+  field_separation: 0.85
+  field_alignment: 0.65
+  field_cohesion: 1.85
+  field_chase_strength: 0.72
+  # Slow, cohesive — low noise, low flow, gentle wander
+  noise: 0.02
+  field_flow: 0.15
+  target_pull: 0.30
+  drift_pull: 0.06
+  inertia: 0.88
+
+# ── Extensions ──────────────────────────────────────────────────────
+extensions:
+  wander_enabled: true
+  predator_enabled: false
+  ripple_enabled: false
+
+wander:
+  attractor_speed: 0.08
+  attractor_radius: 200.0
+
+# ── Seed ────────────────────────────────────────────────────────────
+seed: 42
+
+# ── Boundary Mode ───────────────────────────────────────────────────
+boundary_mode: sphere
+
+# ── Performance ─────────────────────────────────────────────────────
+performance:
+  spatial_index: none
+
+# ── Metrics ─────────────────────────────────────────────────────────
+metrics:
+  detail_level: 1
+  interval: 60

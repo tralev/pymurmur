@@ -24,10 +24,16 @@ class TestH2Robustness:
         assert h2 >= 0
 
     def test_h2_smaller_than_n(self):
-        """H₂ < N for any connected graph (seeded to avoid disconnection)."""
+        """H₂ < N for any connected graph (virtually guaranteed connected).
+
+        Uses a tight cluster in a small domain with m=10 to guarantee
+        connectivity — random positions in a large domain can produce
+        disconnected k-NN graphs even with seeding.
+        """
         rng = np.random.default_rng(42)
-        positions = rng.uniform(0, 100, (15, 3)).astype(np.float32)
-        _, h2 = compute_h2(positions, m=5)  # m=5 ensures connectivity
+        # 15 birds tightly packed in [0, 10]³ → virtually guaranteed connected
+        positions = rng.uniform(0, 10, (15, 3)).astype(np.float32)
+        _, h2 = compute_h2(positions, m=10)
         assert np.isfinite(h2), f"H₂ should be finite for connected graph, got {h2}"
         assert h2 < len(positions), f"H₂={h2:.3f} >= N={len(positions)}"
 

@@ -9,6 +9,9 @@ from copy import copy
 import numpy as np
 
 
+from test.helpers import _call_force  # noqa: E402
+
+
 def test_projection_mode_zero_active(default_config):
     """projection_forces returns early when no birds are active."""
     from pymurmur.physics.forces.projection import projection_forces
@@ -22,7 +25,7 @@ def test_projection_mode_zero_active(default_config):
     flock.active[:] = False
     flock.accelerations[:] = 0.0
 
-    projection_forces(flock, cfg)
+    _call_force(projection_forces, flock, cfg)
     assert np.allclose(flock.accelerations, 0.0)
 
 
@@ -41,7 +44,7 @@ def test_projection_mode_produces_forces(default_config):
     flock.accelerations[:] = 0.0
     flock.get_index().rebuild(flock.positions, flock.active)
 
-    projection_forces(flock, cfg)
+    _call_force(projection_forces, flock, cfg)
     acc_active = flock.accelerations[flock.active]
     assert not np.allclose(acc_active, 0.0)
     assert np.isfinite(acc_active).all()
@@ -61,7 +64,7 @@ def test_projection_mode_updates_theta(default_config):
     flock.last_theta[:] = -1.0  # sentinel value
     flock.get_index().rebuild(flock.positions, flock.active)
 
-    projection_forces(flock, cfg)
+    _call_force(projection_forces, flock, cfg)
 
     # Birds with neighbours get theta >= 0; edge birds with no neighbours
     # in the hash grid's 27-cell radius stay at sentinel -1.0.
@@ -84,7 +87,7 @@ def test_projection_mode_blind_angle_effect(default_config):
     flock.accelerations[:] = 0.0
     flock.get_index().rebuild(flock.positions, flock.active)
 
-    projection_forces(flock, cfg)
+    _call_force(projection_forces, flock, cfg)
     assert np.isfinite(flock.accelerations).all()
 
 
@@ -103,7 +106,7 @@ def test_projection_mode_anisotropy_effect(default_config):
     flock.accelerations[:] = 0.0
     flock.get_index().rebuild(flock.positions, flock.active)
 
-    projection_forces(flock, cfg)
+    _call_force(projection_forces, flock, cfg)
     assert np.isfinite(flock.accelerations).all()
 
 
@@ -124,7 +127,7 @@ def test_projection_mode_steric_enabled(default_config):
     flock.accelerations[:] = 0.0
     flock.get_index().rebuild(flock.positions, flock.active)
 
-    projection_forces(flock, cfg)
+    _call_force(projection_forces, flock, cfg)
     # With phi_p=0 and phi_a=0, forces come only from steric
     # May or may not be zero depending on neighbour distances
     assert np.isfinite(flock.accelerations).all()
@@ -145,7 +148,7 @@ def test_projection_mode_sigma_effect(default_config):
     flock.last_theta[:] = 0.0
     flock.get_index().rebuild(flock.positions, flock.active)
 
-    projection_forces(flock, cfg)
+    _call_force(projection_forces, flock, cfg)
     assert np.isfinite(flock.accelerations).all()
 
 
@@ -165,7 +168,7 @@ def test_projection_mode_delta_computed(default_config):
     flock.accelerations[:] = 0.0
     flock.get_index().rebuild(flock.positions, flock.active)
 
-    projection_forces(flock, cfg)
+    _call_force(projection_forces, flock, cfg)
 
     # Forces should be non-zero (delta computed from occlusion)
     acc_active = flock.accelerations[flock.active]
@@ -190,7 +193,7 @@ def test_projection_mode_force_within_bounds(default_config):
     flock.accelerations[:] = 0.0
     flock.get_index().rebuild(flock.positions, flock.active)
 
-    projection_forces(flock, cfg)
+    _call_force(projection_forces, flock, cfg)
 
     # Check that all acceleration magnitudes are <= max_force
     acc_mags = np.linalg.norm(flock.accelerations, axis=1)
@@ -218,7 +221,7 @@ def test_projection_mode_hash_grid(default_config):
     from pymurmur.physics.flock import SpatialHashGrid
     assert isinstance(flock.get_index(), SpatialHashGrid)
 
-    projection_forces(flock, cfg)
+    _call_force(projection_forces, flock, cfg)
 
     # Should produce non-zero, finite forces via hash grid topological neighbors
     acc_active = flock.accelerations[flock.active]
@@ -227,25 +230,27 @@ def test_projection_mode_hash_grid(default_config):
 
 
 def test_topological_neighbors_fallback(default_config):
-    """_topological_neighbors returns empty when index is neither type."""
-    from pymurmur.physics.forces.projection import _topological_neighbors
+    """_topological_neighbors_batch returns all -1 sentinels when index not ready."""
+    from pymurmur.physics.forces.projection import _topological_neighbors_batch
     from pymurmur.physics.flock import PhysicsFlock
 
     cfg = default_config
     cfg.num_boids = 10
     flock = PhysicsFlock(cfg)
 
-    # Replace index with plain object — neither KDTreeIndex nor SpatialHashGrid
-    flock._index = object()
-    active_idx = np.where(flock.active)[0][0]
+    # Replace index with an object lacking query_knn -> falls through
+    class _FakeIndex:
+        ready = False
+    flock._index = _FakeIndex()
+    active_idx = np.where(flock.active)[0]
 
-    result = _topological_neighbors(flock, active_idx, sigma=4)
-    assert len(result) == 0  # falls through to the empty return
+    result = _topological_neighbors_batch(flock.positions, flock.get_index(), active_idx, 4)
+    assert (result == -1).all()  # all sentinels when index not ready
 
 
 def test_topological_neighbors_kdtree(default_config):
-    """_topological_neighbors uses KDTreeIndex when available."""
-    from pymurmur.physics.forces.projection import _topological_neighbors
+    """_topological_neighbors_batch uses KDTreeIndex when available."""
+    from pymurmur.physics.forces.projection import _topological_neighbors_batch
     from pymurmur.physics.flock import PhysicsFlock, KDTreeIndex
 
     cfg = default_config
@@ -257,6 +262,6 @@ def test_topological_neighbors_kdtree(default_config):
     kdt.rebuild(flock.positions, flock.active)
     flock._index = kdt
 
-    active_idx = np.where(flock.active)[0][0]
-    result = _topological_neighbors(flock, active_idx, sigma=4)
-    assert len(result) > 0  # returns neighbours via KDTree
+    active_idx = np.where(flock.active)[0]
+    result = _topological_neighbors_batch(flock.positions, flock.get_index(), active_idx, 4)
+    assert (result >= 0).any()  # returns neighbours via KDTree

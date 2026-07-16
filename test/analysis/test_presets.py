@@ -5,12 +5,12 @@ from copy import deepcopy
 import pytest
 
 from pymurmur.analysis.presets import PRESETS
-from pymurmur.core.config import SimConfig
+from pymurmur.core.config import SimConfig, _ALL_FIELD_NAMES
 
 
 def test_all_presets_valid():
-    """Every preset dict contains only valid SimConfig field names."""
-    valid_fields = set(SimConfig().__dataclass_fields__.keys())
+    """Every preset dict contains only valid SimConfig field names (I7.1)."""
+    valid_fields = _ALL_FIELD_NAMES
     for name, preset in PRESETS.items():
         unknown = set(preset.keys()) - valid_fields
         assert not unknown, f"Preset '{name}' has unknown fields: {unknown}"

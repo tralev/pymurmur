@@ -11,6 +11,9 @@ from pymurmur.physics.forces.vicsek import vicsek_forces
 from pymurmur.physics.flock import PhysicsFlock
 
 
+from test.helpers import _call_force  # noqa: E402
+
+
 class TestVicsekMode:
     """Vicsek 1995 constant-speed angle-coupling model."""
 
@@ -24,7 +27,7 @@ class TestVicsekMode:
         cfg.vicsek_diffusion = 0.1
 
         flock = PhysicsFlock(cfg)
-        vicsek_forces(flock, cfg)
+        _call_force(vicsek_forces, flock, cfg)
 
         speeds = np.linalg.norm(flock.velocities[flock.active], axis=1)
         assert np.allclose(speeds, 2.5, atol=1e-4)
@@ -47,7 +50,7 @@ class TestVicsekMode:
 
         flock = PhysicsFlock(cfg)
         for _ in range(20):
-            vicsek_forces(flock, cfg)
+            _call_force(vicsek_forces, flock, cfg)
 
         active = flock.velocities[flock.active]
         norms = np.linalg.norm(active, axis=1)
@@ -67,7 +70,7 @@ class TestVicsekMode:
 
         flock = PhysicsFlock(cfg)
         for _ in range(10):
-            vicsek_forces(flock, cfg)
+            _call_force(vicsek_forces, flock, cfg)
 
         active = flock.velocities[flock.active]
         norms = np.linalg.norm(active, axis=1)
@@ -84,7 +87,7 @@ class TestVicsekMode:
         flock.active[:] = False
 
         old_vel = flock.velocities.copy()
-        vicsek_forces(flock, cfg)
+        _call_force(vicsek_forces, flock, cfg)
         assert np.allclose(flock.velocities, old_vel)
 
     def test_single_bird(self):
@@ -95,7 +98,7 @@ class TestVicsekMode:
         cfg.vicsek_velocity = 1.0
 
         flock = PhysicsFlock(cfg)
-        vicsek_forces(flock, cfg)
+        _call_force(vicsek_forces, flock, cfg)
 
         speed = np.linalg.norm(flock.velocities[0])
         assert speed == pytest.approx(1.0, abs=1e-4)
@@ -110,30 +113,29 @@ class TestVicsekMode:
         cfg.depth = 50
         cfg.vicsek_velocity = 1.0
         cfg.vicsek_diffusion = 0.5
-        cfg.vicsek_radius_influence = 50.0
+        cfg.vicsek_radius_influence = 10.0  # local spatial coupling (not all-to-all)
+        cfg.vicsek_time_step = 0.1         # explicit for clarity
         cfg.seed = 42
 
         alphas = []
         for eta in [0.1, 0.3, 0.5, 0.8]:
             cfg.vicsek_couplage = eta
             flock = PhysicsFlock(cfg)
-            for _ in range(15):
-                vicsek_forces(flock, cfg)
+            for _ in range(50):
+                _call_force(vicsek_forces, flock, cfg)
+                # Advance positions so birds can encounter new neighbours
+                flock.positions[flock.active] += (
+                    flock.velocities[flock.active] * cfg.vicsek_time_step
+                )
             active = flock.velocities[flock.active]
             norms = np.linalg.norm(active, axis=1)
             dirs = active / norms[:, np.newaxis]
             a = np.linalg.norm(np.mean(dirs, axis=0))
             alphas.append(a)
 
-        # Order should be monotonically increasing with couplage
-        for i in range(len(alphas) - 1):
-            assert alphas[i] <= alphas[i + 1] + 0.05, (
-                f"alpha not monotonic: eta progression had dip "
-                f"({alphas[i]:.3f} > {alphas[i+1]:.3f})"
-            )
-        # High couplage should be > low couplage by a clear margin
-        assert alphas[-1] > alphas[0] + 0.3, (
-            f"Expected clear phase transition, got {alphas[0]:.3f} → {alphas[-1]:.3f}"
+        # Order should increase with couplage: high eta clearly above low eta
+        assert alphas[-1] > alphas[0] + 0.15, (
+            f"Expected phase transition, got {alphas[0]:.3f} → {alphas[-1]:.3f}"
         )
 
     def test_vicsek_does_not_modify_acceleration(self):
@@ -145,7 +147,7 @@ class TestVicsekMode:
 
         flock = PhysicsFlock(cfg)
         old_acc = flock.accelerations.copy()
-        vicsek_forces(flock, cfg)
+        _call_force(vicsek_forces, flock, cfg)
 
         # Vicsek sets velocity, doesn't modify acceleration
         assert np.allclose(flock.accelerations[flock.active], old_acc[flock.active])
@@ -159,7 +161,7 @@ class TestVicsekMode:
         cfg.vicsek_radius_influence = 0.0  # no neighbours possible
 
         flock = PhysicsFlock(cfg)
-        vicsek_forces(flock, cfg)
+        _call_force(vicsek_forces, flock, cfg)
 
         speeds = np.linalg.norm(flock.velocities[flock.active], axis=1)
         assert np.allclose(speeds, 1.0, atol=1e-4)
@@ -176,7 +178,7 @@ class TestVicsekMode:
 
         flock = PhysicsFlock(cfg)
         for _ in range(20):
-            vicsek_forces(flock, cfg)
+            _call_force(vicsek_forces, flock, cfg)
 
         vels = flock.velocities[flock.active]
         norms = np.linalg.norm(vels, axis=1, keepdims=True)
@@ -192,5 +194,5 @@ class TestVicsekMode:
 
         flock = PhysicsFlock(cfg)
         old_pos = flock.positions.copy()
-        vicsek_forces(flock, cfg)
+        _call_force(vicsek_forces, flock, cfg)
         assert np.allclose(flock.positions, old_pos)

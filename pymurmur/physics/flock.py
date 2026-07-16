@@ -10,7 +10,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from .boid import integrate, random_unit_sphere, init_positions
+from .boid import integrate, random_unit_sphere, init_positions, init_velocities_blob
+from ..core.types import SpatialIndex, min_image
 
 if TYPE_CHECKING:
     from ..core.config import SimConfig
@@ -31,12 +32,16 @@ class PhysicsFlock:
             config.seed if config.seed else 0
         )
 
+        position_mode = getattr(config, 'position_init', 'box')
         self.positions = init_positions(
             N, config.width, config.height, config.depth, self.rng,
-            mode=getattr(config, 'position_init', 'box'),
+            mode=position_mode,
             separation=getattr(config, 'boid_size', 9.0),
         )
-        self.velocities = random_unit_sphere(N, self.rng) * config.v0 * 0.8
+        if position_mode == 'blob':
+            self.velocities = init_velocities_blob(N, config.v0, self.rng)
+        else:
+            self.velocities = random_unit_sphere(N, self.rng) * config.v0 * 0.8
         self.accelerations = np.zeros((N, 3), dtype=np.float32)
         self.seeds = self.rng.uniform(0.0, 1.0, N).astype(np.float32)
         self.last_theta = np.zeros(N, dtype=np.float32)
@@ -44,6 +49,10 @@ class PhysicsFlock:
 
         # Smoothed swarm centre — EMA centroid (P0.5)
         self.center: np.ndarray | None = None
+
+        # Wander state — set by Wander extension before force computation (P3.1)
+        self.wander_center: np.ndarray | None = None
+        self.wander_heading: np.ndarray | None = None
 
         # Species column — predator/prey flag (P0.6)
         self.is_predator: np.ndarray = np.zeros(N, dtype=bool)
@@ -55,42 +64,71 @@ class PhysicsFlock:
         # Per-bird max speed — None uses scalar v0 (P0.8)
         self.max_speed: np.ndarray | None = None
 
-        # Auto-select spatial index based on flock size
-        self._index: SpatialHashGrid | KDTreeIndex
-        if N >= 5000:
+        # Spatial index selection — honor explicit config, fall back to N heuristic
+        self._index: SpatialIndex | None
+        self._spatial_index_mode = config.spatial_index
+        self._visual_range = config.visual_range
+        self._index_threshold = 5000
+        index_choice = config.spatial_index
+        if index_choice == "kdtree":
             self._index = KDTreeIndex()
-        else:
+        elif index_choice == "hash_grid":
             self._index = SpatialHashGrid(config)
+        elif index_choice == "none":
+            # No spatial index — modes that need it must build their own
+            self._index = None
+        else:  # "auto"
+            if N >= self._index_threshold:
+                self._index = KDTreeIndex()
+            else:
+                self._index = SpatialHashGrid(config)
 
-    _INDEX_MODES: frozenset[str] = frozenset({"spatial", "projection"})
+    def integrate(self, config: SimConfig, dt: float) -> None:
+        """Stash pre-integration state, integrate, reset accelerations, update centre.
 
-    def step(self, config: SimConfig, dt: float) -> None:
-        """One simulation tick: rebuild index -> compute forces -> integrate."""
-        # 1. Rebuild spatial index (only modes that query neighbours)
-        if config.mode in self._INDEX_MODES:
-            self._index.rebuild(self.positions, self.active)
-
-        # 2. Compute forces - dispatched by mode (physics.forces)
-        from .forces import compute_all_forces
-        compute_all_forces(self, config)
-
-        # 3. Stash pre-integration state (P0.7)
+        Pure state operation — never imports forces. The caller (engine)
+        is responsible for force computation before calling this method.
+        """
+        # 1. Stash pre-integration state (P0.7)
         self.last_accelerations[:] = self.accelerations
         self.prev_positions[:] = self.positions
 
-        # 4. Integrate
+        # 2. Integrate
         integrate(
             self.positions, self.velocities, self.accelerations,
             self.active,
-            config.width, config.height, config.depth,                    config.v0, config.boundary_mode, dt,
-                    config.boundary_sphere_radius, config.boundary_avoidance_factor,
-                    rng=self.rng,
-                    max_speed=self.max_speed,
-                    center=self.center,
-                )
+            config.width, config.height, config.depth,
+            config.v0, config.boundary_mode, dt,
+            config.boundary_sphere_radius, config.boundary_avoidance_factor,
+            rng=self.rng,
+            max_speed=self.max_speed,
+            center=self.center,
+        )
 
-        # 5. Update smoothed centre (EMA centroid)
+        # 3. Update smoothed centre (EMA centroid)
         self.update_center()
+
+    def _reevaluate_index(self) -> None:
+        """Migrate index on N threshold crossing when spatial_index is 'auto'.
+
+        When N_active crosses 5,000 during add_boids/remove_boids,
+        switches between SpatialHashGrid and KDTreeIndex.
+        Does nothing when spatial_index is explicitly set.
+        """
+        if self._spatial_index_mode != "auto" or self._index is None:
+            return
+
+        n = self.N_active
+        is_kdtree = isinstance(self._index, KDTreeIndex)
+
+        if n >= self._index_threshold and not is_kdtree:
+            self._index = KDTreeIndex()
+        elif n < self._index_threshold and is_kdtree:
+            # Need config-like object for SpatialHashGrid — fake it
+            from ..core.config import SimConfig
+            cfg = SimConfig()
+            cfg.visual_range = self._visual_range
+            self._index = SpatialHashGrid(cfg)
 
     def add_boids(
         self, count: int, config: SimConfig, is_predator: bool = False
@@ -112,13 +150,20 @@ class PhysicsFlock:
             idx = inactive[:added]
             self.active[idx] = True
             self.is_predator[idx] = is_predator
+            position_mode = getattr(config, 'position_init', 'box')
             self.positions[idx] = init_positions(
                 added, config.width, config.height, config.depth, self.rng,
-                mode=getattr(config, 'position_init', 'box'),
+                mode=position_mode,
                 separation=getattr(config, 'boid_size', 9.0),
             )
-            self.velocities[idx] = random_unit_sphere(added, self.rng) * config.v0 * 0.8
+            if position_mode == 'blob':
+                self.velocities[idx] = init_velocities_blob(added, config.v0, self.rng)
+            else:
+                self.velocities[idx] = random_unit_sphere(added, self.rng) * config.v0 * 0.8
             self.accelerations[idx] = 0.0
+
+        if added > 0:
+            self._reevaluate_index()
 
         return added
 
@@ -128,6 +173,7 @@ class PhysicsFlock:
         removed = min(count, len(active_idx))
         if removed > 0:
             self.active[active_idx[-removed:]] = False
+            self._reevaluate_index()
         return removed
 
     def _extend(self, count: int) -> None:
@@ -169,7 +215,7 @@ class PhysicsFlock:
     def N_capacity(self) -> int:
         return len(self.active)
 
-    def get_index(self) -> SpatialHashGrid | KDTreeIndex:
+    def get_index(self) -> SpatialIndex | None:
         return self._index
 
     def update_center(self) -> None:
@@ -197,39 +243,72 @@ class SpatialHashGrid:
 
     O(N) rebuild, O(1) per-query. Best for N < 5,000 where per-cell
     density is low.
+
+    P2.5: Modulo-wrapped cell keys + min-image distances for correct
+    toroidal boundary behaviour.
     """
 
     def __init__(self, config: SimConfig) -> None:
         self._cell_size: float = config.visual_range
         self._bins: dict[tuple[int, int, int], list[int]] = {}
         self._positions: np.ndarray | None = None
+        # P2.5: Domain dimensions for toroidal wrapping
+        self._box: tuple[float, float, float] = (
+            float(config.width), float(config.height), float(config.depth),
+        )
+        self._cols: int = max(1, int(config.width / self._cell_size))
+        self._rows: int = max(1, int(config.height / self._cell_size))
+        self._slices: int = max(1, int(config.depth / self._cell_size))
 
     @property
     def ready(self) -> bool:
         return len(self._bins) > 0
 
+    @property
+    def tree(self) -> None:
+        """SpatialHashGrid has no underlying tree — returns None."""
+        return None
+
     def rebuild(self, positions: np.ndarray, active: np.ndarray) -> None:
-        """Populate grid bins from active bird positions."""
+        """Populate grid bins from active bird positions.
+
+        P2.5: Cell keys are modulo-wrapped so birds near one boundary
+        appear in cells at the opposite boundary, enabling cross-seam
+        neighbour queries.
+        """
         self._bins.clear()
         self._positions = positions  # stored for query_knn
         cell_size = self._cell_size
+        cols, rows, slices = self._cols, self._rows, self._slices
         for i in np.where(active)[0]:
+            x, y, z = positions[i, 0], positions[i, 1], positions[i, 2]
             key = (
-                int(positions[i, 0] // cell_size),
-                int(positions[i, 1] // cell_size),
-                int(positions[i, 2] // cell_size),
+                int(x // cell_size) % cols,
+                int(y // cell_size) % rows,
+                int(z // cell_size) % slices,
             )
             self._bins.setdefault(key, []).append(i)
 
     def query_radius(self, pos: np.ndarray, radius: float) -> list[int]:
-        """Return candidate indices within the 27-cell neighborhood."""
+        """Return candidate indices within the 27-cell neighborhood.
+
+        P2.5: Neighbour cell keys are modulo-wrapped for toroidal
+        cross-seam queries.
+        """
         cell_size = self._cell_size
-        cx, cy, cz = int(pos[0] // cell_size), int(pos[1] // cell_size), int(pos[2] // cell_size)
+        cols, rows, slices = self._cols, self._rows, self._slices
+        cx = int(pos[0] // cell_size) % cols
+        cy = int(pos[1] // cell_size) % rows
+        cz = int(pos[2] // cell_size) % slices
         candidates: list[int] = []
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
                 for dz in (-1, 0, 1):
-                    key = (cx + dx, cy + dy, cz + dz)
+                    key = (
+                        (cx + dx) % cols,
+                        (cy + dy) % rows,
+                        (cz + dz) % slices,
+                    )
                     if key in self._bins:
                         candidates.extend(self._bins[key])
         return candidates
@@ -238,7 +317,10 @@ class SpatialHashGrid:
         """Return indices of k nearest neighbors via radius query + sort.
 
         Uses the 27-cell neighbourhood from query_radius, computes
-        distances, and returns the k closest (excluding self).
+        toroidal (min-image) distances, and returns the k closest
+        (excluding self).
+
+        P2.5: Min-image distances for correct toroidal boundary behaviour.
         """
         if self._positions is None:
             return np.array([], dtype=np.int32)
@@ -250,6 +332,10 @@ class SpatialHashGrid:
         # Collect candidate positions via numpy advanced indexing
         candidate_pos = self._positions[candidates]
         diffs = candidate_pos - pos
+
+        # P2.5: Min-image distances for toroidal wrapping
+        box_arr = np.array(self._box, dtype=np.float32)
+        diffs = min_image(diffs, box_arr)
         dists = np.linalg.norm(diffs, axis=1)
 
         # Exclude self (d < 1e-6) and sort by distance
@@ -272,24 +358,44 @@ class KDTreeIndex:
     """scipy.spatial.cKDTree wrapper.
 
     O(N log N) build, O(k log N) per query. Required for N >= 5,000.
+    Returns global indices — compacted→global mapping applied in rebuild.
     """
 
     def __init__(self) -> None:
         self._tree: object = None   # scipy.spatial.cKDTree
+        self._active_map: np.ndarray = np.array([], dtype=np.int32)
 
     @property
     def ready(self) -> bool:
         return self._tree is not None
 
     def rebuild(self, positions: np.ndarray, active: np.ndarray) -> None:
-        """Build cKDTree from active bird positions."""
+        """Build cKDTree from active bird positions.
+
+        Stores a compacted→global index map so query_knn returns
+        global indices consistent with SpatialHashGrid.
+        """
         from scipy.spatial import cKDTree
+        self._active_map = np.where(active)[0].astype(np.int32)
         active_pos = positions[active]
         self._tree = cKDTree(active_pos) if len(active_pos) > 0 else None
 
+    @property
+    def tree(self) -> object | None:
+        """Raw scipy cKDTree — for batch operations like query_ball_tree.
+
+        Note: the raw tree returns compacted indices; callers using
+        this property directly are responsible for index-space conversion.
+        """
+        return self._tree
+
     def query_knn(self, pos: np.ndarray, k: int) -> np.ndarray:
-        """Return indices of k nearest neighbors (excluding self)."""
+        """Return global indices of k nearest neighbors (excluding self)."""
         if self._tree is None:
             return np.array([], dtype=np.int32)
         _, idx = self._tree.query(pos, k=k + 1)
-        return idx[1:] if len(idx) > 1 else idx[:0]
+        # Exclude self (idx[0]) and map compacted→global
+        compacted = idx[1:] if len(idx) > 1 else idx[:0]
+        if len(compacted) > 0 and len(self._active_map) > 0:
+            return self._active_map[compacted]
+        return np.array([], dtype=np.int32)

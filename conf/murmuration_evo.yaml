@@ -138,7 +138,6 @@ extensions:
 # ── Performance Tuning (300K target) ────────────────────────────────
 # GA runs headless — performance tuning affects inner simulation evaluations.
 performance:
-  use_numba: true             # JIT-compile hot force loops for faster inner sims
   spatial_index: kdtree       # auto | hash_grid | kdtree (needed for neighbor-based forces)
   instance_buffer_chunk: 50000  # GPU buffer growth increment (not used in headless GA)
 
@@ -161,7 +160,6 @@ visual:
   show_grid: false
   auto_rotate: false
   theme: ink
-  trails: off
 
 # ── Capture ─────────────────────────────────────────────────────────
 capture:

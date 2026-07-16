@@ -8,6 +8,8 @@ from __future__ import annotations
 import pygame
 from typing import TYPE_CHECKING
 
+from ..analysis.presets import PRESETS
+
 if TYPE_CHECKING:
     from ..core.config import SimConfig
     from .camera import OrbitCamera
@@ -107,5 +109,28 @@ class InputControl:
             cfg.roosting_enabled = not cfg.roosting_enabled
         elif key == pygame.K_u:
             cfg.refinements = not cfg.refinements
+        elif pygame.K_1 <= key <= pygame.K_9:
+            self._apply_preset(key - pygame.K_1)
 
         return True
+
+    def _apply_preset(self, index: int) -> None:
+        """Apply named preset by index (0-based).
+
+        Updates active mode's weights without changing the mode itself.
+        """
+        preset_names = list(PRESETS.keys())
+        if index >= len(preset_names):
+            return
+
+        name = preset_names[index]
+        preset = PRESETS[name]
+
+        # Apply all fields except mode (preserve current mode)
+        for field, value in preset.items():
+            if field == "mode":
+                continue
+            if hasattr(self.config, field):
+                setattr(self.config, field, value)
+
+        print(f"[preset] {name}")

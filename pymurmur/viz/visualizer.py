@@ -31,14 +31,17 @@ class Visualizer:
         config: SimConfig,
         *,
         headless: bool = False,
+        width: int | None = None,
+        height: int | None = None,
     ) -> None:
         self.sim = sim
         self.config = config
         self.paused = False
 
         self.renderer = Renderer3D(
-            width=config.window_width,
-            height=config.window_height,
+            width=width if width is not None else config.window_width,
+            height=height if height is not None else config.window_height,
+            theme=config.theme,
             headless=headless,
             instance_buffer_chunk=config.instance_buffer_chunk,
         )
@@ -47,19 +50,23 @@ class Visualizer:
         )
 
     def headless_frame(self) -> PILImage:
-        """Render one frame and return a PIL Image (headless only)."""
+        """Render one frame and return a PIL Image (headless only).
+
+        Pure render — does NOT step the simulation. The caller is
+        responsible for calling sim.step() before each render frame.
+        """
         self.renderer.begin_frame(self.camera)
-        if not self.paused:
-            self.sim.step(1.0 / 60.0)
         self.renderer.draw_birds(self.sim.flock)
         self.renderer.end_frame()
         return self.renderer.capture_frame()
 
     def frame(self) -> None:
-        """Render one frame to the screen (windowed mode)."""
+        """Render one frame to the screen (windowed mode).
+
+        Pure render — does NOT step the simulation. The caller is
+        responsible for calling sim.step() before each render frame.
+        """
         self.renderer.begin_frame(self.camera)
-        if not self.paused:
-            self.sim.step(1.0 / 60.0)
         self.renderer.draw_birds(self.sim.flock)
         self.renderer.end_frame()
 
@@ -76,20 +83,20 @@ class Visualizer:
             self.camera.step_auto_rotate(dt)
             self.paused = input_ctrl.paused
 
-            # Handle deferred add/remove (respect partial completion)
+            # Push live-mutation commands into engine queue (I4.3)
             if input_ctrl.pending_add > 0:
-                added = self.sim.flock.add_boids(input_ctrl.pending_add, self.config)
-                self.config.num_boids = self.sim.flock.N_active
-                input_ctrl.pending_add -= added
+                self.sim.enqueue_add(input_ctrl.pending_add)
+                input_ctrl.pending_add = 0
             if input_ctrl.pending_remove > 0:
-                removed = self.sim.flock.remove_boids(input_ctrl.pending_remove)
-                self.config.num_boids = self.sim.flock.N_active
-                input_ctrl.pending_remove -= removed
-
-            # Handle reset
+                self.sim.enqueue_remove(input_ctrl.pending_remove)
+                input_ctrl.pending_remove = 0
             if input_ctrl.pending_reset:
-                self.sim.reset()
+                self.sim.enqueue_reset()
                 input_ctrl.pending_reset = False
+
+            # Drain commands every frame (even when paused) so +/- mutations
+            # take effect immediately, then step physics only when unpaused.
+            self.sim.drain_commands()
 
             if not self.paused:
                 self.sim.step(dt)
