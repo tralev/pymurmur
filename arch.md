@@ -8,17 +8,30 @@
 > is complete — its history is preserved in git, not tracked as a live
 > file. Test-tree layout, plan, and Docker/CI usage: [test.md](test.md).
 >
-> Both design views — Top-Down · Functional Decomposition · Macro→Micro ·
-> Outside-In, and Bottom-Up · Component Assembly · Micro→Macro · Inside-Out —
-> live in §2 of this document, which is the **single architecture
-> reference**. This document is executable: the import matrix (§5), the
+> **Organization: Top-Down / Macro-to-Micro.** §1–§13 read in one
+> direction — start at the system goal (Level 0), decompose into
+> functional subsystems and their contracts (Level 1), wire and map them
+> to modules (Level 2), then pin module interfaces and implementation
+> detail (Level 3). Each heading below carries a `*(Level N)*` tag so the
+> altitude is explicit while scanning. This is the **single architecture
+> reference**; it is executable — the import matrix (§5), the
 > config-usage drift scan, and the doc-link guard
 > (`test/crosscutting/guards/test_docs.py`) fail CI when code and this
 > document diverge.
+>
+> A second, complementary view — Bottom-Up · Component Assembly ·
+> Micro-to-Macro · Inside-Out — describes the same system read the other
+> direction (atoms up to system) and is what `test/`'s own directory
+> tree is organized by (`l0_modules` → `l4_system`, see [test.md](test.md)).
+> It lives in [Appendix A](#appendix-a-bottom-up-component-assembly)
+> at the end of this document, using **Tier** labels (Tier 0 Atoms …
+> Tier 3 System) rather than **Level** — the two views number their
+> poles in opposite directions, so reusing "Level" for both would make
+> "Level 0" ambiguous (Goal here, Atoms there) inside one document.
 
 ---
 
-## 1. System Goal
+## 1. System Goal *(Level 0 — macro)*
 
 Simulate starling flocks at any scale (150 → 300 000 birds) using **seven
 interchangeable physics models**, with optional predator–prey species
@@ -40,17 +53,14 @@ config-file editing (YAML → text editor). *(Excluded-tier record:
 
 ---
 
-## 2. Two Complementary Design Views
+## 2. Functional Decomposition & Subsystem Contracts *(Level 1)*
 
-Both views describe the same system; each is the *generator* of different
-guarantees. The Macro→Micro view generates the **dependency rules and
-subsystem contracts**; the Micro→Macro view generates the **testing pyramid
-and composition conventions**. The test tree mirrors the views directly:
-`test/l3_subsystems/` isolates the Level-1 subsystems below,
-`test/l0_modules/` mirrors the module map (§4), and
-`test/crosscutting/guards/` enforces the dependency matrix (§5).
-
-### 2.1 Top-Down · Functional Decomposition · Macro→Micro · Outside-In
+This section is the generator of the **dependency rules and subsystem
+contracts** enforced elsewhere in this document (§5) and in CI
+(`test/crosscutting/guards/test_architecture.py`). `test/l3_subsystems/`
+isolates the Level-1 subsystems below with their dependencies mocked;
+`test/l0_modules/` mirrors the module map (§4); `test/crosscutting/guards/`
+enforces the dependency matrix (§5).
 
 **Level 0 — Goal** (§1) decomposes into **Level 1 — seven functional
 subsystems** (the classic six, plus Analysis split into two tiers):
@@ -104,45 +114,13 @@ flowchart TD
 map; **Outside-In ordering** for a reader: start at `__main__.py` → user
 flow (§11) → engine step (§3) → mode/extension internals.
 
-### 2.2 Bottom-Up · Component-Based Assembly · Micro→Macro · Inside-Out
-
-Built and tested from atoms upward; a component at level *n* depends only
-on levels < *n* (no Level-1 assembly imports another Level-1 assembly).
-**Composition is a DAG** — the historical `flock ↔ forces` cycle is gone
-(orchestration lives in the engine).
-
-```
-Level 3  SYSTEM      __main__ CLI · pymurmur facade (Simulation, benchmark) · scripts/
-Level 2  SUBSYSTEMS  SimulationEngine · Visualizer · Renderer3D · Recorder(+Mpl) ·
-                     QualityGovernor · MurmurationEnv · EvoFlock
-Level 1  ASSEMBLIES  PhysicsFlock (FlockArrays + SpatialIndex + rng + species + center) ·
-                     7 ForceMode classes · ExtensionManager (Threat/Ecology/Wander/Ripple) ·
-                     MetricsCollector · rewards · presets · obstacles (SDF scene)
-Level 0  ATOMS       Vec3/FlockArrays/StepContext/InstanceSchema (types) ·
-                     integrate() variants · force primitives (sep/align/coh/noise) ·
-                     rotate_about (Rodrigues) · min_image · hash01/smoothstep ·
-                     spherical-cap occlusion · steric · SDF primitives ·
-                     numba kernels · normalize3/limit3 · fibonacci_sphere · seed_noise3
-```
-
-Level is defined by **import discipline, not file location** — the SDF
-primitives are Level-0 atoms although they live in
-`physics/obstacles.py` (zero project imports beyond `core/`).
-
-**Micro→Macro conventions (the composition contract, enforced by tests):**
-all neighbour indices are **global capacity-space** rows; the `active` mask
-may have holes at any time and every assembly must be correct under it; all
-randomness flows from the single seeded `flock.rng`; every Level-0 atom is
-unit-tested against its documented formula before an assembly consumes it;
-**no component merges without its composer** (no dead atoms). Build/test
-order mirrors the tree: atoms and module mirrors (`test/l0_modules/`) →
-wiring (`test/l2_integration/`) → subsystem isolation
-(`test/l3_subsystems/`) → system/CLI/acceptance (`test/l4_system/`), with
-the guards and perf budgets cross-cutting (`test/crosscutting/`).
+The complementary Bottom-Up view of this same decomposition — how it is
+*built and tested* from atoms upward, rather than *decomposed* from the
+goal downward — is [Appendix A](#appendix-a-bottom-up-component-assembly).
 
 ---
 
-## 3. Application Logic & Flow
+## 3. Application Logic & Flow *(Level 2)*
 
 ```mermaid
 flowchart TD
@@ -185,7 +163,7 @@ them.
 
 ---
 
-## 4. Module Map
+## 4. Module Map *(Level 2)*
 
 ```
 pymurmur/                          # pip-installable package
@@ -193,7 +171,7 @@ pymurmur/                          # pip-installable package
 ├── __main__.py                # CLI: config resolution, --set/--print-config, --probe,
 │                              #   env overrides, dispatch
 │
-├── core/                      # Level 0 shared — no project imports
+├── core/                      # Tier 0 shared (Appendix A) — no project imports
 │   ├── types.py               # Vec3, FlockArrays, StepContext, InstanceSchema,
 │   │                          #   SpatialIndex Protocol, rotate_about, min_image,
 │   │                          #   normalize3/limit3, hash01, smoothstep,
@@ -274,16 +252,20 @@ git_mur/
 ├── pymurmur/            # the package (above)
 ├── conf/                # shipped YAML presets (§10) + conf/examples/
 ├── output/              # captures, metrics, evolved.yaml — user-facing outputs
-├── test/                # layered macro→micro (layout: test.md)
+├── test/                # layered micro→macro (layout: test.md); Appendix A below
 │   ├── conftest.py, helpers.py, regenerate_golden.py
 │   ├── data/            # golden_<mode>[_sphere].npz
-│   ├── l4_system/       # CLI, facade, e2e, config resolution, acceptance gates
-│   ├── l3_subsystems/   # subsystem isolation (A–F)
-│   ├── l2_integration/  # engine/capture/render/config wiring
 │   ├── l0_modules/      # module mirrors: core, physics, simulation, viz, capture, analysis
-│   └── crosscutting/    # guards/ (architecture, docs, drift, golden, determinism,
-│                        #   collection count) · perf/ (budgets, scaling, memory)
-├── scripts/             # dependency-gated: train_marl.py, rollout_marl.py, run_evoflock_small.py
+│   ├── l2_integration/  # engine/capture/render/config wiring
+│   ├── l3_subsystems/   # subsystem isolation (A–F)
+│   ├── l4_system/       # CLI, facade, e2e, config resolution, acceptance gates
+│   └── crosscutting/    # unnumbered, orthogonal — guards/ (architecture, docs,
+│                        #   drift, golden, determinism, collection count, 3D,
+│                        #   CI-workflow integrity) · perf/ (budgets, scaling, memory, soak)
+├── scripts/             # generate_evolved_artifact.py (P0.16 CI/Docker prerequisite),
+│                        #   soak_release_gate.py (S8.4 24h release gate, manual),
+│                        #   dependency-gated: train_marl.py, rollout_marl.py,
+│                        #   run_evoflock_small.py
 ├── ci/                  # Docker + Compose (see test.md)
 ├── .github/workflows/   # test.yml + guard-rails.yml (9 jobs, merge-blocking summary)
 ├── sci/                 # source papers (PDF provenance)
@@ -294,7 +276,7 @@ git_mur/
 
 ---
 
-## 5. Dependency Rules  *(enforced by `test/crosscutting/guards/test_architecture.py`)*
+## 5. Dependency Rules *(Level 2 — enforced by `test/crosscutting/guards/test_architecture.py`)*
 
 The guard encodes a **module-level** `ALLOWED_EDGES` matrix (an import
 from A to B must match an allowed prefix; `TYPE_CHECKING` imports count)
@@ -333,7 +315,7 @@ read somewhere (usage-drift scan). The full guard set runs as
 
 ---
 
-## 6. Force Modes  *(one class per file; `@register` → `MODE_REGISTRY`)*
+## 6. Force Modes *(Level 3 — one class per file; `@register` → `MODE_REGISTRY`)*
 
 | Mode | Mechanism | needs_index | speed_mode | owns_positions | Per-mode state | 300K target |
 |------|-----------|:---:|:---:|:---:|----------------|:---:|
@@ -351,7 +333,7 @@ sub-config. Adding a mode = one file + `@register`.
 
 ---
 
-## 7. Behavioural Extensions
+## 7. Behavioural Extensions *(Level 3)*
 
 `Extension.apply(flock, ctx: StepContext)` — live-toggleable each frame via
 config; all stochastic draws from `ctx.rng`.
@@ -365,7 +347,7 @@ config; all stochastic draws from `ctx.rng`.
 
 ---
 
-## 8. Data Representation
+## 8. Data Representation *(Level 3)*
 
 Flat **Structure of Arrays** on `PhysicsFlock` (composing `FlockArrays`);
 no per-bird Python objects.
@@ -399,7 +381,7 @@ cross the toroidal seam.
 
 ---
 
-## 9. Libraries
+## 9. Libraries *(Level 3)*
 
 | Library | Why | Required? |
 |---------|-----|:---:|
@@ -422,7 +404,7 @@ Version pins: [requirements.txt](requirements.txt),
 
 ---
 
-## 10. Shipped Config Presets (`conf/`)
+## 10. Shipped Config Presets (`conf/`) *(Level 3)*
 
 | File | Mode | Birds | Key feature |
 |------|------|:---:|------|
@@ -446,7 +428,7 @@ per-section sentinels are asserted by `test/l4_system/test_config_files.py`.
 
 ---
 
-## 11. CLI & Programmatic Surface
+## 11. CLI & Programmatic Surface *(Level 3)*
 
 ```
 python -m pymurmur                                   # defaults (projection, N=150)
@@ -494,7 +476,7 @@ flowchart LR
 
 ---
 
-## 12. Extension Points
+## 12. Extension Points *(Level 3)*
 
 | To add… | Do this (one seam each) |
 |---------|------------------------|
@@ -516,7 +498,7 @@ deliberate update to the collection-count pins
 
 ---
 
-## 13. Determinism, Safety & Scaling
+## 13. Determinism, Safety & Scaling *(Level 3)*
 
 **Guarantees (test-backed):** same seed → bit-identical trajectories per
 mode; golden trajectories pinned per mode (`test/data/`, `atol=1e-3`,
@@ -544,6 +526,55 @@ simulation state.
 All five checkpoints, the full determinism matrix (threads × jitter × numba
 + subprocess leg), and the T6.3/S8.4 soak tiers are implemented and
 verified (2026-07-21).
+
+---
+
+## Appendix A: Bottom-Up Component Assembly
+
+*(Micro-to-Macro · Inside-Out — the direction `test/` itself is organized
+by; see [test.md](test.md). Uses **Tier**, not **Level**, labels: this
+view's poles are numbered opposite to §1–§13's Level 0–3 above — Tier 0
+here is Level 3 there, and vice versa — so reusing "Level" for both would
+make "Level 0" mean two different things in one document.)*
+
+Built and tested from atoms upward; a component at tier *n* depends only
+on tiers < *n* (no Tier-1 assembly imports another Tier-1 assembly).
+**Composition is a DAG** — the historical `flock ↔ forces` cycle is gone
+(orchestration lives in the engine).
+
+```
+Tier 3  SYSTEM      __main__ CLI · pymurmur facade (Simulation, benchmark) · scripts/
+Tier 2  SUBSYSTEMS  SimulationEngine · Visualizer · Renderer3D · Recorder(+Mpl) ·
+                    QualityGovernor · MurmurationEnv · EvoFlock
+Tier 1  ASSEMBLIES  PhysicsFlock (FlockArrays + SpatialIndex + rng + species + center) ·
+                    7 ForceMode classes · ExtensionManager (Threat/Ecology/Wander/Ripple) ·
+                    MetricsCollector · rewards · presets · obstacles (SDF scene)
+Tier 0  ATOMS       Vec3/FlockArrays/StepContext/InstanceSchema (types) ·
+                    integrate() variants · force primitives (sep/align/coh/noise) ·
+                    rotate_about (Rodrigues) · min_image · hash01/smoothstep ·
+                    spherical-cap occlusion · steric · SDF primitives ·
+                    numba kernels · normalize3/limit3 · fibonacci_sphere · seed_noise3
+```
+
+Tier is defined by **import discipline, not file location** — the SDF
+primitives are Tier-0 atoms although they live in `physics/obstacles.py`
+(zero project imports beyond `core/`).
+
+**Micro→Macro conventions (the composition contract, enforced by tests):**
+all neighbour indices are **global capacity-space** rows; the `active` mask
+may have holes at any time and every assembly must be correct under it; all
+randomness flows from the single seeded `flock.rng`; every Tier-0 atom is
+unit-tested against its documented formula before an assembly consumes it;
+**no component merges without its composer** (no dead atoms;
+`test/crosscutting/guards/test_composers.py`).
+
+Build/test order mirrors this view, not §1–§13's: atoms and module mirrors
+(`test/l0_modules/`) → wiring (`test/l2_integration/`) → subsystem
+isolation (`test/l3_subsystems/`) → system/CLI/acceptance
+(`test/l4_system/`), with the guards and perf budgets cross-cutting
+(`test/crosscutting/`) at every tier simultaneously. Execution is
+bottom-up too — a broken atom fails everything above it — even on
+`main`, where the reading order (this document) is top-down.
 
 ---
 

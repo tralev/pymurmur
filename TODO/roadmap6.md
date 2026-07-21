@@ -63,7 +63,13 @@ an atom's level is defined by what it imports, not by its directory.
 matrix already enforces the import side.
 **Status: PARTIAL** — the rules are enforced de facto by
 `test/crosscutting/guards/test_architecture.py`; the contract text
-and the L1↛L1 named rule are unrecorded.
+and the L1↛L1 named rule are unrecorded. (2026-07-21: arch.md's Macro-
+to-Micro rewrite adopted this L0–L3 badge table verbatim as Appendix A,
+but renamed the labels **Tier 0–3** — arch.md's main body now uses
+"Level 0–3" for the opposite (Macro-to-Micro) direction, so this
+document's `[L0]`–`[L3]` badges and arch.md's Appendix A Tier badges
+name the same table under different words; adopting this into
+roadmap0.md should use "Tier" for consistency.)
 
 **R6.2 Composer-enforcement test (`test/test_composers.py`).** Deepseek:
 "No atom is shipped without at least one composer test proving it is

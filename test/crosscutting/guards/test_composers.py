@@ -1,9 +1,9 @@
 """G1 — Composer-enforcement guard: every L0 atom has at least one call site.
 
-AST-scans the public L0 function surface (the atoms listed in arch.md §2.2)
-and verifies each is called from at least one non-definition site in the
-project.  Failures produce a dead-atom list so stale helpers cannot
-accumulate silently.
+AST-scans the public L0 function surface (the atoms listed in arch.md
+Appendix A, Tier 0) and verifies each is called from at least one
+non-definition site in the project.  Failures produce a dead-atom list
+so stale helpers cannot accumulate silently.
 
 Private underscore helpers (_*) are excluded — they're implementation
 details of their parent module and are not part of the public L0 contract.
@@ -21,7 +21,8 @@ pytestmark = pytest.mark.guard
 # ── L0 atom registry ──────────────────────────────────────────────
 #
 # (module_relative_path, function_name)
-# These are the public L0 functions listed in arch.md §2.2 (Bottom-Up).
+# These are the public L0 functions listed in arch.md Appendix A, Tier 0
+# (Bottom-Up view).
 # Each must be called from at least one non-definition site in the project.
 
 L0_ATOMS: list[tuple[str, str]] = [
