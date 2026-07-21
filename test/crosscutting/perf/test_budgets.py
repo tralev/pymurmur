@@ -71,7 +71,7 @@ def test_budget_registry_covers_all_modes():
         assert mode in STEP_BUDGET_2000, (
             f"Mode '{mode}' registered in MODE_REGISTRY but missing from "
             f"STEP_BUDGET_2000.  Add a budget entry in "
-            f"test/l4_crosscutting/perf/test_budgets.py."
+            f"test/crosscutting/perf/test_budgets.py."
         )
 
 

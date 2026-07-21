@@ -133,7 +133,7 @@ def test_real_dead_function_is_detected():
     files must live under the repo root (not pytest's `tmp_path`, which
     is outside it) to be discoverable — created and removed here.
     """
-    probe_dir = Path("test/l4_crosscutting/guards")
+    probe_dir = Path("test/crosscutting/guards")
     defining = probe_dir / "_g1_probe_defining_tmp.py"
     try:
         defining.write_text(
@@ -150,7 +150,7 @@ def test_real_used_function_is_not_flagged_dead():
     """G1: Complement of the above — a real function WITH a genuine
     cross-file call site is correctly recognized as alive, proving the
     detector isn't just biased toward always returning False."""
-    probe_dir = Path("test/l4_crosscutting/guards")
+    probe_dir = Path("test/crosscutting/guards")
     defining = probe_dir / "_g1_probe_defining_tmp2.py"
     caller = probe_dir / "_g1_probe_caller_tmp2.py"
     try:

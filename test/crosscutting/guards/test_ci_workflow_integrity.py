@@ -17,6 +17,18 @@ the other. All four were only found by extracting each job's *resolved*
 run script and actually executing it — including forcing dead `else`
 branches to run for real — not by reading the YAML or checking job names
 line up in docs.
+
+Later the same day, both workflows were rewritten so every job's test/
+lint/type-check execution runs inside Docker (`docker build` +
+`docker run`/`docker compose`) instead of installing dependencies
+directly on the bare runner. That rewrite deleted the `if [ -f ... ];
+then <pytest> else <heredoc fallback> fi` scaffolding entirely (every
+guarded test file now exists, so the fallback branches were dead code) —
+which also retired the fallback-specific tests below (their subjects no
+longer exist). `test_no_bare_test_invocation_outside_docker` replaces
+them: it asserts the *reason* those fallbacks could be deleted safely
+stays true going forward — no job may invoke pytest/ruff/mypy directly
+on the runner.
 """
 
 from __future__ import annotations
@@ -36,11 +48,6 @@ WORKFLOW_FILES = [
 ]
 
 GHA_EXPR = re.compile(r"\$\{\{[^}]*\}\}")
-
-# `if [ -f <marker file> ]; then <primary> else <fallback> fi` — the
-# pattern used throughout guard-rails.yml so a job degrades to a manual
-# equivalent when its dedicated test file doesn't exist yet.
-IF_DASH_F = re.compile(r"if \[ -f ([^\]]+?) \]; then")
 
 
 def _sanitize(script: str) -> str:
@@ -135,125 +142,42 @@ def test_heredoc_terminators_are_not_indented():
     assert not failures, "\n" + "\n".join(failures)
 
 
-# ── Dead fallback branches actually run, not just parse ───────────
+# ── Every test/lint job runs through Docker, not the bare runner ──
+
+# Tool invocations that must never appear in a run: script unless that
+# script also goes through Docker (docker build/compose/run).
+_TEST_TOOL_MARKERS = ("pytest ", "pytest\n", "ruff check", "mypy ")
 
 
-def _force_else_branch(run: str, marker_file: str) -> str:
-    """Rewrite `if [ -f <marker_file> ]; then` to reference a path that
-    never exists, forcing the script's `else` (fallback) branch."""
-    return run.replace(f"if [ -f {marker_file} ]; then", "if [ -f /nonexistent_xyz_probe ]; then")
+def _invokes_test_tool_outside_docker(run: str) -> bool:
+    invokes_tool = any(marker in run for marker in _TEST_TOOL_MARKERS)
+    return invokes_tool and "docker" not in run
 
 
-def _fallback_jobs_with_heredocs():
-    """Jobs with an `if [ -f ... ]; then ... else ... fi` fallback that
-    also embeds a heredoc — the fallback branches with actual Python
-    logic (not just an alternate pytest invocation), and therefore the
-    ones where a semantic bug (not just a syntax bug) could hide."""
-    out = []
-    for wf, job_name, step_i, step_name, run in _JOB_STEPS:
-        m = IF_DASH_F.search(run)
-        if m and "<<" in run:
-            out.append((wf, job_name, step_i, step_name, run, m.group(1)))
-    return out
-
-
-_FALLBACK_HEREDOC_JOBS = _fallback_jobs_with_heredocs()
-_FALLBACK_IDS = [f"{wf.name}:{job}:{i}" for wf, job, i, _n, _r, _m in _FALLBACK_HEREDOC_JOBS]
-
-
-@pytest.mark.parametrize(
-    "wf, job_name, step_i, step_name, run, marker_file",
-    _FALLBACK_HEREDOC_JOBS,
-    ids=_FALLBACK_IDS,
-)
-def test_dead_fallback_branch_actually_runs(wf, job_name, step_i, step_name, run, marker_file):
-    """Force a fallback branch's `else` path (its marker file always
-    exists today, so this branch never runs in real CI) and execute the
-    resolved script for real — not `bash -n`, an actual run — to prove
-    it doesn't *crash*.
-
-    `bash -n` only proves the script *parses*; it caught the heredoc
-    terminator bug but would have missed both semantic bugs found in
-    the same branches: a silent no-op (`cfg.flock.seed = 42`, not a
-    real field) and a broken AST scoping loop (every field misattributed
-    to one class). Only real execution catches those.
-
-    Deliberately does NOT assert `returncode == 0` — a fallback whose
-    business logic finds a real problem (e.g. the config-drift scan
-    legitimately reporting orphans, given its own known heuristic
-    limitations) is supposed to `sys.exit(1)`; that is not a crash. The
-    crash signal is an uncaught Python traceback or a bash-level fatal
-    error, checked below.
-    """
-    forced = _force_else_branch(run, marker_file)
-    assert "/nonexistent_xyz_probe" in forced, (
-        f"Marker-file substitution didn't match — test fixture is stale "
-        f"for {wf}::{job_name} step {step_i}"
-    )
-    proc = subprocess.run(
-        ["bash", "-c", forced], capture_output=True, text=True, timeout=60
-    )
-    assert "Traceback" not in proc.stdout and "Traceback" not in proc.stderr, (
-        f"{wf}::{job_name} step {step_i} ({step_name}) fallback branch "
-        f"raised an uncaught Python exception:\n{proc.stdout}\n{proc.stderr}"
-    )
-    assert proc.returncode in (0, 1), (
-        f"{wf}::{job_name} step {step_i} ({step_name}) fallback branch "
-        f"exited {proc.returncode} — expected 0 (passed) or 1 (a clean, "
-        f"intentional sys.exit(1)), not a bash-level fatal error:\n"
-        f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+def test_no_bare_test_invocation_outside_docker():
+    """No job step invokes pytest/ruff/mypy directly on the bare GitHub
+    Actions runner — every test/lint/type-check execution must go
+    through `docker build`/`docker compose`/`docker run` (per the
+    2026-07-21 Docker-first CI rewrite: OpenGL, gymnasium, scipy, ruff,
+    mypy, and every plain CPU test all run inside a container)."""
+    offenders = [
+        f"{wf}::{job_name} step {step_i} ({step_name})"
+        for wf, job_name, step_i, step_name, run in _JOB_STEPS
+        if _invokes_test_tool_outside_docker(run)
+    ]
+    assert not offenders, (
+        "The following steps invoke a test/lint tool without going "
+        "through Docker:\n" + "\n".join(offenders)
     )
 
 
-def test_determinism_fallback_smoke_test_actually_passes():
-    """The determinism fallback isn't just crash-free — its own
-    assertion (`same seed -> bit-identical positions`) must genuinely
-    hold, since unlike config-drift's heuristic-quality caveat, this one
-    has an unambiguous correct answer.  Regression guard for the exact
-    bug found: `cfg.flock.seed = 42` is a silent no-op (not a real
-    `FlockConfig` field), so both engines got fresh, divergent entropy
-    and the assertion always failed until fixed to `cfg.seed = 42`.
-    """
-    doc = yaml.safe_load(Path(".github/workflows/guard-rails.yml").read_text())
-    run = doc["jobs"]["guard-rail-golden"]["steps"][6]["run"]
-    forced = _force_else_branch(
-        run, "test/l4_crosscutting/guards/test_determinism.py"
+def test_bare_test_invocation_is_actually_detected():
+    """The detection mechanism itself catches a real bare invocation —
+    not just "no job happens to have one today"."""
+    assert _invokes_test_tool_outside_docker("pip install pytest\npytest test/ -v\n")
+    assert not _invokes_test_tool_outside_docker(
+        "docker run --rm pymurmur-test:latest pytest test/ -v\n"
     )
-    assert "/nonexistent_xyz_probe" in forced
-
-    proc = subprocess.run(
-        ["bash", "-c", forced], capture_output=True, text=True, timeout=60
-    )
-    assert proc.returncode == 0, f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
-    assert "Determinism smoke test passed" in proc.stdout
-
-
-def test_config_drift_fallback_attributes_fields_to_correct_class():
-    """The config-drift fallback's field→class attribution is correct —
-    regression guard for the exact bug found: a shared mutable
-    `dataclass_stack` pushed during a flat (non-block-scoped) `ast.walk`
-    meant every field in the file got attributed to whichever dataclass
-    was visited last (confirmed: all 180+ fields were mislabeled as
-    `CaptureConfig`).  Doesn't require the scan's orphan-detection
-    heuristic itself to be accurate (a separate, known limitation) —
-    only that a real field lands under its real class."""
-    doc = yaml.safe_load(Path(".github/workflows/guard-rails.yml").read_text())
-    run = doc["jobs"]["guard-rail-config-drift"]["steps"][3]["run"]
-    forced = _force_else_branch(
-        run, "test/l4_crosscutting/guards/test_config_drift.py"
-    )
-    assert "/nonexistent_xyz_probe" in forced
-
-    proc = subprocess.run(
-        ["bash", "-c", forced], capture_output=True, text=True, timeout=60
-    )
-    # A handful of fields with well-known, distinct owning classes —
-    # if the scoping bug regresses, these would all collapse onto one
-    # (previously: whichever class was defined last in config.py).
-    assert "SpatialConfig.separation_weight" in proc.stdout
-    assert "FieldConfig.field_noise" in proc.stdout
-    assert "VicsekConfig.vicsek_diffusion" in proc.stdout
-    assert "DomainConfig.width" in proc.stdout
 
 
 # ── guard-rails-summary's merge-gate aggregation is correct ───────

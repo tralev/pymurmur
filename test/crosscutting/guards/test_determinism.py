@@ -1,7 +1,7 @@
 """P5/P13 — Determinism guard: same seed → bit-identical engine trajectories.
 
 CI's guard-rails workflow has a dedicated slot for this file. It
-complements `l3_modules/physics/test_flock.py::test_all_modes_deterministic`
+complements `l0_modules/physics/test_flock.py::test_all_modes_deterministic`
 (which hardcodes 5 modes) by parametrizing over MODE_REGISTRY — any
 newly registered force mode is automatically held to the same
 determinism contract.

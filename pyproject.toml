@@ -1,6 +1,6 @@
 # pyproject.toml — pymurmur packaging, lint, and type-check configuration.
 # pytest configuration intentionally lives in pytest.ini (single source;
-# roadmap.md references it) — do not add [tool.pytest.ini_options] here.
+# test.md references it) — do not add [tool.pytest.ini_options] here.
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -30,7 +30,7 @@ capture = [
     "matplotlib>=3.7,<4.0",
 ]
 numba = [
-    "numba>=0.60,<1.0",
+    "numba>=0.58,<1.0",
 ]
 marl = [
     "gymnasium>=0.29,<2.0",

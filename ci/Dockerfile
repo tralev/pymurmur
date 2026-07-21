@@ -1,7 +1,9 @@
 # ci/Dockerfile — CPU-only headless test image
 # Build: docker build -f ci/Dockerfile -t pymurmur-test .
+# Build for a specific interpreter (CI matrix): --build-arg PYTHON_VERSION=3.11
 
-FROM python:3.12-slim
+ARG PYTHON_VERSION=3.12
+FROM python:${PYTHON_VERSION}-slim
 
 LABEL org.pymurmur.image=pymurmur-test
 LABEL description="Headless test runner for pymurmur 3D murmuration simulation"

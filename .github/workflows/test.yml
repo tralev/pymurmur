@@ -1,166 +1,256 @@
 name: Test pymurmur
-true:
+
+on:
   push:
     branches:
-    - main
+      - main
     paths-ignore:
-    - '*.md'
-    - conf/**
-    - output/**
+      - '*.md'
+      - conf/**
+      - output/**
   pull_request:
     branches:
-    - main
+      - main
   schedule:
-  - cron: 0 3 * * *
+    - cron: '0 3 * * *'
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
 jobs:
   test-fast:
     name: Fast tests (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python:
-        - '3.11'
-        - '3.12'
+        python: ['3.11', '3.12']
       fail-fast: false
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python }}
-        cache: pip
-    - name: Install dependencies
-      run: 'pip install numpy scipy PyYAML
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build fast image (Python ${{ matrix.python }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ci/Dockerfile
+          build-args: |
+            PYTHON_VERSION=${{ matrix.python }}
+          tags: pymurmur-test:py${{ matrix.python }}
+          load: true
+          cache-from: type=gha,scope=fast-py${{ matrix.python }}
+          cache-to: type=gha,mode=max,scope=fast-py${{ matrix.python }}
+      - name: Run fast test suite (in Docker)
+        # Marker-based selection — gl/gpu/pygame tests deselect
+        # themselves via markers, so viz paths cannot rot this job.
+        run: |
+          mkdir -p output
+          docker run --rm \
+            -v ${{ github.workspace }}/output:/app/output \
+            -v ${{ github.workspace }}/conf:/app/conf:ro \
+            -e PYMURMUR_TEST=1 \
+            pymurmur-test:py${{ matrix.python }} \
+            pytest test/ -v \
+              -m "not slow and not gl and not gpu and not pygame" \
+              --timeout=60 \
+              --tb=short \
+              --junitxml=output/test-results-fast.xml \
+              --cov=pymurmur \
+              --cov-report=xml:output/coverage-fast.xml \
+              --cov-report=term
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-fast-py${{ matrix.python }}
+          path: output/test-results-fast.xml
+      - name: Upload coverage
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-fast-py${{ matrix.python }}
+          path: output/coverage-fast.xml
 
-        pip install pytest pytest-cov pytest-timeout
-
-        '
-    - name: Install optional deps
-      run: 'pip install numba  # test numba fallback paths
-
-        '
-    - name: Run fast test suite
-      # Marker-based selection (roadmap Part VIII) — gl/gpu/pygame tests
-      # deselect themselves via markers, so viz paths cannot rot the job.
-      run: "mkdir -p output\npytest test/ -v \\\n  -m \"not slow and not gl and not gpu and not pygame\" \\\n  --timeout=60 \\\n  --tb=short \\\n  --junitxml=output/test-results-fast.xml\
-        \ \\\n  --cov=pymurmur \\\n  --cov-report=xml:output/coverage-fast.xml \\\n  --cov-report=term\n"
-    - name: Upload test results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results-fast-py${{ matrix.python }}
-        path: output/test-results-fast.xml
-    - name: Upload coverage
-      if: success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: coverage-fast-py${{ matrix.python }}
-        path: output/coverage-fast.xml
   test-imports:
     name: Import rules & subsystems
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    - name: Install deps
-      run: pip install numpy scipy PyYAML pytest pytest-timeout
-    - name: Run import & subsystem tests
-      run: "mkdir -p output\npytest test/l4_crosscutting/guards/test_imports.py test/l4_crosscutting/guards/test_architecture.py test/l4_crosscutting/guards/test_docs.py test/l4_crosscutting/guards/test_golden.py \\\n  test/l1_subsystems/test_subsystem_a.py\
-        \ test/l1_subsystems/test_subsystem_b.py \\\n  test/l1_subsystems/test_subsystem_c.py test/l1_subsystems/test_subsystem_d.py \\\n  test/l1_subsystems/test_subsystem_e.py\
-        \ test/l1_subsystems/test_subsystem_f.py \\\n  -v --timeout=60 --tb=short \\\n  --junitxml=output/test-results-subsystems.xml\n"
-    - name: Upload results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results-subsystems
-        path: output/test-results-subsystems.xml
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build fast image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: pymurmur-test:latest
+          load: true
+          cache-from: type=gha,scope=fast-py3.12
+          cache-to: type=gha,mode=max,scope=fast-py3.12
+      - name: Run import & subsystem tests (in Docker)
+        run: |
+          mkdir -p output
+          docker run --rm \
+            -v ${{ github.workspace }}/output:/app/output \
+            pymurmur-test:latest \
+            pytest test/crosscutting/guards/test_imports.py \
+              test/crosscutting/guards/test_architecture.py \
+              test/crosscutting/guards/test_docs.py \
+              test/crosscutting/guards/test_golden.py \
+              test/l3_subsystems/test_subsystem_a.py \
+              test/l3_subsystems/test_subsystem_b.py \
+              test/l3_subsystems/test_subsystem_c.py \
+              test/l3_subsystems/test_subsystem_d.py \
+              test/l3_subsystems/test_subsystem_e.py \
+              test/l3_subsystems/test_subsystem_f.py \
+              -v --timeout=60 --tb=short \
+              --junitxml=output/test-results-subsystems.xml
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-subsystems
+          path: output/test-results-subsystems.xml
+
   test-e2e:
     name: E2E & config validation
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    - name: Install deps
-      run: pip install numpy scipy PyYAML pytest pytest-timeout
-    - name: Run E2E & config tests
-      run: "mkdir -p output\npytest test/l0_system/test_e2e.py test/l0_system/test_config_resolution.py \\\n  test/l0_system/test_config_files.py \\\n \
-        \ -v --timeout=120 --tb=long \\\n  --junitxml=output/test-results-e2e.xml\n"
-    - name: Upload results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results-e2e
-        path: output/test-results-e2e.xml
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build fast image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: pymurmur-test:latest
+          load: true
+          cache-from: type=gha,scope=fast-py3.12
+          cache-to: type=gha,mode=max,scope=fast-py3.12
+      - name: Run E2E & config tests (in Docker)
+        run: |
+          mkdir -p output
+          docker run --rm \
+            -v ${{ github.workspace }}/output:/app/output \
+            -v ${{ github.workspace }}/conf:/app/conf:ro \
+            -e PYMURMUR_TEST=1 \
+            -e PYMURMUR_CONFIG_DIR=/app/conf \
+            pymurmur-test:latest \
+            pytest test/l4_system/test_e2e.py \
+              test/l4_system/test_config_resolution.py \
+              test/l4_system/test_config_files.py \
+              -v --timeout=120 --tb=long \
+              --junitxml=output/test-results-e2e.xml
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-e2e
+          path: output/test-results-e2e.xml
+
   test-slow:
     name: Performance & scaling
     if: github.event_name == 'pull_request' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    - name: Install deps
-      run: 'pip install numpy scipy PyYAML numba
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build fast image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: pymurmur-test:latest
+          load: true
+          cache-from: type=gha,scope=fast-py3.12
+          cache-to: type=gha,mode=max,scope=fast-py3.12
+      - name: Run performance tests (in Docker)
+        run: |
+          mkdir -p output
+          docker run --rm \
+            -v ${{ github.workspace }}/output:/app/output \
+            -v ${{ github.workspace }}/conf:/app/conf:ro \
+            -e PYMURMUR_TEST=1 \
+            -e NUMBA_NUM_THREADS=4 \
+            pymurmur-test:latest \
+            sh -c "pip install --no-cache-dir 'stable-baselines3>=2.0' 2>/dev/null || true; \
+              pytest test/crosscutting/perf/test_performance.py \
+                test/crosscutting/perf/test_scaling.py \
+                test/crosscutting/perf/test_budgets.py \
+                -v -m slow \
+                --timeout=600 --tb=long \
+                --durations=20 \
+                --junitxml=output/test-results-slow.xml"
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-slow
+          path: output/test-results-slow.xml
 
-        pip install pytest pytest-timeout
-
-        '
-    - name: Run performance tests
-      run: "mkdir -p output\npytest test/l4_crosscutting/perf/test_performance.py test/l4_crosscutting/perf/test_scaling.py test/l4_crosscutting/perf/test_budgets.py \\\n  -v -m slow \\\n  --timeout=600 --tb=long\
-        \ \\\n  --durations=20 \\\n  --junitxml=output/test-results-slow.xml\n"
-    - name: Upload results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results-slow
-        path: output/test-results-slow.xml
   test-gpu:
-    name: GPU tests (software GL)
+    name: GPU tests (software GL, in Docker)
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    - name: Install system deps for GL
-      run: "sudo apt-get update\nsudo apt-get install -y xvfb libgl1-mesa-glx libgl1-mesa-dri \\\n  libegl1-mesa libegl1 libsdl2-2.0-0\n"
-    - name: Install Python deps
-      run: 'pip install numpy scipy PyYAML pytest pytest-timeout
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build fast image (base layer for GPU image)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: pymurmur-test:latest
+          load: true
+          cache-from: type=gha,scope=fast-py3.12
+          cache-to: type=gha,mode=max,scope=fast-py3.12
+      - name: Build GPU image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ci/Dockerfile.gpu
+          tags: pymurmur-test-gpu:latest
+          load: true
+          cache-from: type=gha,scope=gpu
+          cache-to: type=gha,mode=max,scope=gpu
+      - name: Run GPU tests (Xvfb + Mesa llvmpipe, in Docker)
+        # Marker-based selection — all @gl/@gpu-marked tests. The image's
+        # own entrypoint-gpu.sh starts Xvfb; no host-side Xvfb needed.
+        run: |
+          mkdir -p output
+          docker run --rm \
+            -v ${{ github.workspace }}/output:/app/output \
+            -v ${{ github.workspace }}/conf:/app/conf:ro \
+            -e PYMURMUR_TEST=1 \
+            -e LIBGL_ALWAYS_SOFTWARE=1 \
+            pymurmur-test-gpu:latest \
+            pytest test/ -v -m "gl or gpu" \
+              --timeout=120 --tb=long \
+              --junitxml=output/test-results-gpu.xml
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-gpu
+          path: output/test-results-gpu.xml
 
-        pip install moderngl PyGLM pygame Pillow
-
-        '
-    - name: Run GPU tests (software rasterizer)
-      # Marker-based selection — all @gl/@gpu-marked tests
-      # auto-enable with Xvfb + Mesa llvmpipe; no file-path lists to maintain.
-      run: "mkdir -p output\nexport DISPLAY=:99\nXvfb :99 -screen 0 1024x768x24 -ac +extension GLX +render &\nsleep 2\npytest\
-        \ test/ -v -m \"gl or gpu\" \\\n  --timeout=120 --tb=long \\\n  --junitxml=output/test-results-gpu.xml\n"
-    - name: Upload results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results-gpu
-        path: output/test-results-gpu.xml
   lint:
-    name: Lint (ruff + mypy)
+    name: Lint (ruff + mypy, in Docker)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-    - name: Install linters
-      run: pip install ruff mypy numpy scipy PyYAML
-    - name: Run ruff
-      run: ruff check pymurmur/ test/
-    - name: Run mypy
-      run: mypy pymurmur/ --ignore-missing-imports
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build fast image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: pymurmur-test:latest
+          load: true
+          cache-from: type=gha,scope=fast-py3.12
+          cache-to: type=gha,mode=max,scope=fast-py3.12
+      - name: Run ruff + mypy (in Docker)
+        run: |
+          docker run --rm pymurmur-test:latest \
+            sh -c "pip install --no-cache-dir ruff mypy && \
+              ruff check pymurmur/ test/ && \
+              mypy pymurmur/ --ignore-missing-imports"

@@ -3,12 +3,13 @@
 Verifies that:
 1. Every markdown link in arch.md points to an existing file or directory.
 2. arch.md does not contain stale references to the retired D0-D9/S1-S7/T0-T6 scheme.
-3. G4: arch.md references the guard-rail job topology in docker.md §CI.
-4. G2: ALL .md files in the repo root have resolving intra-repo links.
+3. G4: arch.md references the guard-rail job topology in test.md §CI.
+4. G2: ALL .md files in the repo (root, sci/, TODO/) have resolving intra-repo links.
 
 `roadmap_deepseek.md` (the P0-P14 implementation roadmap) was completed
 and removed from the working tree 2026-07-21 — its history lives in git,
-not as a live file this guard needs to cross-check against.
+not as a live file this guard needs to cross-check against.  `docker.md`
+was merged into `test.md` §Continuous Integration & Docker the same day.
 """
 
 import re
@@ -67,8 +68,6 @@ def test_arch_md_no_stale_scheme_references():
 
 
 # ── G2: All markdown file links resolve ──────────────────────────
-
-COVERED_MD_FILES = ["arch.md", "docker.md", "test.md", "roadmap_deepseek.md"]
 
 
 def test_g2_all_markdown_links_resolve():
@@ -235,14 +234,14 @@ GUARD_RAIL_JOB_NAMES = [
 
 
 def test_arch_md_references_guard_rail_topology():
-    """G4: arch.md §5 references the guard-rail job list in docker.md."""
+    """G4: arch.md §5 references the guard-rail job list in test.md."""
     content = Path("arch.md").read_text()
-    assert "docker.md" in content, (
-        "arch.md must reference docker.md for guard-rail topology"
+    assert "test.md" in content, (
+        "arch.md must reference test.md for guard-rail topology"
     )
     # The anchor or section reference must exist
-    assert "[docker.md](docker.md)" in content, (
-        "arch.md §5 must link to docker.md (guard-rail job list)"
+    assert "[test.md](test.md)" in content, (
+        "arch.md §5 must link to test.md (guard-rail job list)"
     )
 
 
@@ -322,17 +321,18 @@ def test_workflow_job_mismatch_is_actually_detected(tmp_path):
     assert "guard-rail-a-job-nobody-expects" in (actual_jobs - expected_jobs)
 
 
-def test_docker_md_contains_all_guard_jobs():
-    """G4: docker.md §CI lists all guard-rail job names.
+def test_test_md_contains_all_guard_jobs():
+    """G4: test.md §Continuous Integration & Docker lists all guard-rail
+    job names.
 
     A missing job name here means the guard-rail topology documentation
     has rotted — the list is the canonical enumeration of the
     merge-blocking P14 guard set.
     """
-    content = Path("docker.md").read_text()
+    content = Path("test.md").read_text()
     for job_name in GUARD_RAIL_JOB_NAMES:
         assert job_name in content, (
-            f"docker.md missing guard-rail job '{job_name}' — "
+            f"test.md missing guard-rail job '{job_name}' — "
             f"topology doc has rotted.  Add it to the guard-rail job "
             f"table or remove it from GUARD_RAIL_JOB_NAMES."
         )

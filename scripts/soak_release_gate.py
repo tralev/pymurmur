@@ -2,7 +2,7 @@
 """S8.4 — 24-hour release-gate soak.
 
 Manual/release-lane companion to the nightly T6.3 soak
-(`test/l4_crosscutting/perf/test_performance.py::TestSoak`), which only
+(`test/crosscutting/perf/test_performance.py::TestSoak`), which only
 runs 20,000 frames because pytest CI lanes have a wall-clock budget.
 This script runs headless for a wall-clock duration (default 24h) and
 checks, throughout:

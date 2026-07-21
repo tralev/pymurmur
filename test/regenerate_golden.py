@@ -3,7 +3,7 @@
 
 Generates deterministic golden-trajectory .npz files for all active simulation
 modes. Run this after any deliberate physics change to re-pin the regression
-baselines.  CI fails if goldens are stale (guarded by test/l4_crosscutting/guards/test_golden.py).
+baselines.  CI fails if goldens are stale (guarded by test/crosscutting/guards/test_golden.py).
 
 Usage:
     python test/regenerate_golden.py                  # All 5 modes

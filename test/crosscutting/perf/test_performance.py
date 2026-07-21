@@ -985,7 +985,7 @@ def test_budget_maintained_over_long_run(mode: str):
 
     from pymurmur.core.config import SimConfig
     from pymurmur.simulation.engine import SimulationEngine
-    from test.l4_crosscutting.perf.test_budgets import (
+    from test.crosscutting.perf.test_budgets import (
         HEADROOM,
         N_BOIDS,
         STEP_BUDGET_2000,

@@ -6,15 +6,14 @@
 > [TODO/roadmap0.md](TODO/roadmap0.md)–[TODO/roadmap5.md](TODO/roadmap5.md)
 > set. The P0–P14 implementation roadmap (formerly `roadmap_deepseek.md`)
 > is complete — its history is preserved in git, not tracked as a live
-> file. Docker/CI usage: [docker.md](docker.md). Test-tree layout and
-> plan: [test.md](test.md).
+> file. Test-tree layout, plan, and Docker/CI usage: [test.md](test.md).
 >
 > Both design views — Top-Down · Functional Decomposition · Macro→Micro ·
 > Outside-In, and Bottom-Up · Component Assembly · Micro→Macro · Inside-Out —
 > live in §2 of this document, which is the **single architecture
 > reference**. This document is executable: the import matrix (§5), the
 > config-usage drift scan, and the doc-link guard
-> (`test/l4_crosscutting/guards/test_docs.py`) fail CI when code and this
+> (`test/crosscutting/guards/test_docs.py`) fail CI when code and this
 > document diverge.
 
 ---
@@ -47,9 +46,9 @@ Both views describe the same system; each is the *generator* of different
 guarantees. The Macro→Micro view generates the **dependency rules and
 subsystem contracts**; the Micro→Macro view generates the **testing pyramid
 and composition conventions**. The test tree mirrors the views directly:
-`test/l1_subsystems/` isolates the Level-1 subsystems below,
-`test/l3_modules/` mirrors the module map (§4), and
-`test/l4_crosscutting/guards/` enforces the dependency matrix (§5).
+`test/l3_subsystems/` isolates the Level-1 subsystems below,
+`test/l0_modules/` mirrors the module map (§4), and
+`test/crosscutting/guards/` enforces the dependency matrix (§5).
 
 ### 2.1 Top-Down · Functional Decomposition · Macro→Micro · Outside-In
 
@@ -136,10 +135,10 @@ may have holes at any time and every assembly must be correct under it; all
 randomness flows from the single seeded `flock.rng`; every Level-0 atom is
 unit-tested against its documented formula before an assembly consumes it;
 **no component merges without its composer** (no dead atoms). Build/test
-order mirrors the tree: atoms and module mirrors (`test/l3_modules/`) →
+order mirrors the tree: atoms and module mirrors (`test/l0_modules/`) →
 wiring (`test/l2_integration/`) → subsystem isolation
-(`test/l1_subsystems/`) → system/CLI/acceptance (`test/l0_system/`), with
-the guards and perf budgets cross-cutting (`test/l4_crosscutting/`).
+(`test/l3_subsystems/`) → system/CLI/acceptance (`test/l4_system/`), with
+the guards and perf budgets cross-cutting (`test/crosscutting/`).
 
 ---
 
@@ -278,14 +277,14 @@ git_mur/
 ├── test/                # layered macro→micro (layout: test.md)
 │   ├── conftest.py, helpers.py, regenerate_golden.py
 │   ├── data/            # golden_<mode>[_sphere].npz
-│   ├── l0_system/       # CLI, facade, e2e, config resolution, acceptance gates
-│   ├── l1_subsystems/   # subsystem isolation (A–F)
+│   ├── l4_system/       # CLI, facade, e2e, config resolution, acceptance gates
+│   ├── l3_subsystems/   # subsystem isolation (A–F)
 │   ├── l2_integration/  # engine/capture/render/config wiring
-│   ├── l3_modules/      # module mirrors: core, physics, simulation, viz, capture, analysis
-│   └── l4_crosscutting/ # guards/ (architecture, docs, drift, golden, determinism,
+│   ├── l0_modules/      # module mirrors: core, physics, simulation, viz, capture, analysis
+│   └── crosscutting/    # guards/ (architecture, docs, drift, golden, determinism,
 │                        #   collection count) · perf/ (budgets, scaling, memory)
 ├── scripts/             # dependency-gated: train_marl.py, rollout_marl.py, run_evoflock_small.py
-├── ci/                  # Docker + Compose (see docker.md)
+├── ci/                  # Docker + Compose (see test.md)
 ├── .github/workflows/   # test.yml + guard-rails.yml (9 jobs, merge-blocking summary)
 ├── sci/                 # source papers (PDF provenance)
 ├── arch.md              # this file — single architecture reference
@@ -295,7 +294,7 @@ git_mur/
 
 ---
 
-## 5. Dependency Rules  *(enforced by `test/l4_crosscutting/guards/test_architecture.py`)*
+## 5. Dependency Rules  *(enforced by `test/crosscutting/guards/test_architecture.py`)*
 
 The guard encodes a **module-level** `ALLOWED_EDGES` matrix (an import
 from A to B must match an allowed prefix; `TYPE_CHECKING` imports count)
@@ -330,7 +329,7 @@ read somewhere (usage-drift scan). The full guard set runs as
 `guard-rail-golden`, `guard-rail-config-drift`, `guard-rail-3d`,
 `guard-rail-doc-links`, `guard-rail-collection-count`, `guard-rail-mypy`,
 `guard-rail-evolved`, `guard-rail-composers`) with a merge-blocking
-`guard-rails-summary` gate (per-job description: [docker.md](docker.md) §CI).
+`guard-rails-summary` gate (per-job description: [test.md](test.md) §CI).
 
 ---
 
@@ -389,7 +388,7 @@ source; integer seeds honored incl. 0, `None` → fresh entropy), `center`
 (exponentially smoothed centroid), `index` (`SpatialIndex`: modulo-celled
 hash grid or boxsize-aware cKDTree, both returning **global** indices),
 per-mode state on ForceMode instances. The memory-audit test
-(`test/l4_crosscutting/perf/test_performance.py`) pins the 300K budget;
+(`test/crosscutting/perf/test_performance.py`) pins the 300K budget;
 extending the audited-array inventory to this full column list is tracked
 as roadmap6 S8.3.
 
@@ -443,7 +442,7 @@ Angle and marl modes run from any preset via `--set mode=angle` /
 starlings/boids regime presets) are specified in
 [TODO/roadmap2.md](TODO/roadmap2.md) and not yet shipped. Presets load
 exactly as written (documented-intent policy); every preset's domain and
-per-section sentinels are asserted by `test/l0_system/test_config_files.py`.
+per-section sentinels are asserted by `test/l4_system/test_config_files.py`.
 
 ---
 
@@ -511,9 +510,9 @@ flowchart LR
 | input binding | `input_control` → command or config mutation (never engine calls) |
 
 Every new module lands with its mirrored test
-(`test/l3_modules/<subpackage>/`) and, if it moves test counts, a
+(`test/l0_modules/<subpackage>/`) and, if it moves test counts, a
 deliberate update to the collection-count pins
-(`test/l4_crosscutting/guards/test_collection_count.py`).
+(`test/crosscutting/guards/test_collection_count.py`).
 
 ---
 
@@ -532,7 +531,7 @@ simulation state.
 (trails off → render scale −0.15, floor 0.75 → N −18 %, floor 512) under
 78 %-for-1.8 s hysteresis, 3.6 s recovery.
 
-**Scaling ladder** (guarded by `test/l4_crosscutting/perf/`):
+**Scaling ladder** (guarded by `test/crosscutting/perf/`):
 
 | Checkpoint | N | Key mechanism | Target |
 |-------|----|---------------|:---:|

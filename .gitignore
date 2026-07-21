@@ -36,8 +36,5 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Docker (not part of source)
-.dockerignore
-
 # Env
 .env

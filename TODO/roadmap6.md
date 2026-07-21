@@ -13,8 +13,8 @@ DIVERGES · MISSING · VERIFY).
 executing the deepseek P-scheme: P0–P12 are landed (MARL bridge included:
 `physics/forces/marl.py`, `analysis/gym_env.py`,
 `scripts/{train_marl,rollout_marl}.py` all exist), the test tree is
-restructured into `test/{l0_system,l1_subsystems,l2_integration,
-l3_modules,l4_crosscutting}`, and `.github/workflows/guard-rails.yml`
+restructured into `test/{l4_system,l3_subsystems,l2_integration,
+l0_modules,crosscutting}`, and `.github/workflows/guard-rails.yml`
 ships 9 jobs (dag, golden, config-drift, doc-links, 3d, collection-count,
 mypy, evolved, summary gate). What remains from roadmap_deepseek.md is
 therefore concentrated in **P13 (scaling & performance)**, a few **P14
@@ -62,7 +62,7 @@ an atom's level is defined by what it imports, not by its directory.
 *impl:* text amendment to roadmap0 §3.3 + the architecture test's edge
 matrix already enforces the import side.
 **Status: PARTIAL** — the rules are enforced de facto by
-`test/l4_crosscutting/guards/test_architecture.py`; the contract text
+`test/crosscutting/guards/test_architecture.py`; the contract text
 and the L1↛L1 named rule are unrecorded.
 
 **R6.2 Composer-enforcement test (`test/test_composers.py`).** Deepseek:
@@ -71,7 +71,7 @@ actually used. Dead atoms (no composers) are deleted. This is enforced
 by `test/test_composers.py`." The TODO set states the rule
 (roadmap0 §3.3) and catches *some* dead atoms via the T1.2 config-drift
 guard, but no test enumerates L0 atoms and asserts each has a consumer.
-*impl:* `test/l4_crosscutting/guards/test_composers.py` — collect the
+*impl:* `test/crosscutting/guards/test_composers.py` — collect the
 public functions of the L0 surfaces (`core/types.py`,
 `physics/{occlusion,steric,obstacles}.py`, `physics/forces/_base.py`,
 `physics/forces/_kernels.py`, `physics/boid.py`) and AST-scan the rest
@@ -96,8 +96,8 @@ TODO set uses *math/impl/tests/Status*; the **Composers** and
 
 ## 2. S8 — Scaling & performance  *(from P13; ≈2 days; after S2.B10 numba gates)*
 
-Files: `test/l4_crosscutting/perf/{test_performance,test_scaling}.py`
-(extend), `test/l4_crosscutting/guards/test_determinism.py` (extend),
+Files: `test/crosscutting/perf/{test_performance,test_scaling}.py`
+(extend), `test/crosscutting/guards/test_determinism.py` (extend),
 `test/test_soak.py` (new). All heavy tests `@slow` (nightly CI lane).
 
 **S8.1 Per-mode step-time budget table.** One data-driven budget table

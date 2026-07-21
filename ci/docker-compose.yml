@@ -6,11 +6,17 @@
 
 services:
   # ── Profile: fast (default — runs on every commit) ──
+  # PYTHON_VERSION lets CI's 3.11/3.12 matrix build this one service twice
+  # (docker compose build --build-arg or `PYTHON_VERSION=3.11 docker compose …`)
+  # without touching the single-version pymurmur-test:latest image the
+  # other fast-profile services (test-guards, test-subsystems) share.
   test-fast:
     build:
       context: ..
       dockerfile: ci/Dockerfile
-    image: pymurmur-test:latest
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.12}
+    image: pymurmur-test:py${PYTHON_VERSION:-3.12}
     profiles: [fast]
     command: >
       pytest test/ -v
@@ -136,7 +142,7 @@ services:
     image: pymurmur-test:latest
     profiles: [fast, full]
     command: >
-      pytest test/l1_subsystems/ test/l4_crosscutting/guards/test_imports.py
+      pytest test/l3_subsystems/ test/crosscutting/guards/test_imports.py
       -v --timeout=60 --tb=short
       --junitxml=output/test-results-subsystems.xml
     volumes:

@@ -3,7 +3,7 @@
 
 `output/` is gitignored, so a fresh checkout (any CI runner, or a fresh
 Docker image build) never has `output/evolved.yaml` — but
-`test/l3_modules/analysis/test_evolved_yaml.py` hard-asserts it exists.
+`test/l0_modules/analysis/test_evolved_yaml.py` hard-asserts it exists.
 Without this step, `guard-rail-evolved` (part of the merge-blocking
 `guard-rails-summary`) fails on every fresh checkout, not just a
 missing-artifact edge case.

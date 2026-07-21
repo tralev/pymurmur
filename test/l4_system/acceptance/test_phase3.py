@@ -19,7 +19,7 @@ from pymurmur.physics.extensions._base import StepContext
 from pymurmur.physics.extensions.wander import Wander, bounded_unit_path
 from pymurmur.physics.forces.field import FieldMode
 
-pytestmark = [pytest.mark.acceptance, pytest.mark.guard]
+pytestmark = [pytest.mark.acceptance, pytest.mark.guard, pytest.mark.phase3]
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -295,7 +295,7 @@ class TestP3ArchitectureEdges:
 
     def test_p3_edges_in_allowed_edges(self):
         """P3-specific allowed edges are registered in test_architecture.ALLOWED_EDGES."""
-        from test.l4_crosscutting.guards.test_architecture import ALLOWED_EDGES
+        from test.crosscutting.guards.test_architecture import ALLOWED_EDGES
 
         p3_edges = {
             "pymurmur.physics.forces.field": {

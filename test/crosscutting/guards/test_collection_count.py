@@ -22,21 +22,22 @@ pytestmark = pytest.mark.guard
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# Floors set at the 2026-07-19 macro-to-micro restructure. Small slack
-# (~2-5%) so trivial refactors don't trip the guard. Keys are counted
-# prefixes: the five L0-L4 levels plus each module mirror under l3.
+# Floors set at the 2026-07-21 micro-to-macro restructure (originally
+# 2026-07-19 macro-to-micro). Small slack (~2-5%) so trivial refactors
+# don't trip the guard. Keys are counted prefixes: the five l0-l4 levels
+# plus each module mirror under l0_modules.
 EXPECTED_MINIMUMS = {
-    "test/l0_system": 145,
-    "test/l1_subsystems": 36,
+    "test/l4_system": 145,
+    "test/l3_subsystems": 36,
     "test/l2_integration": 85,
-    "test/l3_modules": 1760,
-    "test/l4_crosscutting": 80,
-    "test/l3_modules/core": 120,
-    "test/l3_modules/physics": 780,
-    "test/l3_modules/simulation": 64,
-    "test/l3_modules/viz": 390,
-    "test/l3_modules/capture": 82,
-    "test/l3_modules/analysis": 310,
+    "test/l0_modules": 1760,
+    "test/crosscutting": 80,
+    "test/l0_modules/core": 120,
+    "test/l0_modules/physics": 780,
+    "test/l0_modules/simulation": 64,
+    "test/l0_modules/viz": 390,
+    "test/l0_modules/capture": 82,
+    "test/l0_modules/analysis": 310,
 }
 TOTAL_MINIMUM = 2160
 
@@ -53,15 +54,15 @@ def per_dir_counts() -> dict[str, int]:
     total = 0
     for line in result.stdout.splitlines():
         # Test-id lines look like
-        # "test/l3_modules/core/test_types.py::TestX::test_y"
+        # "test/l0_modules/core/test_types.py::TestX::test_y"
         if not line.startswith("test/") or "::" not in line:
             continue
         total += 1
         parts = line.split("::", 1)[0].split("/")
-        # Count the level prefix (test/<level>) and, for l3, also the
-        # module prefix (test/l3_modules/<module>).
+        # Count the level prefix (test/<level>) and, for l0_modules, also
+        # the module prefix (test/l0_modules/<module>).
         counts["/".join(parts[:2])] = counts.get("/".join(parts[:2]), 0) + 1
-        if parts[1] == "l3_modules" and len(parts) > 3:
+        if parts[1] == "l0_modules" and len(parts) > 3:
             key = "/".join(parts[:3])
             counts[key] = counts.get(key, 0) + 1
     counts["__total__"] = total

@@ -100,7 +100,7 @@ class TestFlockForcesCycleBreak:
         Forces sub-modules that import forces._base + flock are internal
         to the forces package and are excluded from this check.
         """
-        from test.l4_crosscutting.guards.test_architecture import ALLOWED_EDGES
+        from test.crosscutting.guards.test_architecture import ALLOWED_EDGES
 
         dual_importers = []
         for mod, targets in ALLOWED_EDGES.items():
@@ -209,7 +209,7 @@ class TestArchitectureWaiversRemoved:
 
     def test_flock_to_forces_not_in_known_violations(self):
         """I4.4 M11: flock→forces must not be in KNOWN_VIOLATIONS."""
-        from test.l4_crosscutting.guards.test_architecture import KNOWN_VIOLATIONS
+        from test.crosscutting.guards.test_architecture import KNOWN_VIOLATIONS
 
         for src, tgt, phase in KNOWN_VIOLATIONS:
             is_flock = src == "pymurmur.physics.flock" or src.startswith(
@@ -225,7 +225,7 @@ class TestArchitectureWaiversRemoved:
 
     def test_flock_to_forces_not_in_phase_violation_removals(self):
         """I4.4 M12: flock→forces must not be in PHASE_VIOLATION_REMOVALS."""
-        from test.l4_crosscutting.guards.test_architecture import PHASE_VIOLATION_REMOVALS
+        from test.crosscutting.guards.test_architecture import PHASE_VIOLATION_REMOVALS
 
         for ph_key, removals in PHASE_VIOLATION_REMOVALS.items():
             for src, tgt in removals:

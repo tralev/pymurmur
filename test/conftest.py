@@ -13,8 +13,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # construct real moderngl contexts) deliberately does NOT live here.
 # Applying it suite-wide cost 2.5x total runtime (120s -> 300s) for a
 # concern that only affects ~830 of ~2900 tests. It's scoped instead to
-# conftest.py files in test/l2_integration/, test/l3_modules/viz/,
-# test/l3_modules/simulation/, and test/l3_modules/capture/ — the
+# conftest.py files in test/l2_integration/, test/l0_modules/viz/,
+# test/l0_modules/simulation/, and test/l0_modules/capture/ — the
 # directories that actually construct Renderer3D/Visualizer instances.
 
 
