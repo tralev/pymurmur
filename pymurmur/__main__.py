@@ -414,6 +414,22 @@ def main() -> None:
     from .viz.visualizer import Visualizer
 
     pygame.init()
+
+    # Request OpenGL 3.3 context — required everywhere for moderngl.
+    pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MAJOR_VERSION, 3)
+    pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MINOR_VERSION, 3)
+    # macOS (especially Apple Silicon) requires a Core Profile with
+    # forward compatibility; these hints are harmless on Linux but
+    # absolutely necessary on Darwin — without them SDL2 cannot
+    # allocate a GL 3.3 context and moderngl sees version 0.
+    if sys.platform == "darwin":
+        pygame.display.gl_set_attribute(
+            pygame.GL_CONTEXT_PROFILE_MASK, pygame.GL_CONTEXT_PROFILE_CORE
+        )
+        pygame.display.gl_set_attribute(
+            pygame.GL_CONTEXT_FORWARD_COMPATIBLE_FLAG, 1
+        )
+
     # P10.5: --fullscreen flag
     flags = pygame.DOUBLEBUF | pygame.OPENGL
     if args.fullscreen:
