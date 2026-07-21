@@ -3,7 +3,7 @@
 
 Generates deterministic golden-trajectory .npz files for all active simulation
 modes. Run this after any deliberate physics change to re-pin the regression
-baselines.  CI fails if goldens are stale (guarded by test/test_golden.py).
+baselines.  CI fails if goldens are stale (guarded by test/l4_crosscutting/guards/test_golden.py).
 
 Usage:
     python test/regenerate_golden.py                  # All 5 modes
@@ -51,7 +51,7 @@ GOLDEN_MODES = [
     "field",
     "vicsek",
     "influencer",
-    # TODO P5: add "angle" when angle mode ships
+    "angle",
     # TODO P12: add "marl" when MARL mode ships
 ]
 BOUNDARY_MODES = ["toroidal", "sphere"]
@@ -99,12 +99,18 @@ def generate_golden(
     cfg.num_boids = birds
     cfg.seed = seed
     cfg.boundary_mode = boundary
+    if boundary == "sphere":
+        cfg.boundary_sphere_radius = 200.0  # match golden test _GOLDEN_SPHERE_RADIUS
     engine = SimulationEngine(cfg)
 
     positions = []
     velocities = []
 
-    for _ in range(frames):
+    # Frame 0 = initial state (before any steps)
+    positions.append(engine.flock.positions.copy())
+    velocities.append(engine.flock.velocities.copy())
+
+    for _ in range(frames - 1):
         engine.step(DT)
         positions.append(engine.flock.positions.copy())
         velocities.append(engine.flock.velocities.copy())
@@ -196,7 +202,7 @@ def main():
 
     modes = GOLDEN_MODES if args.mode == "all" else [args.mode]
 
-    print(f"Golden trajectory regeneration")
+    print("Golden trajectory regeneration")
     print(f"  Modes:    {', '.join(modes)}")
     print(f"  Boundary: {args.boundary}")
     print(f"  Seed:     {args.seed}")

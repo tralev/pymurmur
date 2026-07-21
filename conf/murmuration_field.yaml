@@ -93,10 +93,10 @@ boundary_avoidance_factor: 1.6  # push-back strength multiplier
 
 # ── Behavioural Extensions ──────────────────────────────────────────
 extensions:
-  predator: false
-  roosting: false
-  wander: true             # field mode benefits from center wandering
-  ripple: true             # ripple envelopes active
+  predator_enabled: false
+  roosting_enabled: false
+  wander_enabled: true     # field mode benefits from center wandering
+  ripple_enabled: true     # ripple envelopes active
 
 # ── Wander-Specific (§2.7, new_sci.md §8) ──────────────────────────
 wander:

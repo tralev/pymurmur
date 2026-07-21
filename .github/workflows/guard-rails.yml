@@ -30,11 +30,11 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install deps
-      run: pip install numpy scipy PyYAML pytest
+      run: pip install numpy scipy PyYAML pytest pytest-timeout
     - name: Run architecture DAG enforcement
-      run: "mkdir -p output\nif [ -f test/test_architecture.py ]; then\n  pytest test/test_architecture.py \\\n    -v --tb=long\
-        \ --timeout=60 \\\n    --junitxml=output/guard-dag.xml\nelse\n  echo \"⚠️  test/test_architecture.py not yet implemented\
-        \ (P0.2 → P14.1)\"\n  echo \"    Running minimal import-regression check instead...\"\n  pytest test/test_imports.py\
+      run: "mkdir -p output\nif [ -f test/l4_crosscutting/guards/test_architecture.py ]; then\n  pytest test/l4_crosscutting/guards/test_architecture.py \\\n    -v --tb=long\
+        \ --timeout=60 \\\n    --junitxml=output/guard-dag.xml\nelse\n  echo \"⚠️  test/l4_crosscutting/guards/test_architecture.py not yet implemented\
+        \ (P0.2 → P14.1)\"\n  echo \"    Running minimal import-regression check instead...\"\n  pytest test/l4_crosscutting/guards/test_imports.py\
         \ \\\n    -v --tb=long --timeout=60 \\\n    --junitxml=output/guard-dag.xml\nfi\n"
     - name: Upload results
       if: always()
@@ -69,18 +69,37 @@ jobs:
         m in modes if not os.path.exists(f''test/data/golden_{m}.npz'')]; assert not missing, f''Missing golden files: {missing}'';
         print(f''All {len(modes)} golden files present'')"'
     - name: Run golden trajectory regression
-      run: "mkdir -p output\nif [ -f test/test_golden.py ]; then\n  pytest test/test_golden.py \\\n    -v --tb=long --timeout=120\
-        \ \\\n    --junitxml=output/guard-golden.xml\nelse\n  echo \"⚠️  test/test_golden.py not yet implemented (P0.1)\"\n\
+      run: "mkdir -p output\nif [ -f test/l4_crosscutting/guards/test_golden.py ]; then\n  pytest test/l4_crosscutting/guards/test_golden.py \\\n    -v --tb=long --timeout=120\
+        \ \\\n    --junitxml=output/guard-golden.xml\nelse\n  echo \"⚠️  test/l4_crosscutting/guards/test_golden.py not yet implemented (P0.1)\"\n\
         \  echo \"    Skipping golden regression — no tests to run.\"\nfi\n"
     - name: Run determinism matrix
-      run: "if [ -f test/test_determinism.py ]; then\n  pytest test/test_determinism.py \\\n    -v --tb=long --timeout=300\
-        \ \\\n    --junitxml=output/guard-determinism.xml\nelse\n  echo \"⚠️  test/test_determinism.py not yet implemented\
-        \ (P13.5)\"\n  echo \"    Running basic determinism smoke test instead...\"\n  # Fallback: two in-process runs with\
-        \ same seed\n  python3 << 'PYEOF'\n  import sys; sys.path.insert(0, '.')\n  import numpy as np\n  from pymurmur.core.config\
-        \ import SimConfig\n  from pymurmur.simulation.engine import SimulationEngine\n  cfg = SimConfig()\n  cfg.flock.num_boids\
-        \ = 15\n  cfg.flock.seed = 42\n  cfg.mode = \"projection\"\n  e1 = SimulationEngine(cfg)\n  e2 = SimulationEngine(cfg)\n\
-        \  for _ in range(30):\n      e1.step(1/60)\n      e2.step(1/60)\n  np.testing.assert_array_equal(e1.flock.positions,\
-        \ e2.flock.positions)\n  print(\"✓ Determinism smoke test passed — same seed → bit-identical\")\n  PYEOF\nfi\n"
+      run: |
+        if [ -f test/l4_crosscutting/guards/test_determinism.py ]; then
+          pytest test/l4_crosscutting/guards/test_determinism.py \
+            -v --tb=long --timeout=300 \
+            --junitxml=output/guard-determinism.xml
+        else
+          echo "⚠️  test/l4_crosscutting/guards/test_determinism.py not yet implemented (P13.5)"
+          echo "    Running basic determinism smoke test instead..."
+          # Fallback: two in-process runs with same seed
+          python3 << 'PYEOF'
+        import sys; sys.path.insert(0, '.')
+        import numpy as np
+        from pymurmur.core.config import SimConfig
+        from pymurmur.simulation.engine import SimulationEngine
+        cfg = SimConfig()
+        cfg.flock.num_boids = 15
+        cfg.seed = 42
+        cfg.mode = "projection"
+        e1 = SimulationEngine(cfg)
+        e2 = SimulationEngine(cfg)
+        for _ in range(30):
+            e1.step(1/60)
+            e2.step(1/60)
+        np.testing.assert_array_equal(e1.flock.positions, e2.flock.positions)
+        print("✓ Determinism smoke test passed — same seed → bit-identical")
+        PYEOF
+        fi
     - name: Upload results
       if: always()
       uses: actions/upload-artifact@v4
@@ -105,37 +124,96 @@ jobs:
     - name: Install deps
       run: pip install numpy scipy PyYAML
     - name: Run config-usage drift scan
-      run: "if [ -f test/test_config_drift.py ]; then\n  pip install pytest\n  pytest test/test_config_drift.py -v --tb=long\
-        \ --timeout=60\nelse\n  echo \"⚠️  test/test_config_drift.py not yet implemented (P14.2)\"\n  echo \"    Running inline\
-        \ config-usage drift scan...\"\n  python3 << 'PYEOF'\n  \"\"\"P14.2 — Config-usage drift detection (inline fallback).\n\
-        \n  Scans non-config modules for attribute-access chains that\n  reach each SimConfig leaf field (e.g. cfg.flock.num_boids,\n\
-        \  config.projection.phi_p).  Fields without any such access\n  are reported as orphans.\n  \"\"\"\n  import ast,\
-        \ re, sys\n  from pathlib import Path\n\n  CONFIG_FILE = Path(\"pymurmur/core/config.py\")\n  if not CONFIG_FILE.exists():\n\
-        \      print(\"⚠️  config.py not found — skipping drift scan\")\n      sys.exit(0)\n\n  # 1. Extract all leaf field\
-        \ names and their parent dataclass\n  config_tree = ast.parse(CONFIG_FILE.read_text())\n  field_parents: dict[str,\
-        \ str] = {}  # field_name → parent_class\n  dataclass_stack: list[str] = []\n\n  for node in ast.walk(config_tree):\n\
-        \      if isinstance(node, ast.ClassDef):\n          for dec in node.decorator_list:\n              is_dc = (isinstance(dec,\
-        \ ast.Name) and dec.id == \"dataclass\") or \\\n                      (isinstance(dec, ast.Attribute) and dec.attr\
-        \ == \"dataclass\")\n              if is_dc:\n                  dataclass_stack.append(node.name)\n              \
-        \    break\n      if isinstance(node, ast.AnnAssign) and dataclass_stack:\n          if isinstance(node.target, ast.Name):\n\
-        \              field_parents[node.target.id] = dataclass_stack[-1]\n\n  if not field_parents:\n      print(\"⚠️  No\
-        \ config fields found — skipping\")\n      sys.exit(0)\n\n  print(f\"Found {len(field_parents)} config fields across\
-        \ dataclasses\")\n\n  # 2. For each field, search non-config modules for plausible\n  #    attribute-access chains\
-        \ like `cfg.<parent>.<field>` or\n  #    `config.<parent>.<field>` or `<parent>.<field>`.\n  accessed: set[str] =\
-        \ set()\n  for py_file in Path(\"pymurmur\").rglob(\"*.py\"):\n      if \"config.py\" in str(py_file):\n         \
-        \ continue\n      text = py_file.read_text()\n      for field, parent in field_parents.items():\n          lower_parent\
-        \ = parent.lower()\n          found = False\n          # Pattern A: ParentClass.field (e.g. FlockConfig.num_boids)\n\
-        \          if re.search(rf\"\\b{parent}\\.{field}\\b\", text):\n              found = True\n          # Pattern B:\
-        \ lower_parent.field (e.g. flock.num_boids)\n          elif re.search(rf\"\\b{lower_parent}\\.{field}\\b\", text):\n\
-        \              found = True\n          # Pattern C: cfg/config.lower_parent + .field in same file\n          elif\
-        \ re.search(rf\"\\.{field}\\b\", text) and \\\n               re.search(rf\"(?:cfg|config)\\s*\\.\\s*{lower_parent}\\\
-        b\", text):\n              found = True\n          # Pattern D: SimConfig's own fields accessed as config.field\n\
-        \          if not found and parent == \"SimConfig\":\n              if re.search(rf\"(?:cfg|config)\\s*\\.\\s*{field}\\\
-        b\", text):\n                  found = True\n          if found:\n              accessed.add(field)\n\n  # 3. Report\
-        \ orphans\n  orphans = set(field_parents) - accessed\n  if orphans:\n      print(f\"CONFIG-USAGE DRIFT DETECTED ({len(orphans)}\
-        \ orphan fields):\")\n      for field in sorted(orphans):\n          parent = field_parents[field]\n          print(f\"\
-        \  • {parent}.{field} — defined but never accessed outside config.py\")\n      sys.exit(1)\n\n  print(f\"✓ All {len(field_parents)}\
-        \ config fields have at least one access site\")\n  PYEOF\nfi\n"
+      run: |
+        if [ -f test/l4_crosscutting/guards/test_config_drift.py ]; then
+          pip install pytest pytest-timeout
+          pytest test/l4_crosscutting/guards/test_config_drift.py -v --tb=long --timeout=60
+        else
+          echo "⚠️  test/l4_crosscutting/guards/test_config_drift.py not yet implemented (P14.2)"
+          echo "    Running inline config-usage drift scan..."
+          python3 << 'PYEOF'
+        """P14.2 — Config-usage drift detection (inline fallback).
+
+        Scans non-config modules for attribute-access chains that
+        reach each SimConfig leaf field (e.g. cfg.flock.num_boids,
+        config.projection.phi_p).  Fields without any such access
+        are reported as orphans.
+        """
+        import ast, re, sys
+        from pathlib import Path
+
+        CONFIG_FILE = Path("pymurmur/core/config.py")
+        if not CONFIG_FILE.exists():
+            print("⚠️  config.py not found — skipping drift scan")
+            sys.exit(0)
+
+        # 1. Extract all leaf field names and their parent dataclass.
+        # Scoped per-class (not a shared stack over ast.walk's flat,
+        # non-block-scoped traversal) so a field is never misattributed
+        # to whichever class happened to be visited last.
+        config_tree = ast.parse(CONFIG_FILE.read_text())
+        field_parents: dict[str, str] = {}  # field_name → parent_class
+
+        for node in ast.walk(config_tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            is_dataclass = any(
+                (isinstance(dec, ast.Name) and dec.id == "dataclass") or
+                (isinstance(dec, ast.Attribute) and dec.attr == "dataclass")
+                for dec in node.decorator_list
+            )
+            if not is_dataclass:
+                continue
+            for item in node.body:
+                if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                    field_parents[item.target.id] = node.name
+
+        if not field_parents:
+            print("⚠️  No config fields found — skipping")
+            sys.exit(0)
+
+        print(f"Found {len(field_parents)} config fields across dataclasses")
+
+        # 2. For each field, search non-config modules for plausible
+        #    attribute-access chains like `cfg.<parent>.<field>` or
+        #    `config.<parent>.<field>` or `<parent>.<field>`.
+        accessed: set[str] = set()
+        for py_file in Path("pymurmur").rglob("*.py"):
+            if "config.py" in str(py_file):
+                continue
+            text = py_file.read_text()
+            for field, parent in field_parents.items():
+                lower_parent = parent.lower()
+                found = False
+                # Pattern A: ParentClass.field (e.g. FlockConfig.num_boids)
+                if re.search(rf"\b{parent}\.{field}\b", text):
+                    found = True
+                # Pattern B: lower_parent.field (e.g. flock.num_boids)
+                elif re.search(rf"\b{lower_parent}\.{field}\b", text):
+                    found = True
+                # Pattern C: cfg/config.lower_parent + .field in same file
+                elif re.search(rf"\.{field}\b", text) and \
+                     re.search(rf"(?:cfg|config)\s*\.\s*{lower_parent}\b", text):
+                    found = True
+                # Pattern D: SimConfig's own fields accessed as config.field
+                if not found and parent == "SimConfig":
+                    if re.search(rf"(?:cfg|config)\s*\.\s*{field}\b", text):
+                        found = True
+                if found:
+                    accessed.add(field)
+
+        # 3. Report orphans
+        orphans = set(field_parents) - accessed
+        if orphans:
+            print(f"CONFIG-USAGE DRIFT DETECTED ({len(orphans)} orphan fields):")
+            for field in sorted(orphans):
+                parent = field_parents[field]
+                print(f"  • {parent}.{field} — defined but never accessed outside config.py")
+            sys.exit(1)
+
+        print(f"✓ All {len(field_parents)} config fields have at least one access site")
+        PYEOF
+        fi
   guard-rail-3d:
     name: P14.3 — Strictly-3D guard
     runs-on: ubuntu-latest
@@ -181,9 +259,9 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install deps
-      run: pip install pytest
+      run: pip install pytest pytest-timeout PyYAML
     - name: Run doc-link validation
-      run: "mkdir -p output\npytest test/test_docs.py \\\n  -v --tb=long --timeout=30 \\\n  --junitxml=output/guard-doc-links.xml\n"
+      run: "mkdir -p output\npytest test/l4_crosscutting/guards/test_docs.py \\\n  -v --tb=long --timeout=30 \\\n  --junitxml=output/guard-doc-links.xml\n"
     - name: Upload results
       if: always()
       uses: actions/upload-artifact@v4
@@ -200,18 +278,50 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install deps
-      run: pip install numpy scipy PyYAML pytest
+      run: pip install numpy scipy PyYAML pytest pytest-timeout
     - name: Run collection-count guard
       run: "# If the dedicated test exists, run it.\n# Otherwise, assert a known minimum count per subpackage\n# so that a\
-        \ catastrophic collection failure (e.g. 0 tests)\n# is caught immediately.\nif [ -f test/test_collection_count.py\
-        \ ]; then\n  pytest test/test_collection_count.py -v --tb=long --timeout=60\nelse\n  echo \"=== Collection-count minimums\
+        \ catastrophic collection failure (e.g. 0 tests)\n# is caught immediately.\nif [ -f test/l4_crosscutting/guards/test_collection_count.py\
+        \ ]; then\n  pytest test/l4_crosscutting/guards/test_collection_count.py -v --tb=long --timeout=60\nelse\n  echo \"=== Collection-count minimums\
         \ ===\"\n  # Fast suite (no markers)\n  fast_count=$(python3 -m pytest test/ -q -m \"not slow and not gl\" \\\n  \
         \  --collect-only 2>&1 | grep 'selected' | grep -oP '\\d+(?= tests)')\n  echo \"  Fast tests collected: ${fast_count}\"\
         \n  if [ \"${fast_count:-0}\" -lt 400 ]; then\n    echo \"ERROR: fewer than 400 fast tests collected — suspected regression\"\
-        \n    exit 1\n  fi\n  # Doc tests\n  doc_count=$(python3 -m pytest test/test_docs.py --collect-only -q 2>&1 \\\n \
+        \n    exit 1\n  fi\n  # Doc tests\n  doc_count=$(python3 -m pytest test/l4_crosscutting/guards/test_docs.py --collect-only -q 2>&1 \\\n \
         \   | grep 'selected' | grep -oP '\\d+(?= tests)')\n  echo \"  Doc tests collected:  ${doc_count}\"\n  if [ \"${doc_count:-0}\"\
         \ -lt 2 ]; then\n    echo \"ERROR: fewer than 2 doc-drift tests collected\"\n    exit 1\n  fi\n  echo \"✓ Collection-count\
         \ minimums satisfied\"\nfi\n"
+  guard-rail-composers:
+    name: G1 — Composer-enforcement (no dead L0 atoms)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install deps
+      run: pip install numpy scipy PyYAML pytest pytest-timeout
+    - name: Run composer-enforcement guard
+      run: "mkdir -p output\npytest test/l4_crosscutting/guards/test_composers.py \\\n  -v --tb=long --timeout=60 \\\n  --junitxml=output/guard-composers.xml\n"
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: guard-results-composers
+        path: output/guard-composers.xml
+  guard-rail-mypy:
+    name: P8.0 — Mypy type-check
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install deps
+      run: pip install mypy numpy scipy PyYAML
+    - name: Run mypy
+      run: mypy pymurmur/ --ignore-missing-imports
   guard-rail-evolved:
     name: P0.16 — Evolved artifact validation
     runs-on: ubuntu-latest
@@ -222,9 +332,11 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install deps
-      run: pip install numpy scipy PyYAML pytest
+      run: pip install numpy scipy PyYAML pytest pytest-timeout
+    - name: Generate evolved.yaml artifact
+      run: "mkdir -p output\npython3 scripts/generate_evolved_artifact.py\n"
     - name: Validate evolved.yaml artifact
-      run: "mkdir -p output\npytest test/analysis/test_evolved_yaml.py \\\n  -v --tb=long --timeout=30 \\\n  --junitxml=output/guard-evolved.xml\n"
+      run: "pytest test/l3_modules/analysis/test_evolved_yaml.py \\\n  -v --tb=long --timeout=30 \\\n  --junitxml=output/guard-evolved.xml\n"
     - name: Upload results
       if: always()
       uses: actions/upload-artifact@v4
@@ -240,7 +352,9 @@ jobs:
     - guard-rail-3d
     - guard-rail-doc-links
     - guard-rail-collection-count
+    - guard-rail-mypy
     - guard-rail-evolved
+    - guard-rail-composers
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -248,9 +362,9 @@ jobs:
       run: "echo \"Checking guard rail results...\"\necho \"  DAG:               ${{ needs.guard-rail-dag.result }}\"\necho\
         \ \"  Golden:            ${{ needs.guard-rail-golden.result }}\"\necho \"  Config drift:      ${{ needs.guard-rail-config-drift.result\
         \ }}\"\necho \"  Strictly-3D:       ${{ needs.guard-rail-3d.result }}\"\necho \"  Doc links:         ${{ needs.guard-rail-doc-links.result\
-        \ }}\"\necho \"  Evolved artifact:  ${{ needs.guard-rail-evolved.result }}\"\necho \"  Collection count:  ${{ needs.guard-rail-collection-count.result }}\"\n\nFAILED=0\nfor job in \"${{\
+        \ }}\"\necho \"  Mypy:              ${{ needs.guard-rail-mypy.result }}\"\necho \"  Evolved artifact:  ${{ needs.guard-rail-evolved.result }}\"\necho \"  Collection count:  ${{ needs.guard-rail-collection-count.result }}\"\necho \"  Composers:         ${{ needs.guard-rail-composers.result }}\"\n\nFAILED=0\nfor job in \"${{\
         \ needs.guard-rail-dag.result }}\" \\\n           \"${{ needs.guard-rail-golden.result }}\" \\\n           \"${{ needs.guard-rail-config-drift.result\
         \ }}\" \\\n           \"${{ needs.guard-rail-3d.result }}\" \\\n           \"${{ needs.guard-rail-doc-links.result\
-        \ }}\" \\\n           \"${{ needs.guard-rail-evolved.result }}\" \\\n           \"${{ needs.guard-rail-collection-count.result }}\"; do\n  if [ \"$job\" = \"failure\" ] ||\
+        \ }}\" \\\n           \"${{ needs.guard-rail-mypy.result }}\" \\\n           \"${{ needs.guard-rail-evolved.result }}\" \\\n           \"${{ needs.guard-rail-collection-count.result }}\" \\\n           \"${{ needs.guard-rail-composers.result }}\"; do\n  if [ \"$job\" = \"failure\" ] ||\
         \ [ \"$job\" = \"cancelled\" ]; then\n    FAILED=$((FAILED + 1))\n  fi\ndone\n\nif [ $FAILED -gt 0 ]; then\n  echo\
-        \ \"❌ $FAILED guard rail(s) failed — blocking merge\"\n  exit 1\nfi\n\necho \"✓ All 7 P14 guard rails passed\"\n"
+        \ \"❌ $FAILED guard rail(s) failed — blocking merge\"\n  exit 1\nfi\n\necho \"✓ All 9 guard rails passed\"\n"

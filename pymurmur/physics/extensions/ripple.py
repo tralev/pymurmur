@@ -9,8 +9,9 @@ O(1) per frame.  Vectorised — no per-bird Python loops.
 
 from __future__ import annotations
 
-import numpy as np
 from typing import TYPE_CHECKING
+
+import numpy as np
 
 from ._base import Extension
 
@@ -47,29 +48,35 @@ class Ripple(Extension):
     """
 
     _CYCLE = 28.0
-    _OFFSETS = np.array([0.0, 9.33, 18.67], dtype=np.float32)
 
     def __init__(self) -> None:
         self._t: float = 0.0
 
     def apply(self, flock: PhysicsFlock, ctx: StepContext) -> None:
-        """Apply 3-train ripple pulses to the flock."""
+        """Apply N-train ripple pulses to the flock (C3: field_ripple_trains)."""
         config = ctx.config
         n_active = flock.active.sum()
         if n_active == 0:
-            config._ripple_envelope_sum = 0.0
+            config._ripple_envelope_sum = np.zeros(
+                len(flock.positions), dtype=np.float32,
+            )
             return
 
         self._t += ctx.dt
 
+        # C3: field_ripple_trains — evenly spaced offsets across the cycle.
+        # Default 3 reproduces the original {0, 9.33, 18.67} staggering.
+        n_trains = max(1, int(config.field_ripple_trains))
+        offsets = np.linspace(0.0, self._CYCLE, n_trains, endpoint=False, dtype=np.float32)
+
         # ── Unit scale ──
-        unit_scale = getattr(config, 'field_unit_scale', None)
+        unit_scale = config.field_unit_scale
         U = float(unit_scale) if unit_scale is not None else (
             0.4 * min(config.width, config.height, config.depth)
         )
 
         flow = config.field_flow
-        wave_gain = getattr(config, 'field_wave_gain', 0.5)
+        wave_gain = config.field_wave_gain
 
         # ── Flock centre ──
         C = np.mean(flock.positions[flock.active], axis=0)
@@ -84,7 +91,7 @@ class Ripple(Extension):
         # ── Accumulators ──
         ripple_envelope_sum = np.zeros(n_active, dtype=np.float32)
 
-        for offset in self._OFFSETS:
+        for offset in offsets:
             train_t = self._t - offset
             if train_t < 0.0:
                 continue
@@ -132,6 +139,11 @@ class Ripple(Extension):
             # Accumulate envelope for fold-noise coupling
             ripple_envelope_sum += amount.astype(np.float32)
 
-        # ── Export envelope SUM for field mode fold noise (P3.6) ──
-        # Spec: ripple_envelope_sum = Σ_trains amount
-        config._ripple_envelope_sum = float(np.sum(ripple_envelope_sum)) if n_active > 0 else 0.0
+        # ── Export per-bird envelope array for field mode fold noise (D10).
+        # Previously this was float(np.sum(ripple_envelope_sum)), a scalar
+        # that made fold noise magnitude scale with N.  Now each bird gets
+        # its own envelope value, independent of flock size.  Padded to
+        # N_capacity so the consumer can index by global (flock.active) indices.
+        full = np.zeros(len(flock.positions), dtype=np.float32)
+        full[active_idx] = ripple_envelope_sum
+        config._ripple_envelope_sum = full

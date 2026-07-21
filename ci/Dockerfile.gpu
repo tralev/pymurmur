@@ -7,14 +7,17 @@ FROM pymurmur-test:latest
 LABEL org.pymurmur.image=pymurmur-test-gpu
 LABEL description="GPU test runner for pymurmur (ModernGL renderer tests)"
 
-# System deps for ModernGL (libgl1, libegl1) and pygame (SDL2)
+# System deps for ModernGL (libgl1, libegl1), pygame (SDL2), and Xvfb
+# (software rasterizer) are all already installed by the base image
+# (ci/Dockerfile) — this layer only adds mesa-utils for diagnostics
+# (glxinfo etc.), plus a version pin on the viz-specific Python deps.
+# NOTE: libgl1-mesa-glx and libegl1-mesa are obsolete package names on
+# current Debian (trixie) — apt has no installation candidate for
+# either, which broke this build outright until this fix. The base
+# image already provides their replacements (libgl1-mesa-dev,
+# libegl-mesa0, libegl1).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
-    libgl1-mesa-dri \
-    libegl1-mesa \
-    libegl1 \
-    libsdl2-2.0-0 \
-    libfreetype6 \
+    mesa-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # viz-specific dependencies (+ gymnasium for full test coverage)
@@ -24,12 +27,6 @@ RUN pip install --no-cache-dir \
     pygame==2.* \
     Pillow==11.* \
     "gymnasium>=0.29,<2.0"
-
-# Xvfb for headless GPU context (software rasterizer)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    xvfb \
-    mesa-utils \
-    && rm -rf /var/lib/apt/lists/*
 
 # Entrypoint wraps tests with Xvfb for software OpenGL
 COPY ci/entrypoint-gpu.sh /usr/local/bin/entrypoint-gpu.sh

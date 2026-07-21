@@ -1,18 +1,21 @@
-# Architecture — pymurmur  *(target state)*
+# Architecture — pymurmur
 
-> **What this document is.** The architecture of pymurmur **after** the
-> self-contained implementation roadmap in [`roadmap_deepseek.md`](roadmap_deepseek.md)
-> lands — 15 phases P0–P14, each with integrated maths, code, file paths,
-> config fields, test specs, and acceptance criteria.
-> It is the single reference the roadmap builds toward; per-item detail and
-> the current-state gap list live in `roadmap_deepseek.md` and the
-> `sci/todo_claude*.md` audit corpus.
+> **What this document is.** The architecture of pymurmur as built by the
+> self-contained implementation roadmap in the audited
+> spec-vs-code decision register in the
+> [TODO/roadmap0.md](TODO/roadmap0.md)–[TODO/roadmap5.md](TODO/roadmap5.md)
+> set. The P0–P14 implementation roadmap (formerly `roadmap_deepseek.md`)
+> is complete — its history is preserved in git, not tracked as a live
+> file. Docker/CI usage: [docker.md](docker.md). Test-tree layout and
+> plan: [test.md](test.md).
 >
 > Both design views — Top-Down · Functional Decomposition · Macro→Micro ·
 > Outside-In, and Bottom-Up · Component Assembly · Micro→Macro · Inside-Out —
 > live in §2 of this document, which is the **single architecture
-> reference**. (The former companion documents `functional_decomposition.md`
-> and `functional_synthesis.md` were retired when §2 superseded them.)
+> reference**. This document is executable: the import matrix (§5), the
+> config-usage drift scan, and the doc-link guard
+> (`test/l4_crosscutting/guards/test_docs.py`) fail CI when code and this
+> document diverge.
 
 ---
 
@@ -27,13 +30,14 @@ or run headlessly for scientific data collection with **physically
 calibrated observables** (watts, joules, newtons) alongside dimensionless
 order/opacity/robustness metrics. Deterministic under a seed. Serves two
 research bridges without carrying their dependencies: **evolutionary
-inverse design** (EvoFlock GA over an SDF obstacle world) and **MARL**
-(gymnasium environment + per-bird control hook; training stays external).
+inverse design** (EvoFlock GA over an SDF obstacle world →
+`output/evolved.yaml`) and **MARL** (gymnasium environment + per-bird
+control hook; training stays external in `scripts/`).
 
 **Does not do:** audio, VR/XR, networking, ML training in-core,
 screensaver/desktop-overlay modes, GPU-compute simulation backends,
 config-file editing (YAML → text editor). *(Excluded-tier record:
-`roadmap_deepseek.md` Appendix A.)*
+[TODO/roadmap5.md](TODO/roadmap5.md) Appendix A.)*
 
 ---
 
@@ -42,9 +46,10 @@ config-file editing (YAML → text editor). *(Excluded-tier record:
 Both views describe the same system; each is the *generator* of different
 guarantees. The Macro→Micro view generates the **dependency rules and
 subsystem contracts**; the Micro→Macro view generates the **testing pyramid
-and composition conventions**. Both are executable: the import matrix,
-config-usage drift test, doc-link test, and contract conformance suites
-fail CI when code and this document diverge.
+and composition conventions**. The test tree mirrors the views directly:
+`test/l1_subsystems/` isolates the Level-1 subsystems below,
+`test/l3_modules/` mirrors the module map (§4), and
+`test/l4_crosscutting/guards/` enforces the dependency matrix (§5).
 
 ### 2.1 Top-Down · Functional Decomposition · Macro→Micro · Outside-In
 
@@ -81,7 +86,7 @@ flowchart TD
   YAML sections map 1:1 to sub-configs — silent key-drops and cross-section
   collisions are structurally impossible; unknown keys warn; `validate()`
   clamps. Live-mutable fields are documented per sub-config docstring.
-- **B:** `SimulationEngine.step()` *is* the frame diagram (§5) — it drains
+- **B:** `SimulationEngine.step()` *is* the frame diagram (§3) — it drains
   the command queue, builds a `StepContext`, runs extensions, applies
   external control, rebuilds the index if the mode wants it, runs the
   active `ForceMode`, integrates under the mode's declared policy, updates
@@ -98,13 +103,14 @@ flowchart TD
 
 **Level 3 — module interfaces** are the classes/protocols named in §4's
 map; **Outside-In ordering** for a reader: start at `__main__.py` → user
-flow (§12) → engine step (§5) → mode/extension internals.
+flow (§11) → engine step (§3) → mode/extension internals.
 
 ### 2.2 Bottom-Up · Component-Based Assembly · Micro→Macro · Inside-Out
 
 Built and tested from atoms upward; a component at level *n* depends only
-on levels < *n*. **Composition is a DAG** — the historical `flock ↔ forces`
-cycle is gone (orchestration lives in the engine).
+on levels < *n* (no Level-1 assembly imports another Level-1 assembly).
+**Composition is a DAG** — the historical `flock ↔ forces` cycle is gone
+(orchestration lives in the engine).
 
 ```
 Level 3  SYSTEM      __main__ CLI · pymurmur facade (Simulation, benchmark) · scripts/
@@ -117,8 +123,12 @@ Level 0  ATOMS       Vec3/FlockArrays/StepContext/InstanceSchema (types) ·
                      integrate() variants · force primitives (sep/align/coh/noise) ·
                      rotate_about (Rodrigues) · min_image · hash01/smoothstep ·
                      spherical-cap occlusion · steric · SDF primitives ·
-                     numba kernels · normalize3/limit3
+                     numba kernels · normalize3/limit3 · fibonacci_sphere · seed_noise3
 ```
+
+Level is defined by **import discipline, not file location** — the SDF
+primitives are Level-0 atoms although they live in
+`physics/obstacles.py` (zero project imports beyond `core/`).
 
 **Micro→Macro conventions (the composition contract, enforced by tests):**
 all neighbour indices are **global capacity-space** rows; the `active` mask
@@ -126,8 +136,10 @@ may have holes at any time and every assembly must be correct under it; all
 randomness flows from the single seeded `flock.rng`; every Level-0 atom is
 unit-tested against its documented formula before an assembly consumes it;
 **no component merges without its composer** (no dead atoms). Build/test
-order: atoms → conformance suites → assemblies → golden trajectories →
-subsystems → CLI smoke.
+order mirrors the tree: atoms and module mirrors (`test/l3_modules/`) →
+wiring (`test/l2_integration/`) → subsystem isolation
+(`test/l1_subsystems/`) → system/CLI/acceptance (`test/l0_system/`), with
+the guards and perf budgets cross-cutting (`test/l4_crosscutting/`).
 
 ---
 
@@ -179,60 +191,67 @@ them.
 ```
 pymurmur/                          # pip-installable package
 ├── __init__.py                # facade: SimConfig, SimulationEngine, Simulation(**kw), Recorder
-├── __main__.py                # CLI: config resolution, --set/--print-config, env overrides, dispatch
+├── __main__.py                # CLI: config resolution, --set/--print-config, --probe,
+│                              #   env overrides, dispatch
 │
 ├── core/                      # Level 0 shared — no project imports
 │   ├── types.py               # Vec3, FlockArrays, StepContext, InstanceSchema,
 │   │                          #   SpatialIndex Protocol, rotate_about, min_image,
-│   │                          #   normalize3/limit3, hash01, smoothstep
+│   │                          #   normalize3/limit3, hash01, smoothstep,
+│   │                          #   fibonacci_sphere, seed_noise3, isfinite3
 │   └── config.py              # nested SimConfig (+ sub-config dataclasses), YAML I/O, validate()
 │
 ├── simulation/
 │   └── engine.py              # SimulationEngine: step orchestration, command queue,
-│                              #   control hook, run_headless, benchmark(), reset
+│                              #   control hook, fixed-step accumulator, run_headless,
+│                              #   benchmark(), reset
 │
 ├── physics/
 │   ├── boid.py                # integrate(speed_mode|move|inertia|noise), boundaries
 │   │                          #   (toroidal/open/margin/sphere/sphere_soft, centred on C),
-│   │                          #   init helpers (4 velocity-init variants, blob/gauss inits)
+│   │                          #   position-init variants (box/sphere/shell/gaussian/grid/blob),
+│   │                          #   velocity-init variants (fixed/cube/speed_uniform/tangential/blob)
 │   ├── flock.py               # PhysicsFlock (composes FlockArrays; rng, is_predator,
 │   │                          #   center, prev_positions, last_accelerations, max_speed),
 │   │                          #   SpatialHashGrid (modulo cells, incremental), KDTreeIndex (boxsize)
 │   ├── occlusion.py           # spherical-cap occlusion with true visibility culling,
 │   │                          #   union Θ, boundary-weighted δ̂  (pure numpy)
 │   ├── steric.py              # clamped 1/d² repulsion            (pure numpy)
-│   ├── obstacles.py           # SDF primitives + scene, zero-crossing, kinematic correction
+│   ├── obstacles.py           # SDF primitives + CSG scene, zero-crossing detection,
+│   │                          #   kinematic correction
 │   ├── forces/
 │   │   ├── _mode.py           # ForceMode ABC (needs_index, speed_mode, owns_positions,
 │   │   │                      #   reset/step), MODE_REGISTRY, @register
-│   │   ├── _base.py           # corrected primitives: sep(unit/d²)/align/coh/noise(×scale)
+│   │   ├── _base.py           # corrected primitives: sep(unit/d²)/align/coh/noise(×scale),
+│   │   │                      #   ForceTerm + composeForces
 │   │   ├── _kernels.py        # numba JIT force kernels (use_numba; fastmath policy)
-│   │   ├── projection.py      # Pearce: δ̂ + alignment + φn noise; refinements
+│   │   ├── projection.py      # Pearce: δ̂ + alignment + noise; refinements
 │   │   ├── spatial.py         # Reynolds: hybrid filter, dual radii, jitter, species,
 │   │   │                      #   physical pipeline order, parallel two-phase
-│   │   ├── field.py           # crs48: anchors, leader/chaser, shell/cavity, 13 terms
+│   │   ├── field.py           # 13-term blob field: anchors, leader/chaser, shell/cavity,
+│   │   │                      #   slot repulsion, flow/fold, grid-sep normalization
 │   │   ├── vicsek.py          # corrected update, predator-prey, asymmetric collisions
-│   │   ├── influencer.py      # tick-driven Lissajous, move-then-steer, rank influence
-│   │   ├── angle.py           # PyNBoids paradigm: turn-rate steering, mode gating,
-│   │   │                      #   adaptive speed, edge handling
+│   │   ├── influencer.py      # tick-driven Lissajous, move-then-steer, rank influence, pilot
+│   │   ├── angle.py           # turn-rate steering, mode gating, adaptive speed, edges
 │   │   └── marl.py            # deferred global rules under external control
 │   └── extensions/
 │       ├── _base.py           # Extension ABC — apply(flock, ctx: StepContext)
-│       ├── predator.py        # Threat FSM (approach/egress, wake/split/wave, modes)
+│       ├── predator.py        # Threat FSM (approach/egress, wake/split/wave bundle)
 │       ├── ecology.py         # logistic dusk, temperature boost, coherence gate,
 │       │                      #   seasonal size model, roost
 │       ├── wander.py          # boundedUnitTravel attractor + heading
 │       └── ripple.py          # enveloped travelling pulses (wraps field-mode impl)
 │
 ├── viz/                       # optional; never imports simulation
-│   ├── renderer.py            # ModernGL: InstanceSchema(8f: pos,vel,flag,hue), _build_vao
-│   │                          #   discipline, depth-FBO, layers, viewports, themes,
-│   │                          #   meshes(tetra|winged|impostor), trails, gradient bg
+│   ├── renderer.py            # ModernGL: InstanceSchema, _build_vao discipline,
+│   │                          #   depth-FBO, layers, viewports, themes,
+│   │                          #   meshes(tetra|winged|impostor), gradient bg
 │   ├── shaders.py             # GLSL: LookAt+flap, impostor+depth cues, trail, grid, HUD
+│   ├── trails.py              # 4 trail modes: velocity / accumulation / ring / lines
 │   ├── camera.py              # OrbitCamera + ortho/projection presets + capture sweep
 │   ├── hud.py                 # slider panel + readout quads (ortho pass)
 │   ├── input_control.py       # keys/mouse/sliders → commands + cfg mutations
-│   └── visualizer.py          # loop owner: accumulator, render-only frames, governor wiring
+│   └── visualizer.py          # loop owner: accumulator feed, render-only frames, governor
 │
 ├── capture/
 │   ├── recorder.py            # GL path: pre-warm, sweep, GIF(optimize,disposal)/CSV/JSON
@@ -241,9 +260,9 @@ pymurmur/                          # pip-installable package
 └── analysis/
     ├── metrics.py             # F1: observables + FlockMetrics.to_dict() schema
     ├── rewards.py             # F1: weighted composite reward terms
-    ├── presets.py             # F1: a–h,w scenario table
+    ├── presets.py             # F1: letter-key scenario table + themes
     ├── perf.py                # F2: PerfDiagnostics + QualityGovernor
-    ├── evoflock.py            # F2: SSGA (crossover, worst-of-4, SDF objectives)
+    ├── evoflock.py            # F2: SSGA (crossover, worst-of-N, SDF objectives, islands)
     ├── phase_diagram.py       # F2: (η, D) sweep, polar|nematic
     ├── density_scaling.py     # F2: N-sweep vs ideal exponent −0.5
     └── gym_env.py             # F2: MurmurationEnv (lazy gymnasium)
@@ -253,25 +272,34 @@ pymurmur/                          # pip-installable package
 
 ```
 git_mur/
-├── pymurmur/          # the package (above)
-├── conf/              # shipped YAML presets (nested schema)   — user-facing inputs
-├── output/            # captures, metrics, evolved.yaml        — user-facing outputs
-├── test/              # mirrors pymurmur/ subpackages
-│   ├── conftest.py, regenerate_golden.py
-│   ├── data/          # golden_<mode>.npz
-│   ├── core/ physics/ physics/forces/ physics/extensions/
-│   ├── simulation/ viz/ capture/ analysis/
-│   └── test_architecture.py, test_docs.py, test_golden.py
-├── scripts/           # dependency-gated: train_marl.py, rollout_marl.py
-├── ci/                # Docker, docker-compose (incl. llvmpipe capture service)
-├── arch.md            # this file — single architecture reference (both views in §2)
-├── roadmap_deepseek.md # self-contained implementation roadmap (P0–P14) · roadmap.md (retired)
-└── sci/               # source science docs + todo_claude*.md audit corpus (provenance)
+├── pymurmur/            # the package (above)
+├── conf/                # shipped YAML presets (§10) + conf/examples/
+├── output/              # captures, metrics, evolved.yaml — user-facing outputs
+├── test/                # layered macro→micro (layout: test.md)
+│   ├── conftest.py, helpers.py, regenerate_golden.py
+│   ├── data/            # golden_<mode>[_sphere].npz
+│   ├── l0_system/       # CLI, facade, e2e, config resolution, acceptance gates
+│   ├── l1_subsystems/   # subsystem isolation (A–F)
+│   ├── l2_integration/  # engine/capture/render/config wiring
+│   ├── l3_modules/      # module mirrors: core, physics, simulation, viz, capture, analysis
+│   └── l4_crosscutting/ # guards/ (architecture, docs, drift, golden, determinism,
+│                        #   collection count) · perf/ (budgets, scaling, memory)
+├── scripts/             # dependency-gated: train_marl.py, rollout_marl.py, run_evoflock_small.py
+├── ci/                  # Docker + Compose (see docker.md)
+├── .github/workflows/   # test.yml + guard-rails.yml (9 jobs, merge-blocking summary)
+├── sci/                 # source papers (PDF provenance)
+├── arch.md              # this file — single architecture reference
+└── TODO/                # roadmap0–5: audited contract/spec set with per-item status ·
+                         #   roadmap6: remaining delta (scaling S8, guard extensions T7)
 ```
 
 ---
 
-## 5. Dependency Rules  *(enforced by `test/test_architecture.py`)*
+## 5. Dependency Rules  *(enforced by `test/l4_crosscutting/guards/test_architecture.py`)*
+
+The guard encodes a **module-level** `ALLOWED_EDGES` matrix (an import
+from A to B must match an allowed prefix; `TYPE_CHECKING` imports count)
+plus named `FORBIDDEN_EDGES`. Subpackage summary:
 
 ```
 core/                    → numpy/stdlib only
@@ -280,7 +308,7 @@ physics/occlusion|steric → core                      (pure numpy)
 physics/obstacles        → core
 physics/forces/*         → physics primitives, core  (read flock arrays; no cKDTree
                                                       construction — use flock.index)
-physics/flock            → core                      (NEVER forces — the cycle is dead)
+physics/flock            → core, physics/boid        (NEVER forces — the cycle is dead)
 physics/extensions       → physics/flock(read), core
 simulation/engine        → physics/*, analysis/{metrics,rewards}, core
 analysis/{metrics,rewards,presets}  → physics/flock(read), core        (tier F1)
@@ -296,8 +324,13 @@ __main__ / scripts       → everything
 `input_control` communicates exclusively through config mutation and the
 command queue. Additional enforced rules: no module-level `np.random.*`
 outside test helpers; no `(…, 2)`-shaped spatial arrays in `physics/`
-(strictly-3D guard); every config leaf field read somewhere
-(usage-drift test).
+(strictly-3D guard, also a standalone CI job); every config leaf field
+read somewhere (usage-drift scan). The full guard set runs as
+`.github/workflows/guard-rails.yml` — ten jobs (`guard-rail-dag`,
+`guard-rail-golden`, `guard-rail-config-drift`, `guard-rail-3d`,
+`guard-rail-doc-links`, `guard-rail-collection-count`, `guard-rail-mypy`,
+`guard-rail-evolved`, `guard-rail-composers`) with a merge-blocking
+`guard-rails-summary` gate (per-job description: [docker.md](docker.md) §CI).
 
 ---
 
@@ -305,17 +338,17 @@ outside test helpers; no `(…, 2)`-shaped spatial arrays in `physics/`
 
 | Mode | Mechanism | needs_index | speed_mode | owns_positions | Per-mode state | 300K target |
 |------|-----------|:---:|:---:|:---:|----------------|:---:|
-| **projection** | Pearce δ̂ (culled occlusion) + alignment + φn noise | yes (topological σ) | band | no | — | ~13 ms |
+| **projection** | Pearce δ̂ (culled occlusion) + alignment + noise | yes (topological σ) | band | no | — | ~13 ms |
 | **spatial** | Reynolds hybrid-filter sep/align/coh (+species, jitter, kernels) | yes (radius+cap) | band \| ceiling \| fixed | no | — | ~17 ms (numba) |
 | **field** | 13-term blob/anchor field (anchors, leader/chaser, shell, ripples…) | no | band + inertia | no | t, group cache | ~3 ms |
 | **vicsek** | angle coupling η, tangent-plane noise D, predator–prey, collisions | yes (radius) | fixed | no | — | ~17 ms |
-| **influencer** | tick-driven Lissajous target, rank influence, move-then-steer | no | fixed | **yes** | tick | ~1 ms |
-| **angle** | turn-rate-limited heading steering, mode gating, adaptive speed | yes (knn) | fixed (per-bird s) | no | — | ~8 ms |
+| **influencer** | tick-driven Lissajous target, rank influence, move-then-steer | no | fixed | **yes** | tick, pilot | ~1 ms |
+| **angle** | turn-rate-limited heading steering, mode gating, adaptive speed | yes (knn) | fixed (per-bird s) | no | last_cell grid | ~8 ms |
 | **marl** | deferred global rules under external per-bird control | yes (sep radius) | none | no | — | ~2 ms |
 
-Runtime: `M` cycles `sorted(MODE_REGISTRY)`; each mode reads only its own
-sub-config. Adding a mode = one file + `@register` (the arch table above is
-asserted against the registry by the doc-drift test).
+Runtime: `M` cycles `sorted(MODE_REGISTRY)` (= angle, field, influencer,
+marl, projection, spatial, vicsek); each mode reads only its own
+sub-config. Adding a mode = one file + `@register`.
 
 ---
 
@@ -326,7 +359,7 @@ config; all stochastic draws from `ctx.rng`.
 
 | Extension | Provides | Publishes |
 |-----------|----------|-----------|
-| **Threat** | FSM predator (approach/egress, pass-through, arc), push/wake/split/wave bundle; modes off/cursor/orbit/autonomous | `ctx.threat_prox` (drives panic & blackening) |
+| **Threat** | FSM predator (approach/egress, pass-through, arc), push/wake/split/wave bundle | `ctx.threat_prox` (drives panic & blackening) |
 | **Ecology** | logistic dusk roost (temperature-boosted), coherence gate on weights, seasonal flock-size model, per-day predator presence | `predator_active` property |
 | **Wander** | boundedUnitTravel attractor (‖path‖ ≤ 1) + flock heading | wander_center/heading |
 | **Ripple** | enveloped, twisting, travelling density pulses | envelope sum (fold-noise coupling) |
@@ -348,18 +381,22 @@ seeds               (N,)  float32     1.2 MB   (field phases, per-bird hue, hash
 max_speed           (N,)  float32     1.2 MB   (panic ceilings; None → scalar v0)
 active              (N,)  bool        0.3 MB   (holey masks are first-class)
 is_predator         (N,)  bool        0.3 MB   (species column)
-                                     ≈ 21 MB   (+ index + 8-float GPU instance buffer)
+                                     ≈ 21 MB   (+ index + GPU instance buffer)
 ```
 
 Plus: `rng` (single seeded `np.random.Generator` — the only randomness
-source), `center` (exponentially smoothed centroid), `index`
-(`SpatialIndex`: modulo-celled hash grid or boxsize-aware cKDTree, both
-returning **global** indices), `mode_state` via ForceMode instances.
+source; integer seeds honored incl. 0, `None` → fresh entropy), `center`
+(exponentially smoothed centroid), `index` (`SpatialIndex`: modulo-celled
+hash grid or boxsize-aware cKDTree, both returning **global** indices),
+per-mode state on ForceMode instances. The memory-audit test
+(`test/l4_crosscutting/perf/test_performance.py`) pins the 300K budget;
+extending the audited-array inventory to this full column list is tracked
+as roadmap6 S8.3.
 
-**Hot path:** two-pass — batched index query (Python/scipy,
-`workers = perf.num_threads`) → vectorised numpy or `@njit(parallel=True)`
-kernel (`perf.use_numba`; `fastmath` only when no metrics are exported).
-Minimum-image arithmetic everywhere distances cross the toroidal seam.
+**Hot path:** two-pass — batched index query (Python/scipy) → vectorised
+numpy or numba JIT kernel (`perf.use_numba`; `fastmath` only when no
+metrics are exported). Minimum-image arithmetic everywhere distances
+cross the toroidal seam.
 
 ---
 
@@ -380,27 +417,33 @@ Minimum-image arithmetic everywhere distances cross the toroidal seam.
 | `stable-baselines3` | example training scripts only | scripts/ only |
 | `PyTorch` | — | excluded |
 
+Version pins: [requirements.txt](requirements.txt),
+[requirements-optional.txt](requirements-optional.txt),
+[requirements-test.txt](requirements-test.txt).
+
 ---
 
-## 10. Shipped Config Presets (`conf/`, nested schema)
+## 10. Shipped Config Presets (`conf/`)
 
 | File | Mode | Birds | Key feature |
 |------|------|:---:|------|
-| `murmuration.yaml` | projection | 150 | Pearce occlusion (true culling), φn noise |
-| `murmuration_spatial.yaml` | spatial | 200 | Reynolds + Threat FSM |
-| `murmuration_starlings.yaml` | spatial | 150 | hybrid filter, fixed speed, sphere, jitter, winged birds, physical metrics |
-| `murmuration_boids.yaml` | spatial | 150 | rystrauss regime: ceiling speed, velocity noise, predator boids |
+| `murmuration.yaml` | projection | 150 | Pearce occlusion (true culling) — the default |
+| `murmuration_spatial.yaml` | spatial | 200 | Reynolds + threat |
 | `murmuration_field.yaml` | field | 16K | full 13-term blob dynamics |
-| `field_quiet_roost / lava_lamp / ink_cloud / predator_ripple / vacuole / silk_sheet / storm_turn.yaml` | field | 3K–18K | the seven crs48 character presets (full vectors incl. inertia/trails/threat) |
-| `murmuration_vicsek.yaml` | vicsek | 101 | predator–prey, phase transition (params actually load) |
-| `murmuration_influencer.yaml` | influencer | 1000 | Lissajous pursuit, alpha-density rendering |
-| `murmuration_angle.yaml` | angle | 200 | turn-rate steering, adaptive speed, ring trails |
-| `murmuration_marl.yaml` | marl | 200 | control-hook env regime, dual view |
-| `murmuration_evo.yaml` | spatial (GA) | 200 | SSGA + SDF obstacle course (confined) · `evo_open.yaml` variant |
-| `murmuration_300k.yaml` | spatial | 300K | cKDTree + numba benchmark |
+| `field_quiet_roost / lava_lamp / ink_cloud / predator_ripple / vacuole / silk_sheet / storm_turn.yaml` | field | 3K–18K | the seven field character presets |
+| `murmuration_vicsek.yaml` | vicsek | 101 | predator–prey, phase transition |
+| `murmuration_influencer.yaml` | influencer | 200 | Lissajous pursuit, alpha-density rendering |
+| `murmuration_evo.yaml` | spatial (GA) | 200 | SSGA + SDF obstacle course (confined) |
+| `evo_open.yaml` | spatial (GA) | 200 | open-boundary GA evaluation variant |
+| `murmuration_300k.yaml` | spatial | 300K | cKDTree + numba benchmark config |
+| `conf/examples/murmuration_nested.yaml` | — | — | nested-schema reference example |
 
-Presets load exactly as written (documented-intent policy); every preset's
-domain and one sentinel per section are asserted by tests.
+Angle and marl modes run from any preset via `--set mode=angle` /
+`--set mode=marl`; dedicated source-parity presets for them (plus
+starlings/boids regime presets) are specified in
+[TODO/roadmap2.md](TODO/roadmap2.md) and not yet shipped. Presets load
+exactly as written (documented-intent policy); every preset's domain and
+per-section sentinels are asserted by `test/l0_system/test_config_files.py`.
 
 ---
 
@@ -412,9 +455,11 @@ python -m pymurmur --config field                    # conf/murmuration_field.ya
 python -m pymurmur --config /path/custom.yaml
 python -m pymurmur --set spatial.separation_weight=6 --set flock.num_boids=500
 python -m pymurmur --print-config                    # resolved effective config
+python -m pymurmur --list-configs                    # discovered presets
+python -m pymurmur --probe                           # capability report (GL/numba/scipy)
 python -m pymurmur --no-viz [--capture]              # headless [+ GIF/CSV/JSON]
-python -m pymurmur --list-configs
-python -m pymurmur --fullscreen --light-scheme --num-threads 8
+python -m pymurmur --capture-output out.gif --capture-frames 120
+python -m pymurmur --fullscreen --light-scheme
 # env overrides (capture farm / llvmpipe docker service):
 CAPTURE_W=400 CAPTURE_H=300 CAPTURE_FRAMES=120 CAPTURE_OUT=out.gif …
 # precedence: YAML < env < CLI
@@ -436,15 +481,15 @@ flowchart LR
     U --> SCRIPT["script / research"]
 
     RUNV --> WATCH["watch & steer camera<br/>drag orbit · scroll zoom · V reset · O auto-rotate<br/>7/8/9 ortho-top/side/persp · G grid"]
-    RUNV --> TUNE["tune live<br/>↑↓ φp · ←→ φa · [ ] σ (φp+φa≤1 enforced)<br/>TAB slider HUD (sep/coh/align/avoid/noise)<br/>PgUp/PgDn speed · M cycle 7 modes · a–h,w presets"]
-    RUNV --> POP["shape the flock<br/>+/− ±10 birds · click spawn · right-click predator<br/>C clear · R reset · SPACE pause"]
-    RUNV --> TOG["toggle behaviours<br/>T threat mode · K roost/season · U refinements<br/>themes/trails/mesh/dual-view via config"]
+    RUNV --> TUNE["tune live<br/>↑↓ φp · ←→ φa · [ ] σ (φp+φa≤1 enforced)<br/>TAB slider HUD · PgUp/PgDn speed<br/>M cycle 7 modes · letter presets"]
+    RUNV --> POP["shape the flock<br/>+/− ±10 birds · click spawn · right-click predator<br/>R reset · SPACE pause"]
+    RUNV --> TOG["toggle behaviours<br/>T threat · K roost/season · U refinements<br/>themes/trails/mesh/dual-view via config"]
 
     RUNH --> DATA["collect data<br/>metrics CSV/JSON (to_dict schema)<br/>GIF: pre-warm + cinematic sweep<br/>GPU-free fallback"]
     RUNH --> BENCH["benchmark() timings"]
 
     SCRIPT --> EVO["EvoFlock GA<br/>evolve params vs objectives + SDF obstacles<br/>→ output/evolved.yaml"]
-    SCRIPT --> RL["MARL<br/>MurmurationEnv + control hook<br/>scripts/train_marl · rollout"]
+    SCRIPT --> RL["MARL<br/>MurmurationEnv + control hook<br/>scripts/train_marl · rollout_marl"]
     SCRIPT --> SWEEP["analysis drivers<br/>phase diagram (polar|nematic)<br/>density scaling vs −0.5"]
 ```
 
@@ -454,48 +499,52 @@ flowchart LR
 
 | To add… | Do this (one seam each) |
 |---------|------------------------|
-| force mode | new file in `forces/`, subclass `ForceMode`, `@register` (declares needs_index/speed_mode/owns_positions) |
+| force mode | new file in `forces/`, subclass `ForceMode`, `@register` (declares needs_index/speed_mode/owns_positions); add its edges to `ALLOWED_EDGES` |
 | behavioural extension | subclass `Extension`, register in `ExtensionManager`; read everything from `ctx` |
 | metric | field on `FlockMetrics` + fill in `collect()`; auto-exported via `to_dict()` |
 | reward term | named term in `analysis/rewards.py` + weight in `MarlConfig` |
 | spatial index | implement `SpatialIndex` Protocol; must pass the shared conformance suite |
-| bird mesh / render layer | mesh entry in `shaders.py` + `viz.bird_mesh`; `draw_layer` for overlays |
+| bird mesh / render layer | mesh entry in `shaders.py` + viz config; `draw_layer` for overlays |
 | obstacle shape | SDF function in `physics/obstacles.py` (+ compose via min/max) |
 | boundary mode | branch in `physics/boid.py` boundary dispatch |
 | config preset | drop nested YAML in `conf/` (auto-discovered; validated by tests) |
 | input binding | `input_control` → command or config mutation (never engine calls) |
+
+Every new module lands with its mirrored test
+(`test/l3_modules/<subpackage>/`) and, if it moves test counts, a
+deliberate update to the collection-count pins
+(`test/l4_crosscutting/guards/test_collection_count.py`).
 
 ---
 
 ## 13. Determinism, Safety & Scaling
 
 **Guarantees (test-backed):** same seed → bit-identical trajectories per
-mode (any `num_threads`, numba on/off with fastmath off); golden
-trajectories pinned per mode (`atol=1e-3`, re-pinned only with deliberate
-physics changes); strictly-3D; holey `active` masks safe everywhere;
-`dt` clamped (≤ 1/20) behind a fixed-step accumulator; non-finite positions
-self-heal to `flock.center`; renderer never mutates simulation state.
+mode; golden trajectories pinned per mode (`test/data/`, `atol=1e-3`,
+re-pinned only with deliberate physics changes, CI-guarded); strictly-3D
+(AST guard + `depth > 0` validation); holey `active` masks safe
+everywhere; `dt` clamped (≤ 1/20) behind a fixed-step accumulator;
+non-finite positions self-heal to `flock.center`; renderer never mutates
+simulation state.
 
 **Adaptive quality:** EMA frame stats (250 ms spike cap) → budget
-`1000/max(24, target_fps)` → cpu/vertex/fragment risk classification →
-degradation ladder (trails off → render scale −0.15, floor 0.75 → N −18 %,
-floor 512) under 78 %-for-1.8 s hysteresis.
+`1000/max(24, target_fps)` → risk classification → degradation ladder
+(trails off → render scale −0.15, floor 0.75 → N −18 %, floor 512) under
+78 %-for-1.8 s hysteresis, 3.6 s recovery.
 
-**Scaling roadmap:**
+**Scaling ladder** (guarded by `test/l4_crosscutting/perf/`):
 
-| Phase | N | Key mechanism | Target |
+| Checkpoint | N | Key mechanism | Target |
 |-------|----|---------------|:---:|
 | 1 | 150 | hash grid, numpy forces | 60 fps |
 | 2 | 1 500 | SoA, vectorised integrate | 60 fps |
 | 3 | 16 000 | boxsize cKDTree, batched two-phase queries | 60 fps |
 | 4 | 50 000 | numba JIT kernels (`perf.use_numba`) | 45 fps |
-| 5 | **300 000** | full SoA + cKDTree(workers) + numba + 8-float instance buffer | 30 fps |
+| 5 | **300 000** | full SoA + cKDTree(workers) + numba + instance buffer | 30 fps |
 
-Checkpoints 4–5 are guarded by `@slow` benchmark regressions
-(`SimulationEngine.benchmark`).
+All five checkpoints, the full determinism matrix (threads × jitter × numba
++ subprocess leg), and the T6.3/S8.4 soak tiers are implemented and
+verified (2026-07-21).
 
 ---
 
-*Target-state architecture, July 2026. Realised and verified by
-[`roadmap_deepseek.md`](roadmap_deepseek.md) (15 phases P0–P14, self-contained).
-Provenance for every design element: `sci/todo_claude*.md`.*

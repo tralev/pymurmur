@@ -29,39 +29,34 @@ vicsek:
   time_step: 1.0               # Δt per Vicsek update
 
   # ── Prey parameters ──
-  velocity_prey: 1.0           # constant prey speed
+  velocity: 1.0                # constant prey speed
   radius_influence: 5.0        # R_inf: prey alignment interaction radius
   radius_avoid: 1.0            # R_avoid: same-type minimum separation
   radius_predators: 5.0        # R_pred: predator detection / fear radius
 
   # ── Predator parameters ──
-  num_predators: 1             # number of predator agents
-  velocity_predator: 1.0       # constant predator speed
-  predator_noise_scale: 0.2    # 5× less noise than prey (deliberate movement)
-  predator_detect_radius: 7.5  # 1.5 × R_pred (larger hunting detection radius)
+  n_predators: 1                # number of predator agents
+  velocity_predator: 1.0        # constant predator speed
+  predator_noise_ratio: 0.2     # 5× less noise than prey (deliberate movement)
+  detect_ratio: 1.5             # hunting radius = detect_ratio × R_pred (larger hunting detection radius)
 
   # ── Fear response ──
   weight_afraid: 3.0           # alignment amplification when predator detected
-
-  # ── Phase diagram sweep (run headless) ──
-  phase_diagram_resolution: 21  # grid resolution for (η, D) sweep
-  phase_diagram_use_nematic: true  # use nematic order parameter (code default)
 
 # ── Boundary Mode ───────────────────────────────────────────────────
 boundary_mode: toroidal    # [−W, W] domain wrapping (collective-motion style)
 
 # ── Behavioural Extensions ──────────────────────────────────────────
+# NOTE: Vicsek's predator-prey dynamics are driven entirely by
+# vicsek.n_predators (above) — the first N birds become predator agents
+# regardless of extensions.predator_enabled, which instead gates the
+# separate autonomous Threat-FSM predator (physics/extensions/predator.py).
+# Left off here since the species-based predator above is already active.
 extensions:
-  predator: true           # Vicsek model has built-in predator-prey dynamics
-  roosting: false
-  wander: false
-  ripple: false
-
-# ── Predator-Specific (Vicsek-style) ────────────────────────────────
-predator:
-  hunting_strategy: nearest_prey    # nearest-prey pursuit
-  detection_radius: 7.5             # 1.5 × R_pred
-  noise_scale: 0.2                  # reduced noise vs. prey
+  predator_enabled: false
+  roosting_enabled: false
+  wander_enabled: false
+  ripple_enabled: false
 
 # ── Performance Tuning (300K target) ────────────────────────────────
 # Vicsek mode uses cKDTree for neighbor queries; force computation is vectorised numpy.

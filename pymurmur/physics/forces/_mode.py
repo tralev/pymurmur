@@ -10,10 +10,11 @@ The __init__.py dispatch uses MODE_REGISTRY instead of a hardcoded dict.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import ClassVar, Protocol, TYPE_CHECKING, runtime_checkable
+from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     import numpy as np
+
     from ...core.config import SimConfig
     from ...core.types import SpatialIndex
 

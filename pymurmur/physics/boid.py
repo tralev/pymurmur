@@ -11,9 +11,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..core.types import Vec3
-
-
 # ── Integration kernel ────────────────────────────────────────────
 
 def integrate(
@@ -42,13 +39,22 @@ def integrate(
     Operates on flat arrays — no Python per-bird loop. All parameters
     are passed explicitly to avoid a SimConfig import at the hot-path level.
 
-    speed_mode: "band" (clamp [min, cap]), "fixed" (exact renormalisation),
-                "ceiling" (≤ cap only), "none" (no clamp).
+    speed_mode: "band"/"clamp" (clamp [min, cap]), "fixed" (exact
+                renormalisation), "ceiling" (≤ cap only), "none" (no clamp).
+                "clamp" is the SpatialConfig.speed_mode default vocabulary
+                and aliases "band" (D11 — an unrecognised value would
+                silently disable speed enforcement).
     inertia: 0.0–1.0 lerp between raw and clamped velocity.
     move: if False, skip position update (caller owns positions).
     """
     # 0. Safety rails: dt clamp (P0.10)
     dt = float(np.clip(dt, 0.0, 0.05))
+
+    # 0a. D1: Default center to domain centre when not provided.
+    #     Ensures sphere/sphere_soft boundary is always centred on C,
+    #     never origin, for ALL callers (not just PhysicsFlock.integrate).
+    if center is None:
+        center = np.array([width / 2, height / 2, depth / 2], dtype=np.float32)
 
     # 1. Apply accumulated forces (only active birds)
     velocities[active] += accelerations[active]
@@ -65,7 +71,7 @@ def integrate(
     speeds = np.linalg.norm(velocities, axis=1, keepdims=True)
     raw_vel = velocities.copy() if inertia > 0 else None
 
-    if speed_mode == "band":
+    if speed_mode in ("band", "clamp"):
         too_fast = (speeds.ravel() > caps).ravel() & active
         too_slow = (speeds.ravel() < min_speed).ravel() & active
         if too_fast.any():
@@ -123,7 +129,8 @@ def integrate(
     # 7. Boundary enforcement
     _apply_boundary(positions, velocities, active,
                     width, height, depth, boundary_mode,
-                    sphere_radius, avoidance_factor)
+                    sphere_radius, avoidance_factor,
+                    center=center)
 
     # 8. Reset accelerations for next frame
     accelerations[active] = np.float32(0.0)
@@ -146,6 +153,7 @@ def _apply_boundary(
     mode: str,
     sphere_radius: float,
     avoidance_factor: float,
+    center: np.ndarray | None = None,
 ) -> None:
     """Enforce boundary conditions on active birds."""
     if mode == "toroidal":
@@ -163,7 +171,11 @@ def _apply_boundary(
 
     elif mode == "sphere":
         _sphere_soft(positions, velocities, active, sphere_radius,
-                     avoidance_factor)
+                     avoidance_factor, center=center)
+
+    elif mode == "sphere_soft":
+        _sphere_soft_asymptotic(positions, velocities, active, sphere_radius,
+                                avoidance_factor, center=center)
 
 
 def _margin_push(
@@ -197,58 +209,66 @@ def _sphere_soft(
     active: np.ndarray,
     radius: float,
     factor: float,
+    center: np.ndarray | None = None,
 ) -> None:
-    """Asymptotic push toward sphere interior. 1/(R - r) soft boundary."""
-    dists = np.linalg.norm(positions, axis=1)
+    """Hard sphere boundary at radius from centre C.
+
+    Birds outside radius are projected back onto the sphere surface
+    and given an inward velocity correction proportional to overshoot.
+
+    Uses ‖p−C‖ (not ‖p‖) — the sphere is centred on the domain centre.
+    """
+    if center is None:
+        center = np.zeros(3, dtype=np.float32)
+
+    offsets = positions - center
+    dists = np.linalg.norm(offsets, axis=1)
     outside = (dists > radius) & active
 
     if not outside.any():
         return
 
-    radial = positions[outside] / dists[outside, np.newaxis]
-    positions[outside] = radial * radius
+    radial = offsets[outside] / dists[outside, np.newaxis]
+    positions[outside] = center + radial * radius
     velocities[outside] -= radial * factor * (dists[outside, np.newaxis] - radius)
 
 
-# ── BoidView — lightweight single-bird access ─────────────────────
+def _sphere_soft_asymptotic(
+    positions: np.ndarray,
+    velocities: np.ndarray,
+    active: np.ndarray,
+    radius: float,
+    factor: float,
+    center: np.ndarray | None = None,
+) -> None:
+    """Asymptotic soft sphere boundary — never hard-projects positions.
 
-class BoidView:
-    """Read-only view into one bird's state within flat SoA arrays.
-
-    Used by occlusion and force functions that need to address
-    individual birds. Extremely lightweight — __slots__ only.
+    Birds near the boundary get a gentle inward velocity push:
+        Δv = −factor · r̂ / max(R−r, 0.05·R)
+    No position clamping — birds can briefly overshoot and are pushed back
+    smoothly. Uses ‖p−C‖ (sphere centred on domain centre).
     """
+    if center is None:
+        center = np.zeros(3, dtype=np.float32)
 
-    __slots__ = ("idx", "_positions", "_velocities", "_thetas")
+    offsets = positions - center
+    dists = np.linalg.norm(offsets, axis=1)
 
-    def __init__(
-        self,
-        idx: int,
-        positions: np.ndarray,
-        velocities: np.ndarray,
-        last_theta: np.ndarray | None = None,
-    ) -> None:
-        self.idx = idx
-        self._positions = positions
-        self._velocities = velocities
-        self._thetas = last_theta
+    # Apply to birds near or outside the boundary
+    near = (dists > radius * 0.9) & active
+    if not near.any():
+        return
 
-    @property
-    def pos(self) -> Vec3:
-        """Position as (3,) float32 view."""
-        return self._positions[self.idx]
+    # Soft margin: 10% of radius for asymptotic kick
+    gap = radius - dists[near]
+    # Clamp gap to avoid divide-by-zero; max push when r → R
+    safe_gap = np.maximum(gap, 0.05 * radius)
 
-    @property
-    def vel(self) -> Vec3:
-        """Velocity as (3,) float32 view."""
-        return self._velocities[self.idx]
+    radial = offsets[near] / dists[near, np.newaxis]
+    # Push grows as 1/gap — stronger near the boundary
+    push_strength = factor * radius / safe_gap
+    velocities[near] -= radial * push_strength[:, np.newaxis]
 
-    @property
-    def theta(self) -> float:
-        """Cached internal opacity from last projection step."""
-        if self._thetas is None:
-            return 0.0
-        return float(self._thetas[self.idx])
 
 
 # ── Array helpers ─────────────────────────────────────────────────
@@ -319,6 +339,16 @@ def init_positions(
         dirs = random_unit_sphere(n, rng)
         return (C + dirs * R).astype(np.float32)
 
+    elif mode == "sphere":
+        # D7: Volume-uniform positions inside a sphere — ∛-law.
+        # Radial distribution P(r) ∝ r² for uniform volume density.
+        # cbrt of uniform [0,1] gives the correct radial CDF.
+        R = 0.4 * min(width, height, depth)
+        r = rng.uniform(0, 1, (n, 1)).astype(np.float32)
+        r = np.cbrt(r) * R  # ∛-law: uniform in volume
+        dirs = random_unit_sphere(n, rng)
+        return (C + dirs * r).astype(np.float32)
+
     elif mode == "gaussian":
         sigma = n ** (1.0 / 3.0) * separation
         pts = rng.normal(0.0, sigma, (n, 3)).astype(np.float32)
@@ -382,3 +412,159 @@ def init_velocities_blob(
     # z: 0.08 ± 0.08 → uniform(0.0, 0.16)
     v[:, 2] = 0.08 + rng.uniform(-0.08, 0.08, n).astype(np.float32)
     return (v * v0 * 0.5).astype(np.float32)
+
+
+# ── P4.9: Velocity-init variants ─────────────────────────
+
+def init_velocities_cube(
+    n: int,
+    v0: float,
+    rng: np.random.Generator | None = None,
+) -> np.ndarray:
+    """P4.9: Velocities uniformly distributed in a cube [−v0, v0]³.
+
+    Produces a wider speed distribution than sphere sampling —
+    birds near cube corners have |v| ≈ v0√3 ≈ 1.73·v0.
+    Mean speed ≈ 0.96·v0 (expected value of ‖U(−1,1)³‖).
+
+    Returns (n, 3) float32 velocity array.
+    """
+    rng = rng or np.random.default_rng()
+    return rng.uniform(-v0, v0, (n, 3)).astype(np.float32)
+
+
+def init_velocities_speed_uniform(
+    n: int,
+    v0: float,
+    rng: np.random.Generator | None = None,
+) -> np.ndarray:
+    """P4.9: Uniform speed [0, v0] with random sphere directions.
+
+    Unlike fixed-speed sphere, this produces a flat speed histogram,
+    giving natural variation in individual bird speeds from the start.
+
+    Returns (n, 3) float32 velocity array.
+    """
+    rng = rng or np.random.default_rng()
+    dirs = random_unit_sphere(n, rng)
+    speeds = rng.uniform(0.0, v0, (n, 1)).astype(np.float32)
+    return (dirs * speeds).astype(np.float32)
+
+
+def init_velocities_tangential(
+    n: int,
+    v0: float,
+    rng: np.random.Generator | None = None,
+    center: np.ndarray | None = None,
+    positions: np.ndarray | None = None,
+) -> np.ndarray:
+    """P4.9: Tangential velocities — perpendicular to radial from centre.
+
+    Each bird orbits the flock centre rather than moving radially.
+    Uses Gram–Schmidt to find a random perpendicular direction from
+    the radial vector, then scales to v0.
+
+    Args:
+        n: number of birds
+        v0: cruise speed
+        rng: seeded generator
+        center: (3,) float32 — orbit centre (defaults to origin)
+        positions: (n, 3) float32 — bird positions for radial computation
+
+    Returns (n, 3) float32 velocity array.
+    """
+    rng = rng or np.random.default_rng()
+    if center is None:
+        center = np.zeros(3, dtype=np.float32)
+    if positions is None:
+        # No positions → fall back to random_unit_sphere (reasonable default)
+        return random_unit_sphere(n, rng) * v0
+
+    v = np.empty((n, 3), dtype=np.float32)
+    for i in range(n):
+        radial = positions[i] - center
+        r_norm = np.linalg.norm(radial)
+        if r_norm < 1e-6:
+            # At centre → use random direction
+            v[i] = random_unit_sphere(1, rng).ravel() * v0
+            continue
+        radial /= r_norm
+        # Pick a random vector and Gram–Schmidt out the radial component
+        rand_vec = rng.uniform(-1.0, 1.0, 3).astype(np.float32)
+        tangent = rand_vec - radial * np.dot(radial, rand_vec)
+        t_norm = np.linalg.norm(tangent)
+        if t_norm < 1e-6:
+            tangent = np.cross(radial, np.array([1.0, 0.0, 0.0], dtype=np.float32))
+            t_norm = np.linalg.norm(tangent)
+            if t_norm < 1e-6:
+                tangent = np.cross(radial, np.array([0.0, 1.0, 0.0], dtype=np.float32))
+                t_norm = np.linalg.norm(tangent)
+        v[i] = (tangent / t_norm) * v0
+    return v
+
+
+def init_velocities_fixed(
+    n: int,
+    v0: float,
+    direction: tuple[float, float, float] = (0.6, 0.0, 0.4),
+) -> np.ndarray:
+    """P4.9: All birds get the same fixed velocity direction at v0.
+
+    Deterministic — no RNG needed. Useful for testing and for
+    configurations where uniform initial heading is desired.
+
+    Args:
+        n: number of birds
+        v0: cruise speed
+        direction: (dx, dy, dz) — unit direction (normalised internally)
+
+    Returns (n, 3) float32 velocity array.
+    """
+    d = np.array(direction, dtype=np.float32)
+    d_norm = np.linalg.norm(d)
+    if d_norm < 1e-6:
+        d = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    else:
+        d = d / d_norm
+    return np.tile(d * v0, (n, 1)).astype(np.float32)
+
+
+# ── Unified velocity-init dispatch ─────────────────────────
+
+def init_velocities(
+    n: int,
+    v0: float,
+    rng: np.random.Generator | None = None,
+    mode: str = "sphere",
+    center: np.ndarray | None = None,
+    positions: np.ndarray | None = None,
+) -> np.ndarray:
+    """P4.9: Generate initial velocities using one of 6 strategies.
+
+    Args:
+        n: number of birds
+        v0: cruise speed
+        rng: seeded random generator
+        mode: "sphere" | "blob" | "drift" | "cube" | "speed_uniform" |
+              "tangential" | "fixed" ("drift" is a C3 alias for "blob" —
+              the drift-biased tangential velocity init doubles as both)
+        center: (3,) orbit centre for tangential mode
+        positions: (n, 3) for tangential mode radial computation
+
+    Returns:
+        (n, 3) float32 velocity array
+    """
+    rng = rng or np.random.default_rng()
+
+    if mode in ("blob", "drift"):  # C3: "drift" aliases "blob"
+        return init_velocities_blob(n, v0, rng)
+    elif mode == "cube":
+        return init_velocities_cube(n, v0, rng)
+    elif mode == "speed_uniform":
+        return init_velocities_speed_uniform(n, v0, rng)
+    elif mode == "tangential":
+        return init_velocities_tangential(n, v0, rng, center, positions)
+    elif mode == "fixed":
+        return init_velocities_fixed(n, v0)
+    else:  # "sphere" (default, backward-compatible)
+        return random_unit_sphere(n, rng) * v0 * 0.8

@@ -8,12 +8,17 @@ All SDF functions accept (N,3) position arrays and return (N,)
 signed distances. Negative = inside the obstacle.
 
 z-up convention: cylinder radial component uses dx²+dz².
+
+P11.4: ObstacleScene — CSG scene tree composing the primitives, with
+per-step collision detection (sign flip of the SDF) and kinematic
+surface correction.
 """
 
 from __future__ import annotations
 
-import numpy as np
+from typing import Callable
 
+import numpy as np
 
 # ── SDF primitives ────────────────────────────────────────────────
 
@@ -222,3 +227,176 @@ def kinematic_correction(
         / grad_norm_sq[valid]
     )
     return result
+
+
+# ── P11.4: CSG obstacle scene ─────────────────────────────────────
+
+class ObstacleScene:
+    """CSG scene tree composing SDF primitives (P11.4).
+
+    Shapes are folded left-to-right in insertion order: ``union`` via
+    min(a, b), ``subtract`` via max(a, −b). An empty scene returns +inf
+    everywhere (no obstacles anywhere).
+
+    Collision definition: sign(SDF(p_old)) ≠ sign(SDF(p_new)) with the
+    new position inside — a bird crossed a surface this step. Corrected
+    positions are pushed back to the surface via kinematic_correction.
+    """
+
+    def __init__(self) -> None:
+        self._shapes: list[tuple[str, Callable[[np.ndarray], np.ndarray]]] = []
+        self.collision_count: int = 0  # total boid-collisions counted
+
+    # ── Builders ──────────────────────────────────────────────
+
+    def add_sphere(
+        self, center, radius: float, op: str = "union",
+    ) -> "ObstacleScene":
+        c = np.asarray(center, dtype=np.float32)
+        self._append(op, lambda p: sdf_sphere(p, c, float(radius)))
+        return self
+
+    def add_box(
+        self, center, half_extents, op: str = "union",
+    ) -> "ObstacleScene":
+        c = np.asarray(center, dtype=np.float32)
+        h = np.asarray(half_extents, dtype=np.float32)
+        self._append(op, lambda p: sdf_box(p, c, h))
+        return self
+
+    def add_cylinder(
+        self, center, radius: float, half_height: float, op: str = "union",
+    ) -> "ObstacleScene":
+        c = np.asarray(center, dtype=np.float32)
+        self._append(
+            op, lambda p: sdf_cylinder(p, c, float(radius), float(half_height)),
+        )
+        return self
+
+    def _append(self, op: str, fn: Callable) -> None:
+        if op not in ("union", "subtract"):
+            raise ValueError(f"Unknown CSG op: {op!r} (use 'union' or 'subtract')")
+        if op == "subtract" and not self._shapes:
+            raise ValueError("Cannot subtract from an empty scene")
+        self._shapes.append((op, fn))
+
+    @classmethod
+    def from_spec(cls, spec: list[dict]) -> "ObstacleScene":
+        """Build a scene from a YAML-friendly list of shape dicts.
+
+        Each entry: {shape: sphere|box|cylinder, op: union|subtract, ...}
+        with shape-specific keys (center, radius, half_extents, half_height).
+        """
+        scene = cls()
+        for item in spec:
+            shape = item.get("shape")
+            op = item.get("op", "union")
+            if shape == "sphere":
+                scene.add_sphere(item["center"], item["radius"], op=op)
+            elif shape == "box":
+                scene.add_box(item["center"], item["half_extents"], op=op)
+            elif shape == "cylinder":
+                scene.add_cylinder(
+                    item["center"], item["radius"], item["half_height"], op=op,
+                )
+            else:
+                raise ValueError(f"Unknown obstacle shape: {shape!r}")
+        return scene
+
+    # ── Queries ───────────────────────────────────────────────
+
+    @property
+    def n_shapes(self) -> int:
+        return len(self._shapes)
+
+    def sdf(self, p: np.ndarray) -> np.ndarray:
+        """Combined scene SDF at positions p — (N,) signed distances."""
+        p = np.asarray(p, dtype=np.float32)
+        if not self._shapes:
+            return np.full(len(p), np.inf, dtype=np.float32)
+        acc: np.ndarray | None = None
+        for op, fn in self._shapes:
+            vals = fn(p)
+            if acc is None:
+                acc = vals
+            elif op == "union":
+                acc = sdf_union(acc, vals)
+            else:
+                acc = sdf_subtract(acc, vals)
+        assert acc is not None
+        return acc
+
+    def resolve(
+        self, p_old: np.ndarray, p_new: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Detect collisions this step and correct penetrating positions.
+
+        Returns (corrected_positions, collided_mask). Increments
+        collision_count by the number of colliding birds.
+        """
+        if not self._shapes:
+            return np.asarray(p_new, dtype=np.float32).copy(), np.zeros(
+                len(p_new), dtype=bool,
+            )
+        sdf_old = self.sdf(p_old)
+        sdf_new = self.sdf(p_new)
+        collided = collision_detected(sdf_old, sdf_new)
+        self.collision_count += int(collided.sum())
+        if (sdf_new < 0.0).any():
+            corrected = kinematic_correction(
+                np.asarray(p_new, dtype=np.float32), self.sdf,
+            )
+        else:
+            corrected = np.asarray(p_new, dtype=np.float32).copy()
+        return corrected, collided
+
+    # ── P11.5: Obstacle avoidance steering ────────────────────
+
+    def avoidance_accel(
+        self,
+        positions: np.ndarray,
+        velocities: np.ndarray,
+        static_weight: float = 0.0,
+        predictive_weight: float = 0.0,
+        fly_away_max_dist: float = 0.0,
+        min_time_to_collide: float = 0.0,
+    ) -> np.ndarray:
+        """Static fly-away + predictive time-to-collision steering.
+
+        Static: birds within fly_away_max_dist of a surface are pushed
+        along +∇SDF, ramping linearly to full static_weight at contact.
+        Predictive: birds whose SDF closing rate implies collision within
+        min_time_to_collide steer along +∇SDF with predictive_weight.
+
+        Returns (N, 3) float32 acceleration.
+        """
+        accel = np.zeros_like(positions, dtype=np.float32)
+        if not self._shapes:
+            return accel
+        if static_weight <= 0.0 and predictive_weight <= 0.0:
+            return accel
+
+        d = self.sdf(positions)
+        grad = sdf_gradient(self.sdf, positions)
+        norms = np.linalg.norm(grad, axis=1, keepdims=True)
+        norms[norms < 1e-10] = 1.0
+        away = grad / norms  # unit vector pointing away from surface
+
+        if static_weight > 0.0 and fly_away_max_dist > 0.0:
+            near = (d >= 0.0) & (d < fly_away_max_dist)
+            if near.any():
+                ramp = 1.0 - d[near] / fly_away_max_dist
+                accel[near] += away[near] * (static_weight * ramp)[:, np.newaxis]
+
+        if predictive_weight > 0.0 and min_time_to_collide > 0.0:
+            # Closing rate: −d(SDF)/dt ≈ −∇SDF·v (positive = approaching)
+            closing = -np.sum(away * velocities, axis=1)
+            approaching = (closing > 1e-10) & (d >= 0.0)
+            if approaching.any():
+                ttc = d[approaching] / closing[approaching]
+                urgent = ttc < min_time_to_collide
+                if urgent.any():
+                    idx = np.where(approaching)[0][urgent]
+                    accel[idx] += away[idx] * predictive_weight
+
+        return accel

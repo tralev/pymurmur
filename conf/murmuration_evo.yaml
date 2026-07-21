@@ -125,21 +125,31 @@ parameters_to_optimize:
 #   boids_per_flock: 200, simulation_steps: 500, time_step: 1/30s,
 #   body_diameter: 1m, body_mass: 1kg, k_nearest_neighbors: 7
 
-# ── Boundary Mode ───────────────────────────────────────────────────
-boundary_mode: toroidal
+# ── Boundary Mode (P11.6: confined evaluation — spherical enclosure) ──
+boundary_mode: sphere
+boundary_sphere_radius: 90.0
+
+# ── Obstacle Scene (P11.4: SDF CSG, loaded via load_obstacle_scene) ──
+# Course of three pillars and a central sphere inside the enclosure.
+obstacles:
+  - {shape: sphere, center: [0.0, 0.0, 0.0], radius: 15.0}
+  - {shape: cylinder, center: [40.0, 0.0, 0.0], radius: 8.0, half_height: 60.0}
+  - {shape: cylinder, center: [-40.0, 0.0, 30.0], radius: 8.0, half_height: 60.0}
+  - {shape: box, center: [0.0, 0.0, -45.0], half_extents: [10.0, 40.0, 10.0]}
 
 # ── Behavioural Extensions ──────────────────────────────────────────
 extensions:
-  predator: false
-  roosting: false
-  wander: false
-  ripple: false
+  predator_enabled: false
+  roosting_enabled: false
+  wander_enabled: false
+  ripple_enabled: false
 
 # ── Performance Tuning (300K target) ────────────────────────────────
 # GA runs headless — performance tuning affects inner simulation evaluations.
 performance:
   spatial_index: kdtree       # auto | hash_grid | kdtree (needed for neighbor-based forces)
   instance_buffer_chunk: 50000  # GPU buffer growth increment (not used in headless GA)
+  cruise_speed_ms: 20.0       # P11.3: 1 sim unit/frame ≈ 1 m/s at v0=20 (speed band [19,21])
 
 # ── Metrics Detail ──────────────────────────────────────────────────
 # GA runs don't need per-frame metrics — keep overhead minimal.
@@ -165,7 +175,7 @@ visual:
 capture:
   width: 800
   height: 600
-  frames: 0                # GA runs don't capture visual frames
+  frames: 1                # GA runs don't capture visual frames (min valid value)
   every: 1
   fps: 20
   output: null

@@ -24,6 +24,7 @@ class DensityScalingResult:
         beta_open: power-law exponent for open boundary.
         r_sq_toroidal: R-squared of the toroidal fit.
         r_sq_open: R-squared of the open fit.
+        ideal_density_exponent: P9.7 — theoretical ideal = −0.5 for comparison.
     """
 
     n_values: np.ndarray
@@ -33,6 +34,7 @@ class DensityScalingResult:
     beta_open: float = np.nan
     r_sq_toroidal: float = np.nan
     r_sq_open: float = np.nan
+    ideal_density_exponent: float = -0.5
 
 
 def sweep_density_scaling(

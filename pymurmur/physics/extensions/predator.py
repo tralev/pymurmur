@@ -19,8 +19,9 @@ P3.9: Threat FSM + force bundle
 
 from __future__ import annotations
 
-import numpy as np
 from typing import TYPE_CHECKING
+
+import numpy as np
 
 from ._base import Extension
 
@@ -96,24 +97,43 @@ class Predator(Extension):
         ], dtype=np.float32)
 
     def apply(self, flock: PhysicsFlock, ctx: StepContext) -> None:
-        """Update threat state and apply force bundle to nearby birds."""
+        """Update threat state and apply force bundle to nearby birds.
+
+        C1: predator_mode selects the targeting strategy —
+        "autonomous" (default) is the original approach/egress FSM,
+        unchanged. "off" freezes the threat (no movement, no force) but
+        keeps its state alive, unlike predator_enabled=False which never
+        instantiates the extension. "orbit" always uses the egress
+        arc-offset targeting, skipping the capture/egress FSM. "cursor"
+        targets the viz-supplied `_cursor_world_pos` bridge directly when
+        set, falling back to full autonomous behaviour when it isn't
+        (e.g. headless runs with no viz layer).
+        """
         active = flock.active
         n_active = active.sum()
+        cfg = ctx.config
         if n_active == 0:
             ctx.threat_prox = np.zeros(flock.N_capacity, dtype=np.float32)
+            cfg._threat_present = False
             return
 
-        cfg = ctx.config
+        mode = cfg.predator.predator_mode
+
+        if mode == "off":
+            ctx.threat_prox = np.zeros(flock.N_capacity, dtype=np.float32)
+            cfg._threat_present = False
+            return
+
         dt = ctx.dt
         center = np.mean(flock.positions[active], axis=0)
 
         # ── Config values ──
-        threat_radius = getattr(cfg, 'predator_threat_radius', 12.0)
-        threat_strength = getattr(cfg, 'predator_strength', 1.0)
-        momentum = getattr(cfg, 'predator_momentum', 0.5)
-        split_gain = getattr(cfg, 'predator_split_gain', 0.5)
-        acceleration = getattr(cfg, 'predator_acceleration', 0.8)
-        vacuole_strength = getattr(cfg, 'predator_vacuole_strength', 0.0)
+        threat_radius = cfg.predator.predator_threat_radius
+        threat_strength = cfg.predator.predator_strength
+        momentum = cfg.predator.predator_momentum
+        split_gain = cfg.predator.predator_split_gain
+        acceleration = cfg.predator.predator_acceleration
+        vacuole_strength = cfg.predator.predator_vacuole_strength
         wave_gain = getattr(cfg, 'field_wave_gain', 0.5)
 
         # ── Unit scale ──
@@ -136,15 +156,26 @@ class Predator(Extension):
         to_center = center - self._pos
         to_center_dir = to_center / max(np.linalg.norm(to_center), 1e-6)
 
-        if self._phase == "approach":
-            if dist_to_center <= capture_dist:
-                self._phase = "egress"
-        else:  # egress
-            dot_check = np.dot(self._dir, to_center_dir)
-            if dist_to_center > clear_dist and dot_check < -0.12:
-                self._phase = "approach"
+        # C1: cursor mode targets the bridge position directly when live;
+        # the FSM phase update is skipped in that case (phase is only used
+        # for turn_rate below, and stays frozen at its last value).
+        _raw_cursor = getattr(cfg, '_cursor_world_pos', None) if mode == "cursor" else None
+        cursor_target: np.ndarray | None = (
+            np.asarray(_raw_cursor, dtype=np.float32) if _raw_cursor is not None else None
+        )
 
-        # ── Target selection ──
+        if mode == "orbit":
+            self._phase = "egress"  # C1: always orbit, never capture
+        elif cursor_target is None:
+            # "autonomous", and "cursor" without a live bridge (fallback).
+            if self._phase == "approach":
+                if dist_to_center <= capture_dist:
+                    self._phase = "egress"
+            else:  # egress
+                dot_check = np.dot(self._dir, to_center_dir)
+                if dist_to_center > clear_dist and dot_check < -0.12:
+                    self._phase = "approach"
+
         # ── Turn rate: different for approach vs egress (P3.9) ──
         if self._phase == "approach":
             turn_rate = (0.54 + acceleration * 0.025) * (1.0 - momentum * 0.24)
@@ -152,10 +183,13 @@ class Predator(Extension):
             turn_rate = 0.42 * (1.0 - momentum * 0.24)
         max_turn = turn_rate * dt
 
-        if self._phase == "approach":
+        # ── Target selection ──
+        if cursor_target is not None:
+            target_point = cursor_target
+        elif self._phase == "approach":
             target_point = center
         else:
-            # Egress: target beyond center with arc offset (P3.9)
+            # Egress/orbit: target beyond center with arc offset (P3.9)
             base_target = center + self._dir * pass_dist
             # Arc lift + drift
             broad = pass_dist * (0.24)  # orbit arc scale
@@ -171,7 +205,7 @@ class Predator(Extension):
 
         # ── Steer toward target ──
         desired_dir = target_point - self._pos
-        desired_dir = desired_dir / max(np.linalg.norm(desired_dir), 1e-6)
+        desired_dir = desired_dir / max(float(np.linalg.norm(desired_dir)), 1e-6)
 
         # Rotate heading toward desired direction (capped)
         self._dir = _rotate_toward(self._dir, desired_dir, max_turn)
@@ -194,6 +228,7 @@ class Predator(Extension):
         within = d < threat_dist
         if not within.any():
             ctx.threat_prox = threat_prox
+            cfg._threat_present = False
             return
 
         # ── Proximity ──
@@ -245,7 +280,7 @@ class Predator(Extension):
         )
 
         # ── P3.8: Blackening (weaken sep, strengthen coh near threat) ──
-        blackening_gain = getattr(cfg, 'predator_blackening_gain', 0.6)
+        blackening_gain = cfg.predator.predator_blackening_gain
         black = 1.0 + blackening_gain * prox * 0.85
         # Store on config for field mode to read and modulate separation/cohesion
         cfg._threat_blackening = black.astype(np.float32)

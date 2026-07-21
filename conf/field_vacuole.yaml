@@ -30,7 +30,6 @@ field:
   target_pull: 0.24
   drift_pull: 0.10
   shell_influence: 0.90
-  vacuole_strength: 0.9    # hollow-core intensity
   shell_radius_base: 0.22
   inner_radius_factor: 0.35
   inertia: 0.84

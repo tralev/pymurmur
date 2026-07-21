@@ -4,9 +4,9 @@ Population 20, 200 steps, 2 islands, 25 boids, 40 eval steps.
 Tracks best fitness per generation and reports final evolved params.
 """
 import time
-import numpy as np
+
+from pymurmur.analysis.evoflock import EVOLVABLE_PARAMS, EvoConfig, EvoFlock
 from pymurmur.core.config import SimConfig
-from pymurmur.analysis.evoflock import EvoFlock, EvoConfig, EVOLVABLE_PARAMS
 
 cfg = SimConfig()
 cfg.num_boids = 150          # dense enough for separation scoring

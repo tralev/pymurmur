@@ -16,8 +16,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import numpy as np
-    from ..flock import PhysicsFlock
+
     from ...core.config import SimConfig
+    from ..flock import PhysicsFlock
 
 
 @dataclass

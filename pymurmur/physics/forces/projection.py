@@ -10,8 +10,9 @@ P2.2: Wrapped in ProjectionMode(ForceMode) with @register("projection").
 """
 from __future__ import annotations
 
-import numpy as np
 from typing import TYPE_CHECKING
+
+import numpy as np
 
 from ..occlusion import spherical_cap_occlusion_batched
 from ..steric import steric_force  # P1.10: L0 atom import at module top (no cycle risk)
@@ -43,7 +44,8 @@ class ProjectionMode(ForceMode):
 
         1. Batch-collect topological sigma neighbours via spatial index
         2. Batch-compute delta and Theta via spherical_cap_occlusion_batched
-        3. Blend: v_desired = phi_p * delta + phi_a * align_dir
+        3. Blend: v_desired = phi_p * delta + phi_a * align_dir + phi_n * eta
+           (S1.4: phi_n = 1 − phi_p − phi_a, eta uniform on S²)
         4. Clamp steering and apply
         """
         active_idx = np.where(active)[0]
@@ -51,7 +53,8 @@ class ProjectionMode(ForceMode):
         if n_active == 0:
             return
 
-        sigma = config.sigma
+        # max_visibility caps sigma for the occlusion step
+        sigma = min(config.sigma, config.max_visibility)
         blind_cos = None
         if config.blind_deg > 0:
             blind_cos = np.cos(np.radians(config.blind_deg / 2))
@@ -81,6 +84,7 @@ class ProjectionMode(ForceMode):
             boid_size=config.boid_size,
             blind_cos=blind_cos,
             anisotropy=config.anisotropy if config.refinements else 1.0,
+            max_candidates=config.max_occlusion_neighbors,
             valid_mask=valid_mask,
             n_jobs=config.parallel_workers,
         )
@@ -103,7 +107,29 @@ class ProjectionMode(ForceMode):
         align_dir[valid] = v_avg[valid] / v_norm[valid]
 
         # --- Stage 5: blend and steer ---
-        v_desired = delta * config.phi_p + align_dir * config.phi_a  # (n_active, 3)
+        phi_p = config.projection.phi_p
+        phi_a = config.phi_a
+
+        # S2.B8: Coherence gate — reduce directional/positional pull for
+        # small flocks, mirroring SpatialMode's align/coh gating. Runtime-
+        # private field set by the ecology extension (see spatial.py).
+        coherence = getattr(config, '_coherence_factor', 1.0)
+        if coherence < 1.0:
+            phi_p *= coherence
+            phi_a *= coherence
+
+        v_desired = delta * phi_p + align_dir * phi_a  # (n_active, 3)
+
+        # S1.4: Pearce noise term — v ∝ φp·δ̂ + φa·⟨v̂⟩_σ + φn·η̂ with
+        # φn = 1 − φp − φa and η̂ uniform on S². Keeps the flock from
+        # converging to perfect alignment.
+        phi_n = max(0.0, 1.0 - phi_p - phi_a)
+        if phi_n > 0.0:
+            eta = rng.normal(size=(n_active, 3)).astype(np.float32)
+            eta_norms = np.linalg.norm(eta, axis=1, keepdims=True)
+            eta_norms[eta_norms == 0] = 1.0
+            v_desired += (eta / eta_norms) * phi_n
+
         steering = v_desired - velocities[active_idx]
 
         steer_mag = np.linalg.norm(steering, axis=1)
@@ -122,6 +148,7 @@ class ProjectionMode(ForceMode):
                 if len(valid_nbrs) > 0:
                     accelerations[i] += steric_force(
                         positions[i], positions[valid_nbrs], config.steric,
+                        max_force=config.max_force,
                     )
 
 

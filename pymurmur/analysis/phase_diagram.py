@@ -1,8 +1,11 @@
 """Phase diagram sweep for Vicsek mode (Phase 9.4).
 
 Grid search over (eta, D) space to map the noise → order transition.
-Measures steady-state order parameter alpha for each parameter pair,
-identifies the phase boundary where alpha crosses 0.5.
+Measures steady-state order parameter (polar α or nematic S) for each
+parameter pair, identifies the phase boundary where order crosses 0.5.
+
+P9.1: ``order_type`` option — ``"polar"`` (default) reads ``alpha``,
+``"nematic"`` reads ``nematic_S``.
 """
 
 from __future__ import annotations
@@ -26,7 +29,8 @@ class PhaseDiagramResult:
 
     eta_grid: np.ndarray
     d_grid: np.ndarray
-    alpha_grid: np.ndarray
+    alpha_grid: np.ndarray  # order values (polar α or nematic S, per order_type)
+    order_type: str = "polar"  # P9.1: which order parameter was measured
     boundary_eta: np.ndarray = field(default_factory=lambda: np.array([]))
 
 
@@ -39,12 +43,13 @@ def sweep_vicsek_phase(
     steps: int = 200,
     settle_frac: float = 0.5,
     seed: int = 42,
+    order_type: str = "polar",   # P9.1: "polar" → alpha, "nematic" → nematic_S
 ) -> PhaseDiagramResult:
     """Sweep (eta, D) parameter space for the Vicsek phase transition.
 
     For each (eta_i, d_j) pair, runs a headless Vicsek simulation and
-    measures the steady-state order parameter alpha averaged over the
-    final settle_frac fraction of frames.
+    measures the steady-state order parameter (polar α or nematic S)
+    averaged over the final settle_frac fraction of frames.
 
     Args:
         eta_range: (min, max) for vicsek_couplage η ∈ [0, 1].
@@ -53,12 +58,17 @@ def sweep_vicsek_phase(
         n_d: number of D grid points.
         n_boids: flock size.
         steps: total simulation steps per (eta, D) point.
-        settle_frac: fraction of final frames to average alpha over.
+        settle_frac: fraction of final frames to average order over.
         seed: base random seed (incremented per sweep point).
+        order_type: "polar" (default) uses polar α; "nematic" uses nematic S.
 
     Returns:
-        PhaseDiagramResult with grids and measured alpha values.
+        PhaseDiagramResult with grids and measured order values.
     """
+    if order_type not in ("polar", "nematic"):
+        raise ValueError(
+            f"order_type must be 'polar' or 'nematic', got '{order_type}'"
+        )
     from ..core.config import SimConfig
     from ..simulation.engine import SimulationEngine
 
@@ -92,19 +102,27 @@ def sweep_vicsek_phase(
             sim = SimulationEngine(cfg)
             sim.run_headless(steps=steps)
 
-            # Average alpha over the settled portion
-            alphas = [
-                snap.alpha
-                for snap in sim.metrics.history[settle_start:]
-                if snap.alpha >= 0
-            ]
-            if alphas:
-                alpha_grid[j, i] = float(np.mean(alphas))
+            # Average order over the settled portion
+            if order_type == "nematic":
+                values = [
+                    snap.nematic_S
+                    for snap in sim.metrics.history[settle_start:]
+                    if snap.nematic_S >= 0
+                ]
+            else:  # polar
+                values = [
+                    snap.alpha
+                    for snap in sim.metrics.history[settle_start:]
+                    if snap.alpha >= 0
+                ]
+            if values:
+                alpha_grid[j, i] = float(np.mean(values))
 
     result = PhaseDiagramResult(
         eta_grid=eta_grid,
         d_grid=d_grid,
         alpha_grid=alpha_grid,
+        order_type=order_type,
     )
     result.boundary_eta = _find_phase_boundary(result)
     return result
@@ -154,15 +172,18 @@ def save_results(result: PhaseDiagramResult, path: str) -> None:
         d_grid=result.d_grid,
         alpha_grid=result.alpha_grid,
         boundary_eta=result.boundary_eta,
+        order_type=np.array([result.order_type], dtype='U10'),
     )
 
 
 def load_results(path: str) -> PhaseDiagramResult:
     """Load phase diagram results from a .npz file."""
     data = np.load(path)
+    order_type = str(data.get("order_type", np.array(["polar"]))[0])
     return PhaseDiagramResult(
         eta_grid=data["eta_grid"],
         d_grid=data["d_grid"],
         alpha_grid=data["alpha_grid"],
+        order_type=order_type,
         boundary_eta=data.get("boundary_eta", np.array([])),
     )

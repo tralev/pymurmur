@@ -11,38 +11,40 @@ All mode classes share the same compute() signature:
 """
 from __future__ import annotations
 
-import numpy as np
 from typing import TYPE_CHECKING
 
-from ._mode import MODE_REGISTRY, ForceFn, ForceMode, register  # noqa: F401 — public API
-
-from ._base import (
+# Import mode modules to trigger @register decorators (populates MODE_REGISTRY)
+from . import (
+    angle,  # noqa: F401
+    field,  # noqa: F401
+    influencer,  # noqa: F401
+    marl,  # noqa: F401  # P12.1: MARL mode
+    projection,  # noqa: F401
+    spatial,  # noqa: F401
+    vicsek,  # noqa: F401
+)
+from ._base import (  # noqa: F401  # re-exports
+    ForceTerm,
     alignment_force,
     cohesion_force,
+    composeForces,
     noise_force,
     separation_force,
-    ForceTerm,
-    composeForces,
 )
-
-# Import mode modules to trigger @register decorators (populates MODE_REGISTRY)
-from . import projection  # noqa: F401
-from . import spatial     # noqa: F401
-from . import field       # noqa: F401
-from . import vicsek      # noqa: F401
-from . import influencer  # noqa: F401
+from ._mode import MODE_REGISTRY, ForceFn, ForceMode, register  # noqa: F401 — public API
+from .angle import angle_forces  # noqa: F401  # re-export
+from .field import field_forces  # noqa: F401  # re-export
+from .influencer import influencer_forces  # noqa: F401  # re-export
+from .marl import marl_forces  # noqa: F401  # P12.1 re-export
 
 # Backward-compatible exports — tests import these names directly
-from .projection import projection_forces
-from .spatial import spatial_forces
-from .field import field_forces
-from .vicsek import vicsek_forces
-from .influencer import influencer_forces
+from .projection import projection_forces  # noqa: F401  # re-export
+from .spatial import spatial_forces  # noqa: F401  # re-export
+from .vicsek import vicsek_forces  # noqa: F401  # re-export
 
 if TYPE_CHECKING:
-    from ..flock import PhysicsFlock
     from ...core.config import SimConfig
-    from ...core.types import SpatialIndex
+    from ..flock import PhysicsFlock
 
 
 def compute_all_forces(flock: PhysicsFlock, config: SimConfig) -> None:
@@ -52,6 +54,8 @@ def compute_all_forces(flock: PhysicsFlock, config: SimConfig) -> None:
     is testable without constructing a PhysicsFlock (I3.7).
 
     P2.2: Dispatches via MODE_REGISTRY populated by @register decorators.
+    P4.3: Wires flock.is_predator into config so force modes can do
+          species-based predator-prey dynamics.
     """
     mode_cls = MODE_REGISTRY.get(config.mode)
     if mode_cls is None:
@@ -59,6 +63,12 @@ def compute_all_forces(flock: PhysicsFlock, config: SimConfig) -> None:
             f"Unknown force mode: '{config.mode}'. "
             f"Valid modes: {list(MODE_REGISTRY.keys())}"
         )
+    # P4.3: Expose species column for predator-prey force dynamics
+    object.__setattr__(config, '_is_predator', flock.is_predator)
+    # P4.8: Bridge flock.coherence_factor → config (transient —
+    # set by ecology extension on the flock, consumed by spatial mode).
+    # Not persisted to YAML; this is a private runtime bridge only.
+    object.__setattr__(config, '_coherence_factor', flock.coherence_factor)
     mode_cls.compute(
         flock.positions,
         flock.velocities,

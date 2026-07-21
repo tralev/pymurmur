@@ -68,10 +68,8 @@ spatial:
   cohesion_weight: 0.75    # live via HUD slider (0–2)
   noise_scale: 0.0         # δ noise magnitude (0 = off)
   acceleration_scale: 0.3  # damping applied BEFORE the max_force clamp
-  separation_distance: 20.0     # metric separation gate
   neighbor_filter: knn     # knn | hybrid (radius AND count-cap)
   influence_count: 7       # hybrid-mode topological cap (Young 2013)
-  alignment_radius_ratio: 0.75  # alignment inner sphere = ratio × visual_range
   separation_kernel: inverse_square   # inverse_square (unit r̂/d²) | unit
   noise_mode: force        # force | velocity (post-integration state noise)
   speed_mode: band         # band | ceiling | fixed

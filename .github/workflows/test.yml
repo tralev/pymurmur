@@ -43,8 +43,9 @@ jobs:
 
         '
     - name: Run fast test suite
-      run: "mkdir -p output\npytest test/ -v \\\n  -m \"not slow\" \\\n  --ignore=test/viz/test_renderer.py \\\n  --ignore=test/viz/test_input.py\
-        \ \\\n  --ignore=test/viz/test_camera.py \\\n  --timeout=60 \\\n  --tb=short \\\n  --junitxml=output/test-results-fast.xml\
+      # Marker-based selection (roadmap Part VIII) — gl/gpu/pygame tests
+      # deselect themselves via markers, so viz paths cannot rot the job.
+      run: "mkdir -p output\npytest test/ -v \\\n  -m \"not slow and not gl and not gpu and not pygame\" \\\n  --timeout=60 \\\n  --tb=short \\\n  --junitxml=output/test-results-fast.xml\
         \ \\\n  --cov=pymurmur \\\n  --cov-report=xml:output/coverage-fast.xml \\\n  --cov-report=term\n"
     - name: Upload test results
       if: always()
@@ -67,11 +68,11 @@ jobs:
       with:
         python-version: '3.12'
     - name: Install deps
-      run: pip install numpy scipy PyYAML pytest
+      run: pip install numpy scipy PyYAML pytest pytest-timeout
     - name: Run import & subsystem tests
-      run: "mkdir -p output\npytest test/test_imports.py test_architecture.py test_docs.py test_golden.py \\\n  test/test_subsystem_a.py\
-        \ test/test_subsystem_b.py \\\n  test/test_subsystem_c.py test/test_subsystem_d.py \\\n  test/test_subsystem_e.py\
-        \ test/test_subsystem_f.py \\\n  -v --timeout=60 --tb=short \\\n  --junitxml=output/test-results-subsystems.xml\n"
+      run: "mkdir -p output\npytest test/l4_crosscutting/guards/test_imports.py test/l4_crosscutting/guards/test_architecture.py test/l4_crosscutting/guards/test_docs.py test/l4_crosscutting/guards/test_golden.py \\\n  test/l1_subsystems/test_subsystem_a.py\
+        \ test/l1_subsystems/test_subsystem_b.py \\\n  test/l1_subsystems/test_subsystem_c.py test/l1_subsystems/test_subsystem_d.py \\\n  test/l1_subsystems/test_subsystem_e.py\
+        \ test/l1_subsystems/test_subsystem_f.py \\\n  -v --timeout=60 --tb=short \\\n  --junitxml=output/test-results-subsystems.xml\n"
     - name: Upload results
       if: always()
       uses: actions/upload-artifact@v4
@@ -89,7 +90,7 @@ jobs:
     - name: Install deps
       run: pip install numpy scipy PyYAML pytest pytest-timeout
     - name: Run E2E & config tests
-      run: "mkdir -p output\npytest test/test_e2e.py test/test_config_resolution.py \\\n  test/test_config_files.py \\\n \
+      run: "mkdir -p output\npytest test/l0_system/test_e2e.py test/l0_system/test_config_resolution.py \\\n  test/l0_system/test_config_files.py \\\n \
         \ -v --timeout=120 --tb=long \\\n  --junitxml=output/test-results-e2e.xml\n"
     - name: Upload results
       if: always()
@@ -113,7 +114,7 @@ jobs:
 
         '
     - name: Run performance tests
-      run: "mkdir -p output\npytest test/test_performance.py test/test_scaling.py \\\n  -v -m slow \\\n  --timeout=600 --tb=long\
+      run: "mkdir -p output\npytest test/l4_crosscutting/perf/test_performance.py test/l4_crosscutting/perf/test_scaling.py test/l4_crosscutting/perf/test_budgets.py \\\n  -v -m slow \\\n  --timeout=600 --tb=long\
         \ \\\n  --durations=20 \\\n  --junitxml=output/test-results-slow.xml\n"
     - name: Upload results
       if: always()
@@ -139,9 +140,10 @@ jobs:
 
         '
     - name: Run GPU tests (software rasterizer)
+      # Marker-based selection — all @gl/@gpu-marked tests
+      # auto-enable with Xvfb + Mesa llvmpipe; no file-path lists to maintain.
       run: "mkdir -p output\nexport DISPLAY=:99\nXvfb :99 -screen 0 1024x768x24 -ac +extension GLX +render &\nsleep 2\npytest\
-        \ test/viz/test_renderer.py test/viz/test_input.py \\\n  test/viz/test_camera.py test/viz/test_shaders.py \\\n  -v\
-        \ --timeout=120 --tb=long \\\n  --junitxml=output/test-results-gpu.xml\n"
+        \ test/ -v -m \"gl or gpu\" \\\n  --timeout=120 --tb=long \\\n  --junitxml=output/test-results-gpu.xml\n"
     - name: Upload results
       if: always()
       uses: actions/upload-artifact@v4

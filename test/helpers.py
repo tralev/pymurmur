@@ -20,7 +20,12 @@ def _call_force(fn, flock, cfg):
     Usage: `_call_force(field_forces, flock, cfg)` instead of
     `field_forces(flock.positions, flock.velocities, flock.accelerations,
     flock.active, flock.get_index(), flock.rng, flock.last_theta, cfg)`
+
+    P6: Exposes `flock.is_predator` via `cfg._is_predator` so force modes
+    that implement species dynamics (vicsek, spatial) can read the column.
     """
+    # P4.3/P6: Wire species column for predator-prey dynamics
+    object.__setattr__(cfg, '_is_predator', flock.is_predator)
     return fn(
         flock.positions, flock.velocities, flock.accelerations,
         flock.active, flock.get_index(), flock.rng, flock.last_theta, cfg,

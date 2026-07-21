@@ -6,8 +6,7 @@ agrees on these data contracts.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 import numpy as np
 
@@ -20,10 +19,11 @@ class ForceFunc(Protocol):
     """A force function receives a flock and a config, mutates
     flock.accelerations in-place. Returns nothing."""
 
-    def __call__(self, flock: "PhysicsFlock", config: "SimConfig") -> None: ...
+    def __call__(self, flock: "PhysicsFlock", config: "SimConfig") -> None: ...  # type: ignore[name-defined]  # noqa: F821  # cross-level protocol refs
 
 
 # ── Spatial index protocol ────────────────────────────────────────
+@runtime_checkable
 class SpatialIndex(Protocol):
     """Protocol for spatial index implementations.
 

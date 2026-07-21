@@ -9,12 +9,27 @@ import pytest
 # Ensure pymurmur is importable from the project root
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# NOTE: the GL-context-cycle `gc.collect()` fixture (needed by tests that
+# construct real moderngl contexts) deliberately does NOT live here.
+# Applying it suite-wide cost 2.5x total runtime (120s -> 300s) for a
+# concern that only affects ~830 of ~2900 tests. It's scoped instead to
+# conftest.py files in test/l2_integration/, test/l3_modules/viz/,
+# test/l3_modules/simulation/, and test/l3_modules/capture/ — the
+# directories that actually construct Renderer3D/Visualizer instances.
+
 
 @pytest.fixture
 def default_config():
-    """SimConfig with default projection mode parameters."""
+    """SimConfig with default projection mode parameters.
+
+    D6: SimConfig.seed defaults to None (fresh entropy per flock), which
+    makes geometry-dependent assertions flaky. The shared fixture pins a
+    seed; tests exercising seed=None semantics build their own SimConfig.
+    """
     from pymurmur.core.config import SimConfig
-    return SimConfig()
+    cfg = SimConfig()
+    cfg.seed = 42
+    return cfg
 
 
 @pytest.fixture
@@ -22,6 +37,7 @@ def spatial_config():
     """SimConfig with spatial mode, N=200."""
     from pymurmur.core.config import SimConfig
     cfg = SimConfig()
+    cfg.seed = 42  # D6: pin — see default_config
     cfg.mode = "spatial"
     cfg.num_boids = 200
     return cfg
@@ -73,10 +89,18 @@ def neighbor_idx():
 
 @pytest.fixture(scope="session")
 def gpu_available():
-    """Check if ModernGL can create a standalone context."""
+    """Check if ModernGL can create a standalone context.
+
+    Releases the probe context immediately — an unreleased context
+    here was found to become moderngl's process-global "default
+    context" for the rest of the session (this fixture is session-scoped
+    and typically the first context created), which then interacted
+    badly with later tests' own context releases.
+    """
     try:
         import moderngl
-        moderngl.create_context(standalone=True, require=330)
+        ctx = moderngl.create_context(standalone=True, require=330)
+        ctx.release()
         return True
     except Exception:
         return False

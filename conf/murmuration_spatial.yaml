@@ -29,13 +29,9 @@ spatial:
   # Additional parameters:
   noise_scale: 0.5             # velocity noise magnitude (> 0 enables jitter)
   acceleration_scale: 0.3      # damping on accumulated forces per frame
-  perception: 100.0            # neighbor query radius
-  separation_distance: 20.0    # distance threshold for separation force
-
-  # Neighbor selection:
-  neighbor_mode: kdtree        # kdtree | spatial_hash | brute
-  # Dual-radius behavior (Starlings, new3_sci.md §5.1):
-  alignment_radius_ratio: 0.75 # alignment uses inner 75% of cohesion radius
+  # Neighbor query radius is flock.visual_range (above); neighbor index
+  # backend is performance.spatial_index (below) — no separate spatial-
+  # section keys for either.
   topological_cap: 7           # max neighbors to consider (cf. Young 2013)
 
   # Toroidal distance (rystrauss, new5_sci.md §1):
@@ -46,10 +42,10 @@ boundary_mode: toroidal         # classic Reynolds wrapping domain
 
 # ── Behavioural Extensions ──────────────────────────────────────────
 extensions:
-  predator: true           # spawn a predator boid (right-click in visual mode)
-  roosting: false
-  wander: false
-  ripple: false
+  predator_enabled: true   # spawn a predator boid (right-click in visual mode)
+  roosting_enabled: false
+  wander_enabled: false
+  ripple_enabled: false
 
 # ── Predator-Specific ───────────────────────────────────────────────
 # rystrauss/boids predator model (new5_sci.md §2, new9_sci.md §11)
@@ -57,7 +53,7 @@ predator:
   escape_factor: 10_000_000     # overwhelming flee force magnitude
   speed_boost: 1.8              # predator max_speed multiplier
   perception_boost: 1.5         # predator perception multiplier
-  acceleration_boost: 1.4       # predator acceleration multiplier
+  accel_boost: 1.4              # predator acceleration multiplier
   threat_radius: 100.0          # detection radius for prey response
 
 # ── Performance Tuning (300K target) ────────────────────────────────

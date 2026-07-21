@@ -26,8 +26,9 @@ from __future__ import annotations
 
 import math
 import os
-import numpy as np
 from typing import Optional
+
+import numpy as np
 
 MAX_OCCLUSION_CANDIDATES = 64
 _MIN_PARALLEL_OBSERVERS = 100  # threshold below which parallel overhead isn't worth it

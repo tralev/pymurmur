@@ -43,13 +43,9 @@ spatial:
   cohesion_weight: 0.75
   noise_scale: 0.5
   acceleration_scale: 0.3
-  perception: 100.0
-  separation_distance: 20.0
-
-  # Neighbor selection — kdtree mandatory at this scale (arch.md §9.3):
-  neighbor_mode: kdtree
-  # Dual-radius behavior (alignment uses inner 75% of cohesion radius):
-  alignment_radius_ratio: 0.75
+  # Neighbor query radius is flock.visual_range (above); neighbor index
+  # backend is performance.spatial_index (below) — no separate spatial-
+  # section keys for either.
   topological_cap: 50      # cap at 50 neighbors (balances locality vs. global alignment)
 
   # Toroidal distance for wrapped neighbor queries:
@@ -60,17 +56,17 @@ boundary_mode: toroidal         # wrap at domain edges — keeps density uniform
 
 # ── SI Refinements ──────────────────────────────────────────────────
 refinements:
-  enabled: false           # disable occlusion-dependent refinements at 300K
+  refinements: false       # disable occlusion-dependent refinements at 300K
   steric: 0.0
   blind_deg: 0.0
   anisotropy: 1.0
 
 # ── Behavioural Extensions ──────────────────────────────────────────
 extensions:
-  predator: false          # single predator has negligible effect at 300K
-  roosting: false
-  wander: false
-  ripple: false
+  predator_enabled: false  # single predator has negligible effect at 300K
+  roosting_enabled: false
+  wander_enabled: false
+  ripple_enabled: false
 
 # ── Performance Tuning (300K target) ────────────────────────────────
 # These MUST be set correctly for real-time performance at 300K.

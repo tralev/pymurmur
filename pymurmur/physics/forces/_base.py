@@ -8,37 +8,36 @@ Primitives use a vectorised gather+reduce path when neighbor_idx is a
 dense 2D int array (production).  For ragged object arrays (test
 fixtures) they fall back to the per-bird loop.
 
-P2.10: ForceTerm dataclass + composeForces reducer — every force
+P2.10/S2.A5: ForceTerm dataclass + composeForces reducer — every force
 contribution is a named, typed, runtime-togglable unit.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, TYPE_CHECKING
+from typing import Any, Callable
 
 import numpy as np
 
-if TYPE_CHECKING:
-    from ...physics.flock import PhysicsFlock
-    from ..extensions._base import StepContext
-    from ...core.config import SimConfig
-
-
-# ── P2.10: ForceTerm composition infrastructure ───────────────────
+# ── P2.10/S2.A5: ForceTerm composition infrastructure ─────────────
 
 @dataclass
 class ForceTerm:
-    """A named, typed, runtime-togglable force contribution (P2.10).
+    """A named, typed, runtime-togglable force contribution (P2.10/S2.A5).
 
     Each term is a pure function (no side effects, no internal state)
-    that receives the flock, step context, and config, and returns an
-    (N, 3) float32 force array.
+    that receives a mode-defined per-frame context object and returns
+    an (N, 3) float32 force array. composeForces() doesn't inspect the
+    context — it's whatever shape the term functions in a given mode's
+    term table expect (e.g. field.py's FieldTermContext), which keeps
+    this infrastructure reusable across modes without hardcoding to any
+    one mode's data (the original P2.10 design hardcoded (flock, ctx,
+    cfg), which no mode ever actually used — see S2.A5's C4 audit).
 
     Usage::
 
         shell = ForceTerm("shell", gain=1.0, fn=shell_term)
         terms = [shell, expand, target]
-        F_total = composeForces(flock, ctx, cfg, terms)
+        F_total = composeForces(ctx, terms, n=N)
     """
 
     name: str
@@ -50,35 +49,35 @@ class ForceTerm:
     gain: float = 1.0
     """Per-term intensity multiplier applied before summation."""
 
-    fn: Callable[..., np.ndarray] | None = None
-    """Force function: (flock, ctx, cfg) → (N, 3) float32 array."""
+    fn: Callable[[Any], np.ndarray] | None = None
+    """Force function: (ctx) → (N, 3) float32 array."""
 
 
 def composeForces(
-    flock: PhysicsFlock,
-    ctx: StepContext,
-    config: SimConfig,
+    ctx: Any,
     terms: list[ForceTerm],
+    n: int,
 ) -> np.ndarray:
-    """Linearly sum enabled force terms (P2.10).
+    """Linearly sum enabled force terms (P2.10/S2.A5).
 
     Iterates over *terms*, multiplies each enabled term's output by
-    its *gain*, and accumulates into a single (N, 3) float32 array.
+    its *gain*, and accumulates into a single (n, 3) float32 array.
 
     Args:
-        flock: PhysicsFlock instance
-        ctx: Per-frame StepContext (frame, dt, rng, center, config)
-        config: SimConfig
+        ctx: per-frame context object, passed through unchanged to each
+             term's fn — composeForces itself is mode-agnostic
         terms: ordered list of ForceTerm descriptors
+        n: bird capacity (output shape (n, 3)) — needed so an empty or
+           fully-disabled terms list still returns a correctly-shaped
+           zero array
 
     Returns:
-        (N_capacity, 3) float32 — total force per bird
+        (n, 3) float32 — total force per bird
     """
-    N = len(flock.positions)
-    total = np.zeros((N, 3), dtype=np.float32)
+    total = np.zeros((n, 3), dtype=np.float32)
     for term in terms:
         if term.enabled and term.fn is not None:
-            total += term.gain * term.fn(flock, ctx, config)
+            total += term.gain * term.fn(ctx)
     return total
 
 
@@ -92,11 +91,18 @@ def separation_force(
     velocities: np.ndarray,
     neighbor_idx: np.ndarray,
     active: np.ndarray,
+    kernel: str = "sum",
 ) -> np.ndarray:
     """Separation: push away from nearby neighbours.
 
-    F_sep[i] = Σ_j −d_ij / |d_ij|²  for j in neighbours(i).
-    Magnitude falls as 1/|d_ij| (d_ij is the raw difference vector, not unit).
+    S1.5: Kernel selector — how neighbour contributions are combined.
+
+    kernel="sum"  → F_sep[i] = Σ_j −d_ij / |d_ij|²  (Reynolds default)
+    kernel="mean" → F_sep[i] = (1/k) Σ_j −d_ij / |d_ij|²  (density-invariant)
+    kernel="unit" → F_sep[i] = Σ_j −û(d_ij)  (unit direction, distance-independent)
+
+    Magnitude falls as 1/|d_ij| for "sum"/"mean" (d_ij is the raw difference vector,
+    not unit).  For "unit", all neighbours push with equal strength.
     Returns (N, 3) float32.
     """
     N = len(positions)
@@ -106,6 +112,39 @@ def separation_force(
     if n_active == 0:
         return force
 
+    if kernel == "unit":
+        # Unit-direction kernel: Σ −û(d_ij) — all neighbours push equally
+        if _is_ragged(neighbor_idx):
+            for i in active_idx:
+                nbrs = neighbor_idx[i]
+                if len(nbrs) == 0:
+                    continue
+                diffs = positions[nbrs] - positions[i]
+                dists = np.linalg.norm(diffs, axis=1)
+                close = dists > 1e-6
+                if not close.any():
+                    continue
+                diffs = diffs[close]
+                dists = dists[close]
+                force[i] = np.sum(-diffs / dists[:, np.newaxis], axis=0)
+            return force
+
+        k = neighbor_idx.shape[1] if neighbor_idx.ndim == 2 else 0
+        if k == 0:
+            return force
+        nbr_idx = neighbor_idx[active_idx]
+        p_i = positions[active_idx]
+        p_j = positions[nbr_idx]
+        diffs = p_j - p_i[:, np.newaxis, :]
+        dists = np.linalg.norm(diffs, axis=2)
+        close = dists > 1e-6
+        dists_safe = np.where(close, dists, 1.0)
+        contrib = -diffs / dists_safe[:, :, np.newaxis]  # unit vectors
+        contrib[~close] = 0.0
+        force[active_idx] = np.sum(contrib, axis=1).astype(np.float32)
+        return force
+
+    # Shared dense path for "sum" and "mean" kernels
     if _is_ragged(neighbor_idx):
         # Ragged object array — per-bird fallback
         for i in active_idx:
@@ -119,7 +158,11 @@ def separation_force(
                 continue
             diffs = diffs[close]
             dists = dists[close]
-            force[i] = np.sum(-diffs / (dists[:, np.newaxis] ** 2), axis=0)
+            # S1.5: Σ r̂/d² = unit-direction / squared-distance
+            contrib = -diffs / (dists[:, np.newaxis] ** 3)
+            force[i] = np.sum(contrib, axis=0)
+            if kernel == "mean" and len(contrib) > 0:
+                force[i] /= len(contrib)
         return force
 
     # Dense 2D int array — vectorised gather+reduce
@@ -136,10 +179,19 @@ def separation_force(
 
     close = dists > 1e-6
     dists_safe = np.where(close, dists, 1.0)
-    contrib = -diffs / (dists_safe[:, :, np.newaxis] ** 2)
+    # S1.5: Σ r̂/d² = Σ (−Δ/|Δ|) / d² = Σ −Δ / |Δ|³
+    # was −Δ/|Δ|² (1/d magnitude); correct is unit-direction / d².
+    contrib = -diffs / (dists_safe[:, :, np.newaxis] ** 3)
     contrib[~close] = 0.0
 
     force[active_idx] = np.sum(contrib, axis=1).astype(np.float32)
+
+    if kernel == "mean":
+        # Divide by neighbour count per bird (density-invariant)
+        n_neighbors = close.sum(axis=1).astype(np.float32)  # (n_active,)
+        n_neighbors[n_neighbors == 0] = 1.0
+        force[active_idx] /= n_neighbors[:, np.newaxis]
+
     return force
 
 
@@ -167,13 +219,12 @@ def alignment_force(
             nbrs = neighbor_idx[i]
             if len(nbrs) == 0:
                 continue
+            # S1.5: Reynolds steering — normalize(v̄ − v_i)
             avg_vel = np.mean(velocities[nbrs], axis=0)
-            avg_norm = np.linalg.norm(avg_vel)
-            if avg_norm > 1e-6:
-                force[i] = avg_vel / avg_norm
-            vi_norm = np.linalg.norm(velocities[i])
-            if vi_norm > 1e-6:
-                force[i] -= velocities[i] / vi_norm
+            steering = avg_vel - velocities[i]
+            s_norm = np.linalg.norm(steering)
+            if s_norm > 1e-6:
+                force[i] = steering / s_norm
         return force
 
     # Dense 2D int array — vectorised gather+reduce
@@ -184,20 +235,16 @@ def alignment_force(
     nbr_idx = neighbor_idx[active_idx]           # (n_active, k)
     v_j = velocities[nbr_idx]                    # (n_active, k, 3)
 
+    # S1.5: Reynolds steering — normalize(v̄ − v_i), not normalize(v̄) − normalize(v_i).
+    # The subtract-then-normalize avoids unequal-speed vector distortion.
     avg_vel = np.mean(v_j, axis=1)               # (n_active, 3)
-    avg_norms = np.linalg.norm(avg_vel, axis=1)
-    valid_avg = avg_norms > 1e-6
-    if valid_avg.any():
-        force[active_idx[valid_avg]] = (
-            avg_vel[valid_avg] / avg_norms[valid_avg, np.newaxis]
-        )
-
-    v_i = velocities[active_idx]
-    vi_norms = np.linalg.norm(v_i, axis=1)
-    valid_self = vi_norms > 1e-6
-    if valid_self.any():
-        force[active_idx[valid_self]] -= (
-            v_i[valid_self] / vi_norms[valid_self, np.newaxis]
+    v_i = velocities[active_idx]                 # (n_active, 3)
+    steering = avg_vel - v_i                      # (n_active, 3)
+    steering_norms = np.linalg.norm(steering, axis=1)
+    valid = steering_norms > 1e-6
+    if valid.any():
+        force[active_idx[valid]] = (
+            steering[valid] / steering_norms[valid, np.newaxis]
         )
 
     return force
@@ -232,7 +279,10 @@ def cohesion_force(
             length = np.linalg.norm(to_center)
             if length < 1e-10:
                 continue
-            force[i] = to_center / length
+            # S1.5: limit3(to_center, 1.0) — cap at unit, sub-unit passes
+            if length > 1.0:
+                to_center = to_center / length
+            force[i] = to_center
         return force
 
     # Dense 2D int array — vectorised gather+reduce
@@ -248,13 +298,54 @@ def cohesion_force(
     to_center = center - p_i                     # (n_active, 3)
     lengths = np.linalg.norm(to_center, axis=1)  # (n_active,)
 
-    nonzero = lengths >= 1e-10
-    if nonzero.any():
-        force[active_idx[nonzero]] = (
-            to_center[nonzero] / lengths[nonzero, np.newaxis]
-        )
+    # S1.5: limit3(to_center, 1.0) — cap at unit length.
+    # Sub-unit vectors pass through unscaled (don't inflate short vectors).
+    force_i = to_center.copy()
+    long = lengths > 1.0
+    if long.any():
+        force_i[long] = to_center[long] / lengths[long, np.newaxis]
+    force[active_idx] = force_i
 
     return force
+
+
+def curl_flow(
+    positions_active: np.ndarray,
+    center: np.ndarray,
+    seeds: np.ndarray,
+    t: float,
+    U: float,
+) -> np.ndarray:
+    """S2.B11: Shared curl-like flow primitive — L0, mode-agnostic.
+
+    Normalized pseudo-curl direction from a deterministic sinusoidal
+    field of the domain-relative position q=(p-center)/U, per-bird
+    phase-shifted by *seeds*. Base magnitude 0.08 — callers apply their
+    own gain(s) on top (FieldMode: flow*flow_pull; SpatialMode: S2.B11
+    flow_weight*0.22).
+
+    Originally field-mode-only (physics/forces/field.py::_compute_curl_flow);
+    factored out here so SpatialMode can share the exact same primitive.
+
+    Returns (n_active, 3) float32.
+    """
+    n = len(seeds)
+    if n == 0:
+        return np.zeros((n, 3), dtype=np.float32)
+
+    q = (positions_active - center) / max(float(U), 1e-6)
+    flow_vec = np.column_stack([
+        np.sin(q[:, 1] * 2.8 + t * 0.24 + seeds)
+        + np.cos(q[:, 2] * 2.1 - t * 0.17),
+        np.sin(q[:, 2] * 2.3 + t * 0.20)
+        - np.cos(q[:, 0] * 1.9 + t * 0.24),
+        np.sin(q[:, 0] * 2.6 - t * 0.16)
+        + np.cos(q[:, 1] * 2.2 + t * 0.24),
+    ]).astype(np.float32)
+
+    norms = np.linalg.norm(flow_vec, axis=1, keepdims=True)
+    norms = np.maximum(norms, 1e-6)
+    return (flow_vec / norms * 0.08).astype(np.float32)
 
 
 def noise_force(
@@ -262,9 +353,10 @@ def noise_force(
     scale: float,
     rng: np.random.Generator | None = None,
 ) -> np.ndarray:
-    """Random perturbation on the unit sphere.
+    """Random perturbation — uniform direction, magnitude = scale (D9).
 
     Returns (N, 3) float32. scale=0 produces all-zero array.
+    scale=1.0 gives unit vectors (backward compatible).
     """
     if scale == 0.0 or n == 0:
         return np.zeros((n, 3), dtype=np.float32)
@@ -273,4 +365,6 @@ def noise_force(
     pts = rng.normal(scale=scale, size=(n, 3)).astype(np.float32)
     norms = np.linalg.norm(pts, axis=1, keepdims=True)
     norms[norms == 0] = 1.0
-    return pts / norms
+    # D9: multiply by scale so noise_scale actually controls magnitude,
+    # not just on/off toggling via the normalisation step.
+    return (pts / norms) * scale

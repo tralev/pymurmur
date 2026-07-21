@@ -9,8 +9,9 @@ for consumption by field mode's drift alignment (P3.6).
 
 from __future__ import annotations
 
-import numpy as np
 from typing import TYPE_CHECKING
+
+import numpy as np
 
 from ._base import Extension
 
@@ -103,9 +104,8 @@ class Wander(Extension):
         self._t += ctx.dt
 
         # ── Wander speed and radius from config ──
-        # TODO P3.10: read from WanderConfig dataclass when formalized
-        speed = getattr(cfg, 'wander_speed', 1.0)
-        radius = getattr(cfg, 'attractor_radius', 300.0)
+        speed = cfg.wander.wander_attractor_speed
+        radius = cfg.wander.wander_attractor_radius
 
         # ── Compute wander centre ──
         # Use flock's smoothed centre C as the anchor point.

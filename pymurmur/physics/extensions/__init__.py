@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ._base import Extension, StepContext
-from .predator import Predator
+from ._base import StepContext  # noqa: F401  # used in type hints with annotations future
 from .ecology import Ecology
-from .wander import Wander
+from .predator import Predator
 from .ripple import Ripple
+from .wander import Wander
 
 if TYPE_CHECKING:
-    from ..flock import PhysicsFlock
     from ...core.config import SimConfig
+    from ..flock import PhysicsFlock
 
 
 class ExtensionManager:
@@ -86,6 +86,12 @@ class ExtensionManager:
         # Run ecology first (advances day, sets predator_active flag)
         if eco is not None:
             eco.apply(flock, ctx)
+            # P4.8: Expose coherence factor on flock (single source of truth).
+            # Engine bridges flock.coherence_factor → config._coherence_factor
+            # before force computation so spatial mode can read it.
+            flock.coherence_factor = eco.coherence_factor
+        else:
+            flock.coherence_factor = 1.0
 
         # Run predator only if present (or ecology not enabled → always present)
         if pred is not None:

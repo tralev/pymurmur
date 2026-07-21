@@ -66,31 +66,29 @@ boundary_avoidance_factor: 0.05
 
 # ── SI Refinements (Pearce SI-Appendix, U-key toggle) ───────────────
 refinements:
-  enabled: true
+  refinements: true
   steric: 0.6              # φ_s: 1/d² repulsion strength (0 = off)
   blind_deg: 60.0          # rear blind cone full angle in degrees
   anisotropy: 2.0          # body axis ratio a/b (1.0 = isotropic)
 
 # ── Behavioural Extensions ──────────────────────────────────────────
 extensions:
-  predator: false          # autonomous predator agent
-  roosting: false          # day/night roost cycle (Goodenough)
-  wander: false            # bounded flock center wander
-  ripple: false            # density pulse envelopes
+  predator_enabled: false  # autonomous predator agent
+  roosting_enabled: false  # day/night roost cycle (Goodenough)
+  wander_enabled: false    # bounded flock center wander
+  ripple_enabled: false    # density pulse envelopes
 
-# ── Predator-Specific (used when extensions.predator = true) ─────────
+# ── Predator-Specific (used when extensions.predator_enabled = true) ─
 predator:
   threat_radius: 12.0      # detection/flee radius
   strength: 1.0            # threat force multiplier
   momentum: 0.5            # pass-through momentum
   split_gain: 0.8          # tangent split force intensity
 
-# ── Ecology-Specific (used when extensions.roosting = true) ──────────
+# ── Ecology-Specific (used when extensions.roosting_enabled = true) ──
 ecology:
-  roost_x: 500.0           # roost site X (default: domain center)
-  roost_y: 350.0           # roost site Y
-  roost_z: 40.0            # roost site Z (near bottom)
-  critical_mass: 500       # smoothstep onset for flock coherence
+  ecology_roost: [500.0, 350.0, 40.0]  # roost site (default: domain center, near bottom)
+  ecology_critical_mass: 500           # smoothstep onset for flock coherence
 
 # ── Performance Tuning (300K target) ────────────────────────────────
 # For N >= 50000 these settings are critical; at low N they have no effect.

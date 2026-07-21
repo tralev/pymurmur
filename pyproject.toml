@@ -68,11 +68,24 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"test/**" = ["B011"]  # allow assert False style in tests
+"test/**" = ["B011", "NPY002"]  # allow assert False style + legacy np.random in tests
+"test/l2_integration/test_engine_pipeline.py" = ["B023"]  # spy functions in loop called within same iteration
+
+# ── Coverage ──────────────────────────────────────────────────────
+[tool.coverage.run]
+branch = true
+source = ["pymurmur"]
+omit = [
+    "test/*",
+]
+
+[tool.coverage.report]
+skip_empty = true
+show_missing = true
 
 # ── Mypy ──────────────────────────────────────────────────────────
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.12"
 ignore_missing_imports = true
 warn_unused_ignores = true
 no_implicit_optional = true

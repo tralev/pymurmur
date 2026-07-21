@@ -53,10 +53,10 @@ boundary_mode: open              # no wrapping — let flock follow the target f
 
 # ── Behavioural Extensions ──────────────────────────────────────────
 extensions:
-  predator: false
-  roosting: false
-  wander: false             # wander is redundant with the Lissajous target
-  ripple: false
+  predator_enabled: false
+  roosting_enabled: false
+  wander_enabled: false     # wander is redundant with the Lissajous target
+  ripple_enabled: false
 
 # ── Performance Tuning (300K target) ────────────────────────────────
 # Influencer mode is O(1) per bird — no neighbor queries at all. Fastest mode.

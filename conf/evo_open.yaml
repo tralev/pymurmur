@@ -1,0 +1,39 @@
+# evo_open.yaml — EvoFlock open-boundary evaluation config (P11.6)
+# Same evaluation protocol as murmuration_evo.yaml but with an open
+# boundary and no obstacle scene: the flock is free to disperse, so
+# cohesion must be discovered by the GA rather than enforced by walls.
+#
+# Usage: pair with EvoFlock(SimConfig.from_yaml("conf/evo_open.yaml"))
+
+# ── Simulation Domain ───────────────────────────────────────────────
+domain:
+  width: 200.0
+  height: 200.0
+  depth: 200.0
+
+# ── Inner Flock Config (will be optimized) ──────────────────────────
+flock:
+  num_boids: 200           # EvoFlock default: 200 boids per evaluation
+  boid_size: 1.0            # body diameter = 1 meter (EvoFlock unit)
+  v0: 20.0                  # target speed centre (band is [19, 21] m/s)
+  max_force: 50.0
+  visual_range: 50.0
+
+# ── Base Mode for Inner Simulations ─────────────────────────────────
+mode: spatial
+
+# ── Boundary Mode (P11.6: open evaluation — no enclosure) ───────────
+boundary_mode: open
+
+# ── Performance ─────────────────────────────────────────────────────
+performance:
+  spatial_index: kdtree
+  cruise_speed_ms: 20.0     # P11.3: 1 sim unit/frame ≈ 1 m/s at v0=20
+
+# ── Metrics Detail ──────────────────────────────────────────────────
+metrics:
+  detail_level: 0           # objectives are sampled directly, not via metrics
+  interval: 60
+
+# ── Seed ────────────────────────────────────────────────────────────
+seed: null
