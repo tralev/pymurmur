@@ -252,8 +252,14 @@ constants — and `viz: {dual_view: true}`). *tests:* two-step hand trace
 shows positions at step k depend on rules from k−1 only; 0.01 scaling;
 clip bounds; no band clamp applied (a bird at 0.05·v0 keeps its speed);
 preset loads with the documented values.
-**Status: MISSING** (no MarlMode, no MarlConfig, no preset; blocked on
-the D8 control hook, [roadmap1.md](roadmap1.md)).
+**Status: ✅ DONE (verified Phase 7 — roadmap status was stale).**
+`MarlMode` already implements control-first (`v += a_ext*action_scale*v_cap`,
+component-clipped) → move → deferred-rules-prep-next-step exactly per
+spec, with `speed_mode="none"`; `MarlConfig` already exists (Phase 2,
+D1). Shipped the missing `conf/murmuration_marl.yaml` with the
+source-verified constants (raw dataclass defaults diverge on 3 of 5
+fields, but the preset carries the correct values — same pattern as
+S2.D4's vicsek preset).
 
 **S7.2 Gymnasium wrapper** — lazy import; `MurmurationEnv(config)`:
 `observation_space = Box(−1, 1, (6N,))` — `concat((p−C)/3U, v/v_cap)`;
@@ -264,7 +270,11 @@ the D8 control hook, [roadmap1.md](roadmap1.md)).
 `gymnasium.utils.env_checker.check_env` passes; obs ∈ [−1,1] over 500
 random steps; same seed + same actions → identical obs; truncation at
 500.
-**Status: MISSING.**
+**Status: ✅ DONE (verified Phase 7 — roadmap status was stale).**
+`analysis/gym_env.py::MurmurationEnv` already implements the exact
+Box observation/action spaces, seeded reset, S3.9 reward, and 500-step
+truncation, with existing gym-checker test coverage (80 tests in
+`test/l0_modules/analysis/test_marl.py` all green).
 
 **S7.3 Scripts (dependency-gated)** — `train_marl.py`:
 PPO("MlpPolicy"), 5 000 timesteps, save `output/marl_ppo`;
@@ -273,7 +283,10 @@ docstring notes the centralized-MLP quadratic scaling and points to
 IPPO for large N. *tests:* `@slow`, skip without stable-baselines3 —
 200-timestep learn() smoke; rollout GIF ≥ 1 frame; **experiment:**
 trained policy's mean dispersion < random policy's by ≥ 20 %.
-**Status: MISSING.**
+**Status: ✅ DONE (verified Phase 7 — roadmap status was stale).**
+`scripts/train_marl.py` (PPO "MlpPolicy", 5000 timesteps default,
+`output/marl_ppo`) and `scripts/rollout_marl.py` (500-step dual-view
+GIF rollout) already exist, tagged P12.3, matching spec.
 
 ---
 
