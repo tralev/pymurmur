@@ -33,6 +33,7 @@ def integrate(
     move: bool = True,
     speed_min_factor: float = 0.3,
     center: np.ndarray | None = None,
+    velocity_noise: np.ndarray | None = None,
 ) -> None:
     """Vectorised Euler integration over the entire flock.
 
@@ -46,6 +47,11 @@ def integrate(
                 silently disable speed enforcement).
     inertia: 0.0–1.0 lerp between raw and clamped velocity.
     move: if False, skip position update (caller owns positions).
+    velocity_noise: S2.B2 — (N, 3) additive velocity-domain noise applied
+                    right after v+=a and before the speed clamp (matches
+                    the spec pipeline order: accumulate -> accel_scale ->
+                    clamp(force) -> v+=a -> velocity noise -> ceiling
+                    limit -> move). None = no-op (default, back-compat).
     """
     # 0. Safety rails: dt clamp (P0.10)
     dt = float(np.clip(dt, 0.0, 0.05))
@@ -58,6 +64,11 @@ def integrate(
 
     # 1. Apply accumulated forces (only active birds)
     velocities[active] += accelerations[active]
+
+    # 1a. S2.B2: velocity-domain noise, applied after v+=a and before
+    # the speed clamp (so it is not itself clamped by max_force).
+    if velocity_noise is not None:
+        velocities[active] += velocity_noise[active]
 
     # 2. Build per-bird caps
     N = len(velocities)

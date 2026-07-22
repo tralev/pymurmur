@@ -74,7 +74,7 @@ class SpatialConfig:
     alignment_weight: float = 0.65
     cohesion_weight: float = 0.75
     noise_scale: float = 0.0
-    noise_mode: str = "additive"       # additive | maxwellian | none | seed_sinusoidal
+    noise_mode: str = "additive"       # additive | maxwellian | none | seed_sinusoidal | velocity
     acceleration_scale: float = 0.3
     influence_count: int = 7           # P4.1: max topological neighbours (hybrid filter)
     speed_mode: str = "clamp"          # clamp | band | none — how speed is enforced
@@ -381,6 +381,8 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "flow_weight": ("_spatial", "flow_weight"),
     "neighbor_filter": ("_spatial", "neighbor_filter"),
     "separation_kernel": ("_spatial", "separation_kernel"),
+    "alignment_radius_ratio": ("_spatial", "alignment_radius_ratio"),
+    "separation_distance": ("_spatial", "separation_distance"),
     "max_dist_sep": ("_spatial", "max_dist_sep"),
     "max_dist_align": ("_spatial", "max_dist_align"),
     "max_dist_coh": ("_spatial", "max_dist_coh"),
@@ -867,6 +869,8 @@ class SimConfig:
                         "flow_weight": self.flow_weight,
                         "neighbor_filter": self.neighbor_filter,
                         "separation_kernel": self.separation_kernel,
+                        "alignment_radius_ratio": self.alignment_radius_ratio,
+                        "separation_distance": self.separation_distance,
                         "max_dist_sep": self.max_dist_sep,
                         "max_dist_align": self.max_dist_align,
                         "max_dist_coh": self.max_dist_coh,

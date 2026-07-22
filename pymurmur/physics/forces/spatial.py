@@ -266,7 +266,18 @@ class SpatialMode(ForceMode):
                 positions, velocities, align_idx, active)
             coh = cohesion_force(
                 positions, velocities, coh_idx, active)
-        if noise_mode == "none":
+        # S2.B2: velocity-domain noise — (U³−0.5)·noise_scale added
+        # directly to velocity, after v+=a and before the final speed
+        # clamp (spec pipeline order), not to accelerations. Stashed on
+        # config for flock.integrate() to consume and clear (one-shot).
+        config._spatial_velocity_noise = None
+        if noise_mode == "velocity":
+            vel_noise = np.zeros((len(positions), 3), dtype=np.float32)
+            u = rng.uniform(0.0, 1.0, (n_active, 3)).astype(np.float32)
+            vel_noise[active] = (u ** 3 - 0.5) * config.noise_scale
+            config._spatial_velocity_noise = vel_noise
+
+        if noise_mode == "none" or noise_mode == "velocity":
             noise_full = np.zeros((len(positions), 3), dtype=np.float32)
         elif noise_mode == "maxwellian":
             # Maxwellian: velocity perturbation scaled by noise_scale

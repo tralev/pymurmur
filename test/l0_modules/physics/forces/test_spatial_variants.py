@@ -351,3 +351,68 @@ class TestPredatorEscape:
             positions, neighbor_idx, is_predator, threatened, active, cfg,
         )
         assert np.all(result[2] == 0.0), "non-threatened bird 2 must have zero escape"
+
+
+# ── S2.B2: velocity-domain noise mode ───────────────────────────
+
+class TestVelocityNoiseMode:
+    """S2.B2: noise_mode="velocity" adds (U^3-0.5)*noise_scale directly
+    to velocity, after v+=a and before the final speed clamp — not to
+    accelerations like the default "additive"/"maxwellian" modes."""
+
+    def _make_engine(self, noise_scale=0.3, noise_mode="velocity", seed=1):
+        from pymurmur.core.config import SimConfig
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = SimConfig()
+        cfg.mode = "spatial"
+        cfg.num_boids = 40
+        cfg.seed = seed
+        cfg.spatial.noise_mode = noise_mode
+        cfg.spatial.noise_scale = noise_scale
+        return SimulationEngine(cfg)
+
+    def test_velocity_mode_changes_trajectory_vs_none(self):
+        """noise_scale > 0 with noise_mode="velocity" must perturb the
+        trajectory relative to noise_mode="none" (same seed)."""
+        eng_noise = self._make_engine(noise_mode="velocity")
+        eng_none = self._make_engine(noise_mode="none")
+        eng_noise.run_headless(steps=5)
+        eng_none.run_headless(steps=5)
+        assert not np.allclose(
+            eng_noise.flock.positions, eng_none.flock.positions
+        ), "velocity noise mode must perturb the trajectory"
+
+    def test_velocity_noise_zero_scale_is_noop(self):
+        """noise_scale=0 with noise_mode="velocity" must match noise_mode="none"
+        exactly (same seed) — the U^3-0.5 term scales to exactly zero."""
+        eng_a = self._make_engine(noise_mode="velocity", noise_scale=0.0)
+        eng_b = self._make_engine(noise_mode="none", noise_scale=0.0)
+        eng_a.run_headless(steps=5)
+        eng_b.run_headless(steps=5)
+        assert np.allclose(eng_a.flock.positions, eng_b.flock.positions)
+
+    def test_velocity_noise_stash_is_one_shot(self):
+        """config._spatial_velocity_noise must be cleared after each
+        integrate() call, so a stale array can't leak into a later
+        mode switch or a frame where forces aren't recomputed."""
+        eng = self._make_engine(noise_mode="velocity")
+        eng.step(1.0 / 60.0)
+        assert getattr(eng.config, "_spatial_velocity_noise", None) is None
+
+    def test_velocity_noise_not_double_clamped_by_max_force(self):
+        """Velocity noise is applied after the force-domain max_force
+        clamp (it perturbs velocity directly, not acceleration), so a
+        large noise_scale is not silently capped by max_force."""
+        eng = self._make_engine(noise_mode="velocity", noise_scale=5.0)
+        eng.config.max_force = 0.01  # tiny force cap
+        v_before = eng.flock.velocities.copy()
+        eng.step(1.0 / 60.0)
+        # If noise were force-clamped, the velocity delta would be tiny
+        # (<= max_force). It shouldn't be, since velocity noise bypasses
+        # the force-domain clamp entirely.
+        delta = np.linalg.norm(eng.flock.velocities - v_before, axis=1)
+        assert delta.max() > eng.config.max_force, (
+            "velocity-domain noise must not be bounded by the force-domain "
+            "max_force clamp"
+        )
