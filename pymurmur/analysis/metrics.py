@@ -557,6 +557,13 @@ def compute_h2(positions: np.ndarray, m: int, tree=None) -> tuple[float, float]:
     Builds k-NN graph (k=m+1), symmetrizes adjacency, computes
     graph Laplacian eigenvalues, and returns H₂².
 
+    A8 (Young et al. 2013): edges are weighted aᵢⱼ = 1/m, matching the
+    paper's linear-consensus model dxᵢ/dt = Σ_{j∈Nᵢ} aᵢⱼ(xⱼ−xᵢ) + ξᵢ,
+    where each bird averages over its m neighbours rather than summing
+    them unweighted. The paper shows uniform 1/m weighting gives the
+    best robustness — distance-proportional and order-based weights
+    are strictly worse (Fig. S1).
+
     Args:
         positions: (N, 3) float32 array.
         m: number of neighbours per node.
@@ -581,13 +588,15 @@ def compute_h2(positions: np.ndarray, m: int, tree=None) -> tuple[float, float]:
     cols: list[int] = []
     data: list[float] = []
 
+    # A8: uniform aᵢⱼ = 1/m weighting (Young et al. 2013) — not 1.0.
+    edge_weight = 1.0 / m
     for i in range(N):
         _, idx = tree.query(positions[i], k=k)
         for j in idx:
             if j != i:
                 rows.append(i)
                 cols.append(j)
-                data.append(1.0)
+                data.append(edge_weight)
 
     if not rows:
         return float('inf'), float('inf')

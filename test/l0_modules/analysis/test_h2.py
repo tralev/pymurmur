@@ -128,6 +128,33 @@ class TestH2Robustness:
         assert h2_sq == pytest.approx(2.0 / 9.0, abs=1e-6)
         assert h2 == pytest.approx(np.sqrt(2.0 / 9.0), abs=1e-6)
 
+    def test_uniform_1m_weighting_scales_h2(self):
+        """A8: edges are weighted aᵢⱼ = 1/m (Young et al. 2013), not 1.0.
+
+        3 collinear birds at m=2 (k=3): every bird's 2 nearest others
+        are the other two birds, so the k-NN graph is the complete
+        graph K3 — already symmetric, isolating the weighting question
+        from the symmetrization question (covered separately by
+        test_hand_3node_max_form_symmetrization above).
+
+        Weighted (aᵢⱼ = 1/m = 0.5): the K3 Laplacian is exactly 0.5×
+        the unweighted K3 Laplacian, so its eigenvalues are exactly
+        0.5× the standard K3 result {0, 3, 3} → {0, 1.5, 1.5}.
+        h2_sq = (1/2N) Σ 1/λ_i = (1/6)(1/1.5 + 1/1.5) = 2/9 → h2 ≈ 0.4714.
+
+        Under the old unweighted form (aᵢⱼ = 1.0) this same graph gives
+        eigenvalues {0, 3, 3} → h2_sq = (1/6)(1/3 + 1/3) = 1/9 → h2 ≈
+        0.3333 — a different, smaller value. This test would fail under
+        the old unweighted adjacency.
+        """
+        positions = np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0]], dtype=np.float32)
+        h2_sq, h2 = compute_h2(positions, m=2)
+        assert h2_sq == pytest.approx(2.0 / 9.0, abs=1e-6)
+        assert h2 == pytest.approx(np.sqrt(2.0 / 9.0), abs=1e-6)
+        # Explicitly rule out the old unweighted value, so a regression
+        # back to aᵢⱼ = 1.0 fails loudly rather than silently.
+        assert h2 != pytest.approx(1.0 / 3.0, abs=1e-6)
+
     def test_metrics_collector_computes_h2(self):
         """MetricsCollector computes h2 at gated intervals."""
 
