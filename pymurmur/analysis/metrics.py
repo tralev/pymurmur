@@ -344,11 +344,12 @@ class MetricsCollector:
                 if len(self._hull_density_ring) > self._hull_density_maxlen:
                     self._hull_density_ring.pop(0)
 
-        # P9.3: Hull autocorrelation time from ring buffer
+        # S3.5: Hull autocorrelation time from ring buffer
         if self._detail_level >= 2 and len(self._hull_density_ring) >= 4:
             m.tau_rho = compute_tau_rho_hull(
                 self._hull_density_ring,
                 interval=self._hull_density_interval,
+                buffer_size=self._hull_density_maxlen,
             )
             # Also set hull-derived fields from latest sample
             if self._hull_density_ring:
@@ -1038,11 +1039,14 @@ def compute_convex_hull_density(positions: np.ndarray) -> float:
 def compute_tau_rho_hull(
     density_ring: list[float],
     interval: int = 10,
+    buffer_size: int = 500,
 ) -> float:
-    """P9.3: Density autocorrelation time from hull-density ring buffer.
+    """S3.5: Density autocorrelation time from hull-density ring buffer.
 
     τ = interval · (0.5 + Σ_{lag≥1} r(lag))
-    Stops summation at the first lag where r(lag) ≤ 0.
+    Stops summation at the first lag where r(lag) ≤ 0, **or** at
+    lag = 0.25·buffer_size, whichever comes first — the cap keeps τ
+    finite on slowly-varying series that never cross zero (S3.5).
 
     Uses the ring buffer convention where index 0 is the oldest sample
     and index -1 is the newest (reverse of the original spec, but both
@@ -1051,6 +1055,10 @@ def compute_tau_rho_hull(
     Args:
         density_ring: list of hull-density samples ρ(t).
         interval: frames between consecutive samples (default 10).
+        buffer_size: capacity of the ring buffer the samples were drawn
+            from (default 500, matching MetricsCollector's
+            `_hull_density_maxlen`) — the 0.25·buffer_size stop cap is
+            relative to this capacity, not the current sample count.
 
     Returns:
         τ_ρ in frame units. Returns 0 if insufficient data or
@@ -1067,7 +1075,7 @@ def compute_tau_rho_hull(
         return 0.0  # constant series → τ = 0
 
     # Compute autocorrelation r(lag) for lags 1..max_lag
-    max_lag = min(n - 1, 20)
+    max_lag = min(n - 1, max(1, int(0.25 * buffer_size)))
     tau_sum = 0.5  # from the formula: 0.5 + Σ r(lag)
 
     for lag in range(1, max_lag + 1):
