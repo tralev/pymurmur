@@ -840,6 +840,26 @@ class TestCursorRaySpawning:
         assert len(pos) == 3
         assert all(np.isfinite(pos))
 
+    def test_right_click_spawn_uses_median_flock_depth_when_given(self, ctrl):
+        """S5.4: handle_events(positions=...) threads flock positions
+        through to screen_to_world, changing the spawn depth."""
+        import pygame
+
+        pygame.event.post(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=3, pos=(400, 300),
+        ))
+        ctrl.handle_events()
+        default_spawn = ctrl.pending_spawn_predator.pop()
+
+        far_positions = np.full((5, 3), [500.0, 500.0, 900.0], dtype=np.float32)
+        pygame.event.post(pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN, button=3, pos=(400, 300),
+        ))
+        ctrl.handle_events(positions=far_positions)
+        flock_spawn = ctrl.pending_spawn_predator.pop()
+
+        assert default_spawn != flock_spawn
+
     def test_left_drag_no_spawn(self, ctrl):
         """Left-click with drag (> 5px movement) does NOT spawn a bird."""
         import pygame
@@ -985,6 +1005,57 @@ class TestCameraUnprojection:
         # May or may not return None depending on exact geometry; at least no crash
         if result is not None:
             assert all(np.isfinite(result))
+
+    def test_positions_use_median_flock_depth_not_target_plane(self):
+        """S5.4: when positions is given, intersection is at the flock's
+        median depth along the view axis, not the Z=target.z plane —
+        the two must differ when the flock sits far from target.z."""
+        from pymurmur.viz.camera import OrbitCamera
+        camera = OrbitCamera(target=(500.0, 500.0, 400.0))
+
+        fallback = camera.screen_to_world(400.0, 300.0, 800, 600)
+        positions = np.full((5, 3), [500.0, 500.0, 1000.0], dtype=np.float32)
+        via_flock = camera.screen_to_world(
+            400.0, 300.0, 800, 600, positions=positions,
+        )
+        assert fallback is not None and via_flock is not None
+        assert fallback != via_flock
+        assert all(np.isfinite(via_flock))
+
+    def test_positions_empty_array_falls_back_to_target_plane(self):
+        """S5.4: an empty positions array must not crash — falls back
+        to the Z=target.z plane exactly like positions=None."""
+        from pymurmur.viz.camera import OrbitCamera
+        camera = OrbitCamera(target=(500.0, 500.0, 400.0))
+        fallback = camera.screen_to_world(400.0, 300.0, 800, 600)
+        empty = camera.screen_to_world(
+            400.0, 300.0, 800, 600, positions=np.zeros((0, 3), dtype=np.float32),
+        )
+        assert empty == fallback
+
+    def test_positions_single_bird_matches_its_own_depth(self):
+        """S5.4: median of a single bird is that bird's own depth along
+        the camera's forward (view) axis — not raw world Z, since the
+        two only coincide for a purely top-down view."""
+        from pymurmur.viz.camera import OrbitCamera
+        camera = OrbitCamera(target=(500.0, 500.0, 400.0))
+        bird = np.array([500.0, 500.0, 700.0], dtype=np.float32)
+        result = camera.screen_to_world(
+            400.0, 300.0, 800, 600, positions=bird[np.newaxis, :],
+        )
+        assert result is not None
+
+        eye = np.array(camera.eye_position(), dtype=np.float32)
+        target = np.array([camera.target.x, camera.target.y, camera.target.z],
+                           dtype=np.float32)
+        f_hat = (target - eye) / np.linalg.norm(target - eye)
+
+        bird_depth = float(np.dot(bird - eye, f_hat))
+        hit_depth = float(np.dot(np.asarray(result) - eye, f_hat))
+        target_depth = float(np.dot(target - eye, f_hat))
+
+        assert abs(hit_depth - bird_depth) < 1e-3
+        assert abs(hit_depth - target_depth) > 1.0
 
 
 # ── P10.3: SliderHUD integration — TAB toggle + mouse drag lock ─
