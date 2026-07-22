@@ -123,3 +123,30 @@ class TestConfigFileValidation:
         assert v["predator_noise_ratio"] == 0.2
         assert v["detect_ratio"] == 1.5
         assert v["weight_afraid"] == 3.0
+
+    def test_marl_config_sentinel_values(self):
+        """S7.1: murmuration_marl.yaml carries the source-parity vector.
+
+        action_scale=0.1, velocity_cap=0.1, rule_weight=0.01,
+        separation_radius=0.2, episode_steps=500, num_boids=200,
+        seed=42, boundary=open, dual_view=true.
+        """
+        path = CONF_DIR / "murmuration_marl.yaml"
+        assert path.exists(), "murmuration_marl.yaml must exist"
+        data = _load_config(path)
+
+        assert data["mode"] == "marl"
+        assert data["boundary_mode"] == "open"
+        assert data["seed"] == 42
+
+        flock = data["flock"]
+        assert flock["num_boids"] == 200
+
+        m = data["marl"]
+        assert m["action_scale"] == 0.1
+        assert m["velocity_cap"] == 0.1
+        assert m["rule_weight"] == 0.01
+        assert m["separation_radius"] == 0.2
+        assert m["episode_steps"] == 500
+
+        assert data["visual"]["dual_view"] is True

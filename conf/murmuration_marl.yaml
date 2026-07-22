@@ -1,0 +1,73 @@
+# murmuration_marl.yaml — S7.1 source-parity preset for the MARL bridge.
+# Deferred-global-rules mode: external control applies first (clipped),
+# then the flock moves, then simple global flocking rules prep the
+# *next* step. Pair with analysis/gym_env.py::MurmurationEnv or
+# scripts/{train,rollout}_marl.py.
+
+# ── Simulation Domain ───────────────────────────────────────────────
+domain:
+  width: 1000.0
+  height: 700.0
+  depth: 400.0
+
+# ── Flock Parameters ────────────────────────────────────────────────
+flock:
+  num_boids: 200
+  boid_size: 9.0
+  v0: 4.0
+
+# ── Flocking Mode ───────────────────────────────────────────────────
+mode: marl
+
+# ── MARL Mode ────────────────────────────────────────────────────────
+marl:
+  action_scale: 0.1        # external control scaling: v += a_ext*action_scale*v_cap
+  velocity_cap: 0.1         # v_cap multiplier for unit scale U = min(W,H,D)/6
+  rule_weight: 0.01         # deferred-rule weight (global neighbourhood, no radius on align/cohere)
+  separation_radius: 0.2    # separation rule radius, in units of U
+  episode_steps: 500        # truncation horizon
+
+# ── Boundary Mode ───────────────────────────────────────────────────
+boundary_mode: open
+
+# ── Behavioural Extensions ──────────────────────────────────────────
+extensions:
+  predator_enabled: false
+  roosting_enabled: false
+  wander_enabled: false
+  ripple_enabled: false
+
+# ── Performance Tuning ───────────────────────────────────────────────
+performance:
+  spatial_index: auto
+  instance_buffer_chunk: 50000
+
+# ── Metrics Detail ──────────────────────────────────────────────────
+metrics:
+  detail_level: 1
+  interval: 60
+
+# ── Seed ────────────────────────────────────────────────────────────
+seed: 42
+
+# ── Visualization ─────────────────────────────────────────────────────
+visual:
+  fps: 60
+  window_width: 1200
+  window_height: 800
+  show_grid: false
+  auto_rotate: false
+  theme: ink
+  dual_view: true
+
+# ── Capture Settings ─────────────────────────────────────────────────
+capture:
+  width: 800
+  height: 600
+  frames: 500
+  every: 3
+  fps: 20
+  output: output/murmuration_marl.gif
+  metrics_csv: output/metrics_marl.csv
+  metrics_json: output/metrics_marl.json
+  with_viz: true
