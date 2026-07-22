@@ -29,6 +29,55 @@ if TYPE_CHECKING:
     from ...core.config import SimConfig
     from ...core.types import SpatialIndex
 
+# P8: species-collision kernels — numba when available, numpy fallback.
+try:
+    from ._kernels import _HAS_NUMBA as _KERNELS_HAS_NUMBA  # noqa: F401
+    from ._kernels import _numpy_species_collisions
+    if _KERNELS_HAS_NUMBA:
+        from ._kernels import _numba_species_collisions
+    else:
+        _numba_species_collisions = _numpy_species_collisions
+except ImportError:
+    _KERNELS_HAS_NUMBA = False
+
+    def _numpy_species_collisions(
+        positions: np.ndarray, is_predator: np.ndarray, active_idx: np.ndarray,
+        r_avoid: float, r_pred: float,
+        domain_w: float, domain_h: float, domain_d: float,
+    ) -> int:
+        """Inline numpy fallback — species collisions (identical logic)."""
+        domains = np.array([domain_w, domain_h, domain_d], dtype=np.float32)
+        corrections = 0
+        for i_idx, i in enumerate(active_idx):
+            for j in active_idx[i_idx + 1:]:
+                delta = positions[j] - positions[i]
+                for dim in range(3):
+                    half = domains[dim] / 2.0
+                    if delta[dim] > half:
+                        delta[dim] -= domains[dim]
+                    elif delta[dim] < -half:
+                        delta[dim] += domains[dim]
+                dist = np.linalg.norm(delta)
+                if dist < 1e-10:
+                    continue
+                n_hat = delta / dist
+                same_type = is_predator[i] == is_predator[j]
+                if same_type and dist < r_avoid:
+                    push = (r_avoid - dist) * 0.5
+                    positions[i] -= push * n_hat
+                    positions[j] += push * n_hat
+                    corrections += 1
+                elif not same_type and dist < r_pred:
+                    push = r_pred - dist
+                    if is_predator[i] and not is_predator[j]:
+                        positions[j] += push * n_hat
+                    elif is_predator[j] and not is_predator[i]:
+                        positions[i] -= push * n_hat
+                    corrections += 1
+        return corrections
+
+    _numba_species_collisions = _numpy_species_collisions
+
 
 @register("vicsek")
 class VicsekMode(ForceMode):
@@ -446,7 +495,6 @@ def resolve_species_collisions(
     width = config.width
     height = config.height
     depth = config.depth
-    domains = np.array([width, height, depth], dtype=np.float32)
 
     if active is None:
         active_idx = np.arange(len(positions))
@@ -456,48 +504,26 @@ def resolve_species_collisions(
     if len(active_idx) < 2:
         return 0
 
-    corrections = 0
-
-    # Brute-force O(N²) — used for small N in tests; acceptable since
-    # Vicsek mode typically runs small flocks.  Can be upgraded to
-    # spatial-hash or KDTree for larger N later.
-    for i_idx, i in enumerate(active_idx):
-        for j in active_idx[i_idx + 1:]:
-            # Min-image vector from i to j
-            delta = positions[j] - positions[i]
-            for dim in range(3):
-                half = domains[dim] / 2.0
-                if delta[dim] > half:
-                    delta[dim] -= domains[dim]
-                elif delta[dim] < -half:
-                    delta[dim] += domains[dim]
-
-            dist = np.linalg.norm(delta)
-            if dist < 1e-10:
-                continue
-
-            n_hat = delta / dist  # unit vector from i to j
-
-            same_type = is_predator[i] == is_predator[j]
-
-            if same_type and dist < R_avoid:
-                # Symmetric: each moves (R_avoid-d)/2 away from each other
-                push = (R_avoid - dist) * 0.5
-                positions[i] -= push * n_hat
-                positions[j] += push * n_hat
-                corrections += 1
-            elif not same_type and dist < R_pred:
-                # Asymmetric: prey moves full (R_pred-d), predator unmoved
-                push = R_pred - dist
-                if is_predator[i] and not is_predator[j]:
-                    # i is predator, j is prey → push prey (j) away
-                    positions[j] += push * n_hat
-                elif is_predator[j] and not is_predator[i]:
-                    # j is predator, i is prey → push prey (i) away
-                    positions[i] -= push * n_hat
-                corrections += 1
-
-    return corrections
+    # P8: this is an O(N^2) sequential (Gauss-Seidel-style) pairwise
+    # correction — each pair's push mutates `positions` immediately, so
+    # later pairs see already-corrected positions. That order-dependence
+    # means it can't be batched into one vectorised numpy pass without
+    # changing behaviour; dispatch to a numba-compiled version of the
+    # exact same sequential loop when available (removes ~2 million
+    # Python-level calls/step at N=2000 — the dominant cost of vicsek
+    # mode), falling back to the pure-Python loop otherwise.
+    use_numba = getattr(config.perf, 'use_numba', False)
+    if use_numba and _KERNELS_HAS_NUMBA:
+        return int(_numba_species_collisions(
+            positions, is_predator, active_idx.astype(np.int64),
+            float(R_avoid), float(R_pred),
+            float(width), float(height), float(depth),
+        ))
+    return _numpy_species_collisions(
+        positions, is_predator, active_idx,
+        float(R_avoid), float(R_pred),
+        float(width), float(height), float(depth),
+    )
 
 
 # Backward compatibility alias — tests import vicsek_forces directly

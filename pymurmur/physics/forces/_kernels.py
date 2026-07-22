@@ -309,3 +309,141 @@ def _numpy_predator_escape(
             continue
         direction = -to_predator / d
         escape[global_i] = direction * (escape_factor * accel_boost / (d * d))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Vicsek species-collision kernel (P6.3 / Phase 8 perf pass)
+# ═══════════════════════════════════════════════════════════════════
+#
+# This is a sequential (Gauss-Seidel-style) O(N^2) pairwise correction —
+# each pair's push is applied to `positions` immediately, so later pairs
+# in the same call see already-corrected positions. That inherent
+# order-dependence means it cannot be vectorised into a single batched
+# numpy computation without changing behaviour (a batched correction would
+# use one pre-mutation position snapshot for every pair, which is a
+# different algorithm). A numba-compiled version of the exact same
+# sequential loop removes the Python-loop overhead (the actual bottleneck
+# at N=2000: ~2e6 pairs x 3-dim min-image unwrap, dominated by per-pair
+# Python/numpy call overhead) while being bit-identical to the original.
+
+@njit(cache=True)
+def _numba_species_collisions(
+    positions: np.ndarray,      # (N, 3) float32 — mutated in-place
+    is_predator: np.ndarray,    # (N,) bool
+    active_idx: np.ndarray,     # (M,) int64 — indices of active birds
+    r_avoid: float,
+    r_pred: float,
+    domain_w: float,
+    domain_h: float,
+    domain_d: float,
+) -> int:
+    """P6.3/P8: Asymmetric position collisions — numba-accelerated.
+
+    Same-type pairs at d < r_avoid: each moves (r_avoid-d)/2 along the
+    min-image unit vector. Prey-predator pairs at d < r_pred: prey takes
+    the full (r_pred-d) correction, predator unmoved. Toroidal min-image
+    throughout. Identical logic/order to the pure-Python fallback.
+    """
+    domains = (domain_w, domain_h, domain_d)
+    n = len(active_idx)
+    corrections = 0
+
+    for i_idx in range(n):
+        i = active_idx[i_idx]
+        for j_idx in range(i_idx + 1, n):
+            j = active_idx[j_idx]
+
+            dx = positions[j, 0] - positions[i, 0]
+            dy = positions[j, 1] - positions[i, 1]
+            dz = positions[j, 2] - positions[i, 2]
+            delta = np.empty(3, dtype=np.float32)
+            delta[0] = dx
+            delta[1] = dy
+            delta[2] = dz
+
+            for dim in range(3):
+                half = domains[dim] / 2.0
+                if delta[dim] > half:
+                    delta[dim] -= domains[dim]
+                elif delta[dim] < -half:
+                    delta[dim] += domains[dim]
+
+            dist = np.sqrt(delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2])
+            if dist < 1e-10:
+                continue
+
+            n_hat0 = delta[0] / dist
+            n_hat1 = delta[1] / dist
+            n_hat2 = delta[2] / dist
+
+            same_type = is_predator[i] == is_predator[j]
+
+            if same_type and dist < r_avoid:
+                push = (r_avoid - dist) * 0.5
+                positions[i, 0] -= push * n_hat0
+                positions[i, 1] -= push * n_hat1
+                positions[i, 2] -= push * n_hat2
+                positions[j, 0] += push * n_hat0
+                positions[j, 1] += push * n_hat1
+                positions[j, 2] += push * n_hat2
+                corrections += 1
+            elif not same_type and dist < r_pred:
+                push = r_pred - dist
+                if is_predator[i] and not is_predator[j]:
+                    positions[j, 0] += push * n_hat0
+                    positions[j, 1] += push * n_hat1
+                    positions[j, 2] += push * n_hat2
+                elif is_predator[j] and not is_predator[i]:
+                    positions[i, 0] -= push * n_hat0
+                    positions[i, 1] -= push * n_hat1
+                    positions[i, 2] -= push * n_hat2
+                corrections += 1
+
+    return corrections
+
+
+def _numpy_species_collisions(
+    positions: np.ndarray,
+    is_predator: np.ndarray,
+    active_idx: np.ndarray,
+    r_avoid: float,
+    r_pred: float,
+    domain_w: float,
+    domain_h: float,
+    domain_d: float,
+) -> int:
+    """Pure-numpy fallback for species collisions (identical logic)."""
+    domains = np.array([domain_w, domain_h, domain_d], dtype=np.float32)
+    corrections = 0
+
+    for i_idx, i in enumerate(active_idx):
+        for j in active_idx[i_idx + 1:]:
+            delta = positions[j] - positions[i]
+            for dim in range(3):
+                half = domains[dim] / 2.0
+                if delta[dim] > half:
+                    delta[dim] -= domains[dim]
+                elif delta[dim] < -half:
+                    delta[dim] += domains[dim]
+
+            dist = np.linalg.norm(delta)
+            if dist < 1e-10:
+                continue
+
+            n_hat = delta / dist
+            same_type = is_predator[i] == is_predator[j]
+
+            if same_type and dist < r_avoid:
+                push = (r_avoid - dist) * 0.5
+                positions[i] -= push * n_hat
+                positions[j] += push * n_hat
+                corrections += 1
+            elif not same_type and dist < r_pred:
+                push = r_pred - dist
+                if is_predator[i] and not is_predator[j]:
+                    positions[j] += push * n_hat
+                elif is_predator[j] and not is_predator[i]:
+                    positions[i] -= push * n_hat
+                corrections += 1
+
+    return corrections
