@@ -520,13 +520,24 @@ vectorised gather/reduce force pass (`positions[neighbor_idx]` shape
 (n,k,3), masked padding, axis-1 reductions — no per-bird Python loops).
 *tests:* ≥3× at N = 20 k vs recorded loop baseline (`@slow`); identical
 results across worker counts (T4.3).
-**Status: MOSTLY DONE (Phase 3, Track B).** Spatial mode's batch query +
-vectorised primitives were already implemented. `cfg.perf.num_threads` is
-now a real field wired into `query_knn_batch(workers=...)`, replacing the
-hardcoded `-1`; a fastmath-vs-`metrics.detail_level` policy was added
-alongside `use_numba` gates (S2.B10). **Deliberately deferred to
-Phase 8:** vectorising the vicsek fear/hunt and angle-mode per-bird
-Python loops — explicitly out of scope for a correctness-focused phase.
+**Status: ✅ DONE (Phase 3, Track B + Phase 8).** Spatial mode's batch
+query + vectorised primitives were already implemented.
+`cfg.perf.num_threads` is a real field wired into
+`query_knn_batch(workers=...)`, replacing the hardcoded `-1`; a
+fastmath-vs-`metrics.detail_level` policy was added alongside
+`use_numba` gates (S2.B10). **Phase 8:** profiled vicsek at N=2000 and
+found the real bottleneck wasn't the fear/hunt logic (~4ms, already
+cheap) but `resolve_species_collisions`'s O(N²) sequential pairwise
+loop (~5000ms). Added a numba-compiled version of the exact same
+sequential algorithm (order-preserving — this is Gauss-Seidel-style and
+can't be batch-vectorised without changing behaviour), dispatched via
+the existing `use_numba` gate: **~95x speedup (5017ms → 52.5ms/step)**,
+verified against goldens and a numba-vs-numpy equivalence test.
+Angle-mode's per-bird loop was assessed and deliberately left
+unvectorised — it mixes read-after-write ordering with inline RNG calls,
+neither of which port safely to numba or batched numpy, and it's
+already well within its perf budget (~172-240ms vs 200ms budget × 3
+headroom).
 
 **S2.B7 Sphere centring + asymptotic wall** — centre on C
 ([roadmap1.md](roadmap1.md) D4); add `boundary.mode = "sphere_soft"`:
@@ -619,13 +630,16 @@ reference. *impl:* `physics/forces/_kernels.py`, consumed by
 SpatialMode/VicsekMode. *tests:* numba ≡ numpy within `atol=1e-5`
 (fastmath off), same seeds, N = 2 000; exporting metrics with fastmath
 on raises/warns; `@slow` N = 50 k step within budget ×2.
-**Status: MOSTLY DONE (Phase 3, Track B).** `_kernels.py` exists (hybrid
-filter, predator detect/escape) with numpy fallbacks and `cache=True`.
-`use_numba`/`fastmath` config gates and the fastmath-vs-`metrics.detail_level`
-policy added. **Deliberately deferred to Phase 8:** `parallel=True`,
-dedicated vicsek kernels, and the N=2000 numba≡numpy equivalence test —
-the full vectorization/perf pass is explicitly Phase 8 scope, not a
-Phase 3 correctness item. (GPU-compute simulation backends remain
+**Status: ✅ DONE (Phase 3, Track B + Phase 8).** `_kernels.py` exists
+(hybrid filter, predator detect/escape) with numpy fallbacks and
+`cache=True`. `use_numba`/`fastmath` config gates and the
+fastmath-vs-`metrics.detail_level` policy added (Phase 3). **Phase 8:**
+added `_numba_species_collisions`, a dedicated vicsek kernel (see
+S2.B6), with a numba≡numpy equivalence test on a dense collision scene
+(200 birds, ~1000+ corrections, positions matching to `atol=1e-3`).
+`parallel=True` not added — the vicsek collision kernel is inherently
+sequential (Gauss-Seidel-style), not a parallelizable reduction; no
+other kernel needed it. (GPU-compute simulation backends remain
 excluded — [roadmap5.md](roadmap5.md) Appendix A.)
 
 **S2.B11 Grid-tier flow + deterministic seed noise** — *math:* the
