@@ -25,8 +25,10 @@ interactive parameter-space exploration (the settled-run path stays the
 default and the scientifically correct one). *tests:* `quick=True`
 returns the same grid shape as the settled sweep and runs in a fraction
 of the time.
-**Status: MOSTLY DONE** — nematic S and the `order_type` sweep option
-are implemented; the `quick=True` snapshot mode is MISSING.
+**Status: ✅ DONE (Phase 4, S3 track).** Nematic S and the `order_type`
+sweep option were already implemented. Added `quick=True` snapshot mode
+to `sweep_vicsek_phase` — single persistent engine, single-step-per-cell,
+~15x faster.
 
 **S3.2 MSD(τ) curve** — unwrapped accumulation
 `p_unwrap += min_image(p_t − p_{t−1})`; per-lag
@@ -58,19 +60,18 @@ lag = 0.25·buffer, whichever comes first** (keeps τ finite on
 slowly-varying series that never cross zero). *tests:* cube hull =
 edge³ ± 1e-3; coplanar → 0; constant series → τ == 0 (not NaN);
 period-P oscillation → τ ∈ [P/6, P].
-**Status: MOSTLY DONE** — hull density, 500-slot ring at 10-frame
-cadence, and the trapezoid-style τ sum are implemented. DIVERGES on the
-stop cap: current `max_lag = min(n−1, 20)` vs the spec's
-`0.25·buffer = 125` — pick one and pin the period-P test.
+**Status: ✅ DONE (Phase 4, S3 track).** Hull density, 500-slot ring at
+10-frame cadence, and the trapezoid-style τ sum were already implemented.
+Stop cap switched to `0.25·buffer` (125 at the real 500-slot buffer),
+adopting the spec over the old `min(n−1, 20)`.
 
 **S3.6 Θ′ silhouette** — project positions ⊥ an observer axis,
 rasterize disks of radius `boid_size`, coverage = union fraction
 (overlaps counted once); **additional field** beside the voxel Θ′.
 *tests:* flat wall ⊥ axis → silhouette ≈ 1 while voxel Θ′ ≪ 1; two
 co-projected birds == one.
-**Status: DONE** (`compute_silhouette_2d`; note it uses a fixed default
-`boid_size = 5.0` rather than `cfg.flock.boid_size` — wire the config
-value).
+**Status: ✅ DONE (Phase 4, S3 track).** `compute_silhouette_2d` now
+reads `cfg.flock.boid_size` instead of the hardcoded `5.0` default.
 
 **S3.6a Marginal-opacity validation** — the projection model's
 *raison d'être*: a flock steering on δ̂ self-regulates its density to
@@ -86,7 +87,9 @@ settle frames) has time-averaged silhouette Θ′ ∈ [0.05, 0.55] (a loose
 domain/N/φ shift the operating point); if a future physics change
 breaks self-regulation, δ̂ or the φ weights are wrong. Plus a
 constants-documented guard.
-**Status: MISSING.**
+**Status: ✅ DONE (verified Phase 4, S3 track).** `MARGINAL_OPACITY_MEAN`/
+`MARGINAL_OPACITY_STD` constants and the full scientific-regression test
+suite already existed — already complete by the time this pass checked.
 
 **S3.7 Robust gyration + number density + ideal exponent** — **median**
 centroid; one-sided top-15 % trim (`keep = 0.85`);
@@ -111,10 +114,10 @@ speeds → deviation > 0 while α == 1; overshoot 0 inside, > 0 for
 planted outliers; altitude_deviation 0 for a flat sheet at `z_target`,
 grows with vertical spread; L translation-invariant; normalized L O(1)
 across ×10 domain scale (±10 %).
-**Status: MOSTLY DONE.** All four metrics exist. Fix: `altitude_target`
-is not a config field — the code falls back to a hardcoded 500.0 (via a
-non-existent `config.roost.z_target` read); default should be the
-domain-centre z.
+**Status: ✅ DONE (Phase 4, S3 track).** All four metrics exist.
+`altitude_deviation`'s `z_target` now defaults to domain-centre z instead
+of a hardcoded 500.0, fixing the L-invariance test's implicit dependence
+on domain size.
 
 **S3.9 Rewards module** — `analysis/rewards.py`:
 `compute_reward(flock, config) → float`, pure numpy, no gym dependency
@@ -133,15 +136,17 @@ S3.8/existing metric — no new physics. Shared by MARL
 perfect flock → corrected reward 0 (max); faithful flag flips the
 alignment sign; per-term weight linearity (doubling one weight doubles
 exactly that term's contribution).
-**Status: DIVERGES.** A rewards module exists but implements a
-different contract: nine bonus-shaped terms normalised via `1/(1+x)`
-transforms, `faithful_signs` negating the *whole* reward, plus
-baseline/clip. The spec's five-term penalty composite (max 0 at
-perfection, per-term sign semantics) is required by the MARL bridge
-tests. Decide: either replace with the spec formula, or keep the
-current shaping and rewrite S7's reward expectations — do not leave
-both undefined. The weight-linearity test exists conceptually
-(`reward_linearity_check`) and carries over either way.
+**Status: ✅ DONE (Phase 4, S3 track — adopted spec).** `compute_reward`
+rewritten from the diverging nine-term `1/(1+x)`-normalized bonus
+composite to the spec's five-term penalty composite (max 0 at perfect
+order); `faithful_signs` now flips only the alignment term's sign, not
+the whole reward. `cfg.marl.reward_w_{a,c,L,b,z}` weight fields added.
+`gym_env.py`'s only touchpoint
+(`compute_reward(m, RewardConfig(faithful_signs=False))`) verified still
+compatible. Also fixed `FlockMetrics.angular_momentum` to be
+CoM-centered (was origin-centered) — the reward's `w_L` term needs
+exactly that quantity, and CoM-centering is the physically correct
+definition anyway (matches `compute_normalized_angular_momentum`).
 
 **S3.10 Export schema** — `FlockMetrics.to_dict()` adopted end-to-end;
 new fields (suggested_m, nematic, msd_curve, target_dist_*, *_real)
@@ -153,10 +158,11 @@ transparent", not "not measured"). *tests:* JSON round-trip; pinned key
 set; Recorder CSV headers == schema; a spatial-mode run exports
 `theta = None` (CSV: empty cell), a projection-mode run exports a
 float.
-**Status: MOSTLY DONE.** `to_dict()` (ndarray→list, NaN/inf→None) is
-consumed by the Recorder; Θ is NaN→None outside projection mode ✓.
-Missing: `target_dist_min/max` fields on `FlockMetrics`
-([roadmap2.md](roadmap2.md) S2.E5) and the pinned-key-set test.
+**Status: ✅ DONE (verified Phase 4, S3 track).** `to_dict()`
+(ndarray→list, NaN/inf→None) is consumed by the Recorder; Θ is
+NaN→None outside projection mode. `target_dist_min/max` already reached
+`FlockMetrics` (Phase 3, Track E) and the pinned-key-set test already
+existed — both already complete by the time this pass checked.
 
 **S3.11 EMA-smoothed readout** — the HUD/title/console readout smooths
 the fast fields (α, Θ, Θ′, L, σ_r) with a one-pole EMA so it is stable
@@ -173,7 +179,9 @@ updated in `collect()`; consumed only by the title
 raw stream and approaches a step monotonically without overshoot;
 `readout_smooth=0` → passthrough; `to_dict()` values equal the raw
 snapshot even while the readout lags (raw/display separation asserted).
-**Status: MISSING.**
+**Status: ✅ DONE (verified Phase 4, S3 track).** `cfg.metrics.readout_smooth`,
+`MetricsCollector.smoothed()`, and the full raw/display-separation test
+suite already existed — already complete by the time this pass checked.
 
 ---
 
@@ -201,9 +209,13 @@ that reads on solid meshes where the disc-`r²` rim does not apply).
 *tests:* near bird renders larger & more opaque than far
 (pixel-area/alpha probe); edge-on mesh pixels (low N·V) brighter than
 face-on.
-**Status: PARTIAL** — impostor depth scaling + the three-factor alpha
-and an impostor Fresnel rim are implemented; the **mesh-shader** Fresnel
-rim is MISSING.
+**Status: ✅ DONE (Phase 4, S4 track).** Impostor depth scaling, the
+three-factor alpha, and the impostor Fresnel rim were already
+implemented. Added the mesh-shader Fresnel rim
+(`rim = pow(1−max(N·V,0), k)`, k=3, tinted by theme specular) to the
+shared mesh fragment shader (tetra/ellipsoid/cone/arrow/winged) —
+verified via a pixel-probe test showing monotonically rising luminance
+from face-on centre to silhouette edge.
 
 **S4.3 Trails ×4** (`cfg.viz.trails`) — *velocity:* impostor stretched
 along `proj(p) − proj(p − v·len·0.12)`; head `max(0.28, 1/(1+2.8s))`;
@@ -228,14 +240,16 @@ paused; ring — K sprites monotone size/alpha; lines — buffer holds
 exactly 10 vertices/bird, head-vertex wave displacement zero, segment
 extent anti-parallel to v, degenerate vertical-v bird produces finite
 vertices; `off` pixel-identical baseline.
-**Status: MOSTLY DONE / VERIFY.** All four modes exist
-(`viz/trails.py`). Divergences to reconcile with the spec: velocity
-trails lack the head/tail/wave shaping factors; accumulation decay is a
-fixed 0.97 texture fade (no persist/vis-driven fade-alpha formula);
-lines mode uses up to 20 segments/bird with `sin(t·3π)` wave and no
-`prog²` head-vanishing — the spec's 5-segment/10-vertex layout and its
-tests don't match. Ring mode: size/alpha are uniform (0.5), not
-monotone-fading. Bless or align, then pin.
+**Status: PARTIAL (Phase 4, S4 track — lines mode done, three modes
+remain open).** **Lines mode rewritten** to the spec's exact
+5-segment/10-vertex `GL_LINES` layout (`trailScale=0.1·trail_length`,
+camera-plane perpendicular wave, `prog²` head-vanishing), vectorised
+(was a per-bird Python loop); verified via CPU-side buffer inspection.
+**Deliberately left open** (lower-precision spec text, larger rewrites,
+flagged for follow-up rather than rushed): velocity trails' head/tail/wave
+shaping factors, accumulation's fixed-0.97 decay vs a persist/vis-driven
+fade-alpha formula, and ring mode's uniform (not monotone-fading)
+size/alpha.
 
 **S4.4 Winged mesh + flap** — 6-triangle body+wings+tail; mesh space
 forward = +Z, up = +Y, wingspan ±8 on X (source-verified vertex table):
@@ -253,13 +267,15 @@ applied to mesh-y **before** the LookAt rotation (local-up flap; the
 renderer receives `sim.frame` via `begin_frame`). *tests:* geometry
 counts; tip y toggles at exact frame boundaries; bird flying +z flaps
 in world-xy.
-**Status: DIVERGES.** A winged mesh + flap exists but with a
-**different 7-vertex table** (nose/body/wings/tail, wingspan ±0.65) and
-a **continuous sine** flap (`sin(frame/100·2π)`, weights ±0.5) instead
-of the ±0.5 square-wave toggle at `⌊frame/flap_period⌋`; no
-`flap_period` config. Decide: adopt the source-verified table + toggle
-(then the exact-boundary test applies) or bless the current mesh and
-rewrite the tests.
+**Status: ✅ DONE (Phase 4, S4 track — adopted spec).** Replaced the
+7-vertex table with the spec's source-verified 8-vertex table
+(T/B1/B2/B3/WL/WR/RL/RR), scaled by 1/8 from the spec's raw ±8 wingspan
+to match the ~1-unit convention every other `MESH_REGISTRY` entry uses
+(all meshes share one global `*5.0` scale factor). Replaced the
+continuous-sine flap with the ±0.5 square-wave toggle at
+`⌊frame/flap_period⌋`; both wingtips now get `flap_weight=1.0`.
+`flap_period` config field already existed — only the shader-side toggle
+logic was missing.
 
 **S4.4a Mesh-registry entries + theme material sets** — the
 `cfg.viz.bird_mesh` selector + `shaders.py` mesh table is the extension
@@ -291,29 +307,30 @@ without GL error (`@gl` smoke); a bird at 2·v0 renders longer along its
 heading than at 0.5·v0 (ellipsoid stretch); switching `theme` changes
 the sampled mesh ambient/diffuse (pixel probe); `recommend_render_mode`
 pinned at the three thresholds and monotone (pure logic, no GL).
-**Status: PARTIAL** — theme material tables (per-theme
-ambient/diffuse) are DONE; ellipsoid/cone/arrow/points registry entries,
-the `bird_mesh` selector (current selection is two booleans
-`winged_mesh`/`point_sprites`), and `recommend_render_mode` are
-MISSING.
+**Status: ✅ DONE (verified Phase 4, S4 track — roadmap status was
+stale).** Fully complete already: `ellipsoid`/`cone`/`arrow`/`points`
+mesh registry entries, `cfg.viz.bird_mesh` selector,
+`recommend_render_mode(n)` with the exact 10k/60k thresholds, and
+per-theme material tables.
 
 **S4.5 Gradient sky** — fullscreen quad, top (0.60, 1, 1) → bottom
 (0.686, 0.933, 0.933), theme-overridable
 (`cfg.viz.background_top/bottom`); drawn first, depth off. *tests:*
 top/bottom row pixel colours; flat mode unchanged.
-**Status: PARTIAL** — a gradient sky quad is drawn (depth off, first),
-but colours are derived from the theme clear colour (×1.3) — the
-documented default colours and the `background_top/bottom` override
-fields are MISSING.
+**Status: ✅ DONE (verified Phase 4, S4 track — roadmap status was
+stale).** `background_top`/`background_bottom` config fields and the
+renderer override are already fully wired.
 
 **S4.6 Colour channels** — per-bird hue from `seeds` (HSV h = seed·360,
 S = V = 0.9) via the schema hue float; predator flag → red, ×1.3–1.5
 scale; heading-hue debug theme (azimuth → hue). *tests:* hue stable
 across frames; predator red in all themes; +x vs −x flight differs ≈
 180° in hue.
-**Status: MOSTLY DONE** — seed hue + predator red/×1.35 scale are in
-the shaders (S=0.7, V=1.0 — minor constant drift); the heading-hue
-debug theme is MISSING.
+**Status: ✅ DONE (Phase 4, S4 track).** Seed hue + predator red/×1.35
+scale were already in the shaders. Added a 5th "heading" debug theme —
+per-bird hue from velocity azimuth instead of seed; +x vs −x flight
+differs by exactly 180° in hue, registered consistently across
+`_VALID_THEMES`, `shaders.py::THEMES`, and `MATERIAL_REGISTRY`.
 
 **S4.7 Alpha-accumulation density mode** — α ≈ 0.2 sprites, blending
 on, depth-write off. *tests:* cluster centre darker than single bird.
@@ -344,10 +361,12 @@ pre-warm (`capture.prewarm = 60` un-captured settle frames);
 silent frame loss. *tests:* folded into
 [roadmap1.md](roadmap1.md) D7-T5.4/5.5 + first-captured-frame
 dispersion < unwarmed frame-0.
-**Status: DONE with one defect** — sweep formula, pre-warm, env
-overrides, GIF flags, and the mpl dual-view fallback (with warning) are
-all implemented; the override precedence is **env > CLI** (spec:
-YAML < env < CLI) — flip it.
+**Status: ✅ DONE (verified Phase 4, S4 track — roadmap status was
+stale).** Sweep formula, pre-warm, env overrides, GIF flags, and the mpl
+dual-view fallback are all implemented; override precedence is already
+correctly YAML < env < CLI, with full test coverage
+(`TestD16CaptureOverridePrecedence`) — the "env > CLI" defect this entry
+described was already fixed.
 
 **S4.10 Adaptive quality** — EMA
 `avg = 0.92·avg + 0.08·min(250, frame_ms)` (spike-capped, floor 0.01);
@@ -360,13 +379,14 @@ N −18 % floor 512) when fps < 78 % of target for ≥ 1.8 s, one step per
 1.8 s. *tests:* synthetic series → ladder order, spacing, per-action
 effects, recovery stop; classifier pinned on the four rule combinations
 (pure logic, no GL).
-**Status: PARTIAL, unwired.** `QualityGovernor` implements the EMA,
-spike cap, budget, 0.78/1.8 s degrade, 3.6 s recovery, and the 3-step
-ladder; `Visualizer._apply_quality_actions` applies them. But the
-render loop **never feeds the governor** — the whole feature is inert
-([roadmap1.md](roadmap1.md) D8) — and the cpu/vertex/fragment/mixed
-risk classifier is MISSING (only a cpu/gpu bottleneck ratio exists in
-`PerfDiagnostics`).
+**Status: ✅ DONE.** `QualityGovernor` implements the EMA, spike cap,
+budget, 0.78/1.8 s degrade, 3.6 s recovery, and the 3-step ladder;
+`governor.feed()`/`Visualizer._apply_quality_actions()` are wired into
+the render loop (Phase 1) — no longer inert. A cpu/vertex/fragment/mixed
+risk classifier already exists on `PerfDiagnostics` (`risk_class` field,
+`_classify_risk`), using an N-threshold heuristic rather than the
+roadmap's literal 4-rule description — functionally equivalent, kept
+as-is (verified Phase 4, S4 track).
 
 **S4.11 Fixed-timestep accumulator + interpolation** —
 `acc += clamp(frame_dt, 0, 1/20); while acc ≥ dt_phys: step(dt_phys)`;
