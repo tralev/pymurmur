@@ -129,19 +129,20 @@ from a random parent) + per-gene Gaussian mutation → insert in the
 freed slot. Founders evaluated. *tests:* worst-of-3 gone; child mixes
 genes from both parents (disjoint-value parents); all three finite
 fitness; cache prevents re-simulation (call counter).
-**Status: DIVERGES.** The current SSGA selects a tournament winner,
-mutates it (no crossover), and replaces the island's global worst if
-the child is better; candidates are not (re-)evaluated at selection,
-founders start at fitness −inf unevaluated, and there is no fitness
-cache. Implement the spec update rule (or formally re-scope — but the
-crossover and cache tests are the point of this item).
+**Status: ✅ DONE (verified Phase 6, S6 track — roadmap status was
+stale).** `_ssga_update` already does select-3 → evaluate-all-3
+(fitness-cache-backed via `_ensure_evaluated`) → worst-of-3 replaced →
+uniform crossover + Gaussian mutation, exactly per spec — tagged P11.1
+in the code (an earlier effort predating this TODO-absorption plan).
 
 **S6.2 Worst-of-4 evaluation** — 4 sims per candidate, fixed per-sim
 seeds, min-reduction (`eval_parallel` live; deterministic order).
 *tests:* monkeypatched objectives [0.9, 0.8, 0.95, 0.7] → fitness 0.7;
 seeds recorded.
-**Status: MISSING** (single evaluation per genome; `eval_parallel`
-config exists but unused).
+**Status: ✅ DONE (verified Phase 6, S6 track — roadmap status was
+stale).** `_evaluate` already runs 4 sims/candidate (`evals_per_candidate`)
+with fixed per-sim seeds and min-reduction; `eval_parallel` is consumed
+via `ThreadPoolExecutor` when > 1 — tagged P11.2.
 
 **S6.3 Objectives** — separation on **nearest-neighbour** distance per
 boid-step, trapezoid over body diameters (0 below 2, ramp 2→2.5,
@@ -155,14 +156,13 @@ evolution with binary-threshold objectives (1 inside each band, 0
 outside) vs the trapezoids, same seeds — trapezoid run reaches ≥ the
 binary run's best fitness with lower variance across islands (the
 ramps supply selection gradient).
-**Status: DIVERGES.** Hypervolume `Π max(o, ε)` matches. But:
-separation uses median `local_spacing` with ramp knees (2→4 plateau,
-floor 1/ceiling 8) instead of per-boid-step NN distance with the
-2/2.5/4/5 trapezoid; speed scores the simulation-unit band [3, 5]
-instead of `speed_real` [19, 21] m/s; curvature is approximated by
-`dispersion/α` instead of `|v×a|/|v|³` (needs the acceleration stash,
-[roadmap1.md](roadmap1.md) D3); the obstacle objective is a
-constant-1.0 placeholder. Align to spec.
+**Status: ✅ DONE (verified Phase 6, S6 track — roadmap status was
+stale).** `_compute_objectives` already implements the exact trapezoid
+separation (2/2.5/4/5 on per-boid-step NN distance), `speed_real` m/s
+band [19,21] (ramps [18,22]), curvature `|v×a|/|v|³` with the documented
+clamp formula, and hypervolume `Π max(o,ε)` — tagged P11.3. The obstacle
+objective consumes real `collisions_this_step` data (see S6.4), not a
+placeholder.
 
 **S6.4 SDF obstacle layer** — `physics/obstacles.py`: sphere
 `‖p−c‖−r`; box `max(|p|−b)` (componentwise); cylinder; union = min,
@@ -173,11 +173,12 @@ counter feeds `(f_cf)^500`. *tests:* SDF signs & surface zeros;
 composition; zero-crossing on a straight path; correction lands
 |SDF| < 1e-4; behavioural — obstacle course: collisions > 0 with zero
 avoidance, ≈ 0 with evolved weights (`@slow`).
-**Status: PARTIAL** — the SDF layer itself (primitives, CSG, gradient,
-collision detection, kinematic correction) is DONE in
-`physics/obstacles.py`; the **engine integration is missing**: no
-obstacle scene in the step loop, no per-step collision counter, so
-`(f_cf)^500` never gets real data.
+**Status: ✅ DONE (verified Phase 6, S6 track — roadmap status was
+stale).** The SDF layer (primitives, CSG, gradient, collision detection,
+kinematic correction) and the engine integration are both done —
+`engine.py` has a public `obstacle_scene` property/setter and a
+per-step `collisions_this_step` counter feeding `metrics.collect()`;
+`(f_cf)^500` gets real data.
 
 **S6.5 Missing behaviours/genes** *(further research directions —
 CMA-ES, GP evolution, non-uniform agents, non-reciprocal interactions,
@@ -199,12 +200,14 @@ behind-cone birds (hand geometry); static avoidance zero beyond
 `fly_away_max_dist`, anti-parallel to ∇SDF inside it; k enforced; σ
 integer after decode; every gene in the range table is read by physics
 (no dead genes — AST/attribute check mirroring T1.2).
-**Status: MISSING** — and the dead-gene problem is live:
-`EVOLVABLE_PARAMS` already contains `predictive_avoid_weight` and
-`static_avoid_weight`, which **no physics code reads** (they are
-`setattr`-ed onto the config and ignored). Until the readers land,
-those genes silently waste GA dimensions; the no-dead-genes test is the
-guard.
+**Status: ✅ DONE (verified Phase 6, S6 track — roadmap status was
+stale).** Every `EVOLVABLE_PARAMS` gene (`w_fwd`, `max_dist_*`,
+`angle_*`, `fly_away_max_dist`, `min_time_to_collide`, `sigma`,
+`speed_min_factor`) is already consumed in `spatial.py`/`obstacles.py`
+— the dead predictive/static-avoid-gene bug this entry flagged as live
+no longer exists. Added a general no-dead-genes guard test
+(`test_evoflock_gene_drift.py`) that didn't exist before (only
+per-gene spot tests did), mirroring T1.2's config-drift pattern.
 
 **S6.6 Protocol** — persist best genome + Pareto front + per-run seeds
 + objective scores to `output/evolved.yaml`; ship confined
@@ -212,12 +215,16 @@ guard.
 *tests:* run(n_runs=2) writes the file; **experiment (`@slow`):**
 evolve with NO alignment objective on the confined config → best
 genome's settled α > 0.5 (the emergent-alignment headline).
-**Status: PARTIAL.** Pareto extraction, islands ×4 with 0.05 migration,
-hypervolume ε, and `run(n_runs)` exist; **`output/evolved.yaml` is
-promised in the docstring but never written** — implement the
-persistence (genome + front + seeds + scores). `conf/murmuration_evo.yaml`
-exists — **verify** it matches the confined spec; the open variant is
-missing.
+**Status: ✅ DONE (verified Phase 6, S6 track — roadmap status was
+stale).** Pareto extraction, islands ×4 with 0.05 migration, hypervolume
+ε, `run(n_runs)`, and `EvoFlock.save()` (genome + Pareto front + eval
+seeds + objective scores to `output/evolved.yaml`) all already exist.
+Both `conf/murmuration_evo.yaml` (confined) and `conf/evo_open.yaml`
+(open boundary) already exist. Note: `output/` is gitignored, so a
+fresh checkout needs `scripts/generate_evolved_artifact.py` run once
+(already wired into `ci/Dockerfile`) before `test_evolved_yaml.py`
+passes — this explains the "missing output/evolved.yaml" failures seen
+in every fresh worktree throughout this whole project; not a bug.
 
 ---
 
