@@ -137,6 +137,7 @@ class Visualizer:
                 self._render_dual(rpos)
             else:
                 self._draw_birds_with_lerp(rpos)
+                self._draw_threat_marker()
                 self.renderer.draw_trails(self.sim.flock)
             self.renderer.end_frame()
             if self.renderer.headless:
@@ -329,9 +330,11 @@ class Visualizer:
         # Left: camera at 15°/15°
         self.renderer.render_pass(self._dual_camera, 0, 0, hw, h)
         self._draw_birds_with_lerp(rpos)
+        self._draw_threat_marker()
         # Right: main camera at 45°/45°
         self.renderer.render_pass(self.camera, hw, 0, w - hw, h)
         self._draw_birds_with_lerp(rpos)
+        self._draw_threat_marker()
         # Trails drawn once in main viewport
         self.renderer.draw_trails(self.sim.flock)
 
@@ -341,6 +344,19 @@ class Visualizer:
             self.renderer.draw_birds(self.sim.flock, positions_override=rpos)
         else:
             self.renderer.draw_birds(self.sim.flock)
+
+    def _draw_threat_marker(self) -> None:
+        """S2.A8/D7: render the predator/threat as a red, larger marker.
+
+        An invisible predator is undebuggable — draw_layer() (D7) gives
+        a non-instanced overlay seam for exactly this. Reuses the
+        instanced tetra shader's predator_factor blend (scale > 1.0 →
+        red glow, see shaders.py) so no new rendering path is needed.
+        """
+        pos = self.sim.extensions.predator_position
+        if pos is None:
+            return
+        self.renderer.draw_layer(tuple(pos), hue=0.0, scale=1.5)
 
     def _apply_quality_actions(self) -> None:
         """P8.6: Apply degradation or recovery from QualityGovernor.

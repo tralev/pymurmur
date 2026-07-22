@@ -421,3 +421,27 @@ class TestD5AdaptiveQualityGate:
         assert viz._governor.ema_ms == initial_ema, (
             "EMA should not change when paused"
         )
+
+
+class TestThreatMarker:
+    """D7/S2.A8: Visualizer._draw_threat_marker draws a red/larger
+    non-instanced marker at the predator's live position — an
+    invisible predator is undebuggable."""
+
+    def test_no_marker_when_predator_disabled(self, default_config, monkeypatch):
+        default_config.predator_enabled = False
+        viz, mock_renderer, _ = _make_viz(monkeypatch, default_config)
+        viz._draw_threat_marker()
+        mock_renderer.draw_layer.assert_not_called()
+
+    def test_marker_drawn_when_predator_enabled(self, default_config, monkeypatch):
+        default_config.predator_enabled = True
+        viz, mock_renderer, _ = _make_viz(monkeypatch, default_config)
+        viz._draw_threat_marker()
+        mock_renderer.draw_layer.assert_called_once()
+        (pos,), kwargs = mock_renderer.draw_layer.call_args
+        assert len(pos) == 3
+        assert kwargs.get("scale", 1.0) > 1.0, (
+            "Marker must use scale > 1.0 to trigger the shader's "
+            "predator_factor red-glow blend"
+        )

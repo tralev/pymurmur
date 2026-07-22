@@ -96,6 +96,11 @@ class Predator(Extension):
             config.depth * 0.5,
         ], dtype=np.float32)
 
+    @property
+    def position(self) -> np.ndarray:
+        """D7/S2.A8: current world-space threat position, for rendering."""
+        return self._pos.copy()
+
     def apply(self, flock: PhysicsFlock, ctx: StepContext) -> None:
         """Update threat state and apply force bundle to nearby birds.
 

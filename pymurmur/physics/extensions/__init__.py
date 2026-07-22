@@ -108,3 +108,9 @@ class ExtensionManager:
     def count(self) -> int:
         return sum(1 for e in (self._ecology, self._predator,
                                 self._wander, self._ripple) if e is not None)
+
+    @property
+    def predator_position(self):
+        """D7/S2.A8: threat marker position (np.ndarray) for rendering,
+        or None when no predator extension is active."""
+        return self._predator.position if self._predator is not None else None

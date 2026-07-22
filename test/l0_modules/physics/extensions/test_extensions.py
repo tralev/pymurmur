@@ -868,6 +868,36 @@ class TestExtensionABC:
         assert isinstance(ext, Extension)
 
 
+class TestPredatorMarkerPosition:
+    """D7/S2.A8: ExtensionManager.predator_position feeds the threat
+    marker draw_layer() call — an invisible predator is undebuggable."""
+
+    def test_none_when_predator_disabled(self, default_config):
+        default_config.predator_enabled = False
+        mgr = ExtensionManager(default_config)
+        assert mgr.predator_position is None
+
+    def test_position_when_predator_enabled(self, default_config):
+        default_config.predator_enabled = True
+        mgr = ExtensionManager(default_config)
+        pos = mgr.predator_position
+        assert pos is not None
+        assert pos.shape == (3,)
+
+    def test_position_tracks_predator_movement(self, default_config):
+        default_config.predator_enabled = True
+        default_config.num_boids = 20
+        mgr = ExtensionManager(default_config)
+        flock = PhysicsFlock(default_config)
+
+        p0 = mgr.predator_position.copy()
+        for i in range(1, 30):
+            ctx = _make_ctx(flock, default_config, frame=i)
+            mgr.pre_step(flock, ctx)
+        p1 = mgr.predator_position
+        assert not (p0 == p1).all(), "Predator marker position must track FSM movement"
+
+
 # ── Lazy extension lifecycle (I5.3) ───────────────────────────────
 
 class TestLazyExtensionLifecycle:
