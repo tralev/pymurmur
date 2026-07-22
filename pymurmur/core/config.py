@@ -79,8 +79,16 @@ class SpatialConfig:
     influence_count: int = 7           # P4.1: max topological neighbours (hybrid filter)
     speed_mode: str = "clamp"          # clamp | band | none — how speed is enforced
     flow_weight: float = 0.0           # P11.5: global flow contribution weight
-    neighbor_filter: str = "hybrid"    # hybrid | metric | topological | none
+    neighbor_filter: str = "hybrid"    # hybrid | metric | topological | global | none
     separation_kernel: str = "sum"     # sum | mean | unit — how sep forces are combined
+    # S2.B1: dual-radii — alignment sees a tighter subset than sep/coh.
+    # 1.0 = no extra restriction beyond visual_range (back-compat default);
+    # the starlings preset sets 0.75 per the source-parity table.
+    alignment_radius_ratio: float = 1.0
+    # S2.B1: absolute metric gate for separation neighbours (0 = off,
+    # uses the shared hybrid-filtered set unrestricted; starlings/boids
+    # presets set 20).
+    separation_distance: float = 0.0
     # P11.5: Per-interaction perception cones
     max_dist_sep: float = 0.0          # max sep distance (0 = disabled)
     max_dist_align: float = 0.0        # max align distance (0 = disabled)

@@ -199,13 +199,26 @@ class SpatialMode(ForceMode):
         # ── P11.5: Per-interaction perception cones + max distances ──
         # Defaults (max_dist=0, cos angle=−1) leave the shared neighbour
         # set untouched, so the hot path is unchanged unless genes are set.
+        # S2.B1: separation_distance is an additional absolute gate (0 =
+        # off, falls back to max_dist_sep); alignment_radius_ratio scales
+        # visual_range for a tighter alignment-only subset (1.0 = no
+        # extra restriction, falls back to max_dist_align).
+        sep_gate = (
+            config.spatial.separation_distance
+            if config.spatial.separation_distance > 0.0
+            else config.spatial.max_dist_sep
+        )
+        align_gate = config.spatial.max_dist_align
+        if config.spatial.alignment_radius_ratio < 1.0:
+            ratio_gate = config.spatial.alignment_radius_ratio * config.visual_range
+            align_gate = ratio_gate if align_gate <= 0.0 else min(align_gate, ratio_gate)
         sep_idx = _maybe_perception_filter(
             positions, velocities, neighbor_idx, active,
-            config.spatial.max_dist_sep,
+            sep_gate,
             config.spatial.angle_sep)
         align_idx = _maybe_perception_filter(
             positions, velocities, neighbor_idx, active,
-            config.spatial.max_dist_align,
+            align_gate,
             config.spatial.angle_align)
         coh_idx = _maybe_perception_filter(
             positions, velocities, neighbor_idx, active,
@@ -217,10 +230,34 @@ class SpatialMode(ForceMode):
         sep = separation_force(
             positions, velocities, sep_idx, active,
             kernel=config.spatial.separation_kernel)
-        align = alignment_force(
-            positions, velocities, align_idx, active)
-        coh = cohesion_force(
-            positions, velocities, coh_idx, active)
+        if config.spatial.neighbor_filter == "global":
+            # S2.B1: degenerate "global" case — alignment/cohesion steer
+            # toward the whole-flock mean velocity / centre of mass, no
+            # radius, no kNN (separation stays local via sep_idx above).
+            align = np.zeros((len(positions), 3), dtype=np.float32)
+            coh = np.zeros((len(positions), 3), dtype=np.float32)
+            global_active_idx = np.where(active)[0]
+            if len(global_active_idx) > 0:
+                mean_vel = velocities[global_active_idx].mean(axis=0)
+                mean_pos = positions[global_active_idx].mean(axis=0)
+                # S1.5 forms: alignment = normalize(v̄ - v_i); cohesion = limit3(p̄ - p_i, 1)
+                steer = mean_vel - velocities[global_active_idx]
+                steer_norms = np.linalg.norm(steer, axis=1)
+                valid = steer_norms > 1e-6
+                align[global_active_idx[valid]] = (
+                    steer[valid] / steer_norms[valid, np.newaxis]
+                )
+                to_center = mean_pos - positions[global_active_idx]
+                lengths = np.linalg.norm(to_center, axis=1)
+                coh_vecs = to_center.copy()
+                long = lengths > 1.0
+                coh_vecs[long] = to_center[long] / lengths[long, np.newaxis]
+                coh[global_active_idx] = coh_vecs
+        else:
+            align = alignment_force(
+                positions, velocities, align_idx, active)
+            coh = cohesion_force(
+                positions, velocities, coh_idx, active)
         if noise_mode == "none":
             noise_full = np.zeros((len(positions), 3), dtype=np.float32)
         elif noise_mode == "maxwellian":

@@ -1532,3 +1532,165 @@ def test_curl_flow_magnitude_bounded():
     assert np.allclose(mags, 0.08, atol=1e-5), (
         f"All flow magnitudes should be 0.08, got {mags.min():.6f}..{mags.max():.6f}"
     )
+
+
+# ═══════════════════════════════════════════════════════════════════
+# S2.B1: alignment_radius_ratio / separation_distance / global filter
+# ═══════════════════════════════════════════════════════════════════
+
+def test_alignment_radius_ratio_restricts_alignment_subset(default_config):
+    """S2.B1: alignment set is a subset of the sep/coh neighbour set
+    when alignment_radius_ratio < 1.0."""
+    from pymurmur.physics.forces.spatial import SpatialMode
+
+    cfg = default_config
+    cfg.seed = 42
+    cfg.mode = "spatial"
+    cfg.num_boids = 80
+    cfg.visual_range = 200.0
+    cfg.spatial.alignment_radius_ratio = 0.3  # tight subset
+
+    flock = PhysicsFlock(cfg)
+    flock.get_index().rebuild(flock.positions, flock.active)
+
+    accel_restricted = np.zeros_like(flock.accelerations)
+    SpatialMode.compute(
+        flock.positions, flock.velocities, accel_restricted, flock.active,
+        flock.get_index(), flock.rng, flock.last_theta, cfg,
+    )
+
+    cfg.spatial.alignment_radius_ratio = 1.0  # no restriction (baseline)
+    accel_baseline = np.zeros_like(flock.accelerations)
+    SpatialMode.compute(
+        flock.positions, flock.velocities, accel_baseline, flock.active,
+        flock.get_index(), flock.rng, flock.last_theta, cfg,
+    )
+
+    assert not np.allclose(accel_restricted, accel_baseline), (
+        "tightening alignment_radius_ratio should change the alignment contribution"
+    )
+
+
+def test_alignment_radius_ratio_default_is_noop(default_config):
+    """S2.B1: default alignment_radius_ratio=1.0 must not change forces
+    vs before the feature existed (no max_dist_align set)."""
+    from pymurmur.physics.forces.spatial import SpatialMode
+
+    cfg = default_config
+    cfg.seed = 7
+    cfg.mode = "spatial"
+    cfg.num_boids = 60
+    assert cfg.spatial.alignment_radius_ratio == 1.0
+    assert cfg.spatial.separation_distance == 0.0
+
+    flock = PhysicsFlock(cfg)
+    flock.get_index().rebuild(flock.positions, flock.active)
+
+    accel = np.zeros_like(flock.accelerations)
+    SpatialMode.compute(
+        flock.positions, flock.velocities, accel, flock.active,
+        flock.get_index(), flock.rng, flock.last_theta, cfg,
+    )
+    assert np.isfinite(accel).all()
+    assert (np.linalg.norm(accel, axis=1) > 0).any(), "default config should still produce forces"
+
+
+def test_separation_distance_gate_restricts_separation(default_config):
+    """S2.B1: separation_distance gates separation neighbours to a tighter
+    absolute distance than visual_range."""
+    from pymurmur.physics.forces.spatial import SpatialMode
+
+    cfg = default_config
+    cfg.seed = 3
+    cfg.mode = "spatial"
+    cfg.num_boids = 80
+    cfg.visual_range = 200.0
+    cfg.separation_weight = 5.0
+
+    flock = PhysicsFlock(cfg)
+    flock.get_index().rebuild(flock.positions, flock.active)
+
+    accel_wide = np.zeros_like(flock.accelerations)
+    SpatialMode.compute(
+        flock.positions, flock.velocities, accel_wide, flock.active,
+        flock.get_index(), flock.rng, flock.last_theta, cfg,
+    )
+
+    cfg.spatial.separation_distance = 15.0  # much tighter than visual_range
+    accel_tight = np.zeros_like(flock.accelerations)
+    SpatialMode.compute(
+        flock.positions, flock.velocities, accel_tight, flock.active,
+        flock.get_index(), flock.rng, flock.last_theta, cfg,
+    )
+
+    assert not np.allclose(accel_wide, accel_tight), (
+        "separation_distance should change the separation contribution"
+    )
+
+
+def test_neighbor_filter_global_uses_flock_wide_mean(default_config):
+    """S2.B1: neighbor_filter='global' steers every bird's alignment/
+    cohesion toward the whole-flock mean velocity / centre of mass."""
+    from pymurmur.physics.forces._base import alignment_force, cohesion_force
+    from pymurmur.physics.forces.spatial import SpatialMode
+
+    cfg = default_config
+    cfg.seed = 11
+    cfg.mode = "spatial"
+    cfg.num_boids = 40
+    cfg.spatial.neighbor_filter = "global"
+    cfg.alignment_weight = 1.0
+    cfg.cohesion_weight = 1.0
+    cfg.separation_weight = 0.0
+    cfg.noise_scale = 0.0
+
+    flock = PhysicsFlock(cfg)
+    flock.get_index().rebuild(flock.positions, flock.active)
+
+    accel = np.zeros_like(flock.accelerations)
+    SpatialMode.compute(
+        flock.positions, flock.velocities, accel, flock.active,
+        flock.get_index(), flock.rng, flock.last_theta, cfg,
+    )
+
+    active_idx = np.where(flock.active)[0]
+    mean_vel = flock.velocities[active_idx].mean(axis=0)
+    mean_pos = flock.positions[active_idx].mean(axis=0)
+
+    # Hand-check bird 0: align+coh should point toward global mean vel/CoM
+    steer = mean_vel - flock.velocities[0]
+    steer_norm = np.linalg.norm(steer)
+    expected_align = steer / steer_norm if steer_norm > 1e-6 else np.zeros(3)
+    to_center = mean_pos - flock.positions[0]
+    length = np.linalg.norm(to_center)
+    expected_coh = to_center / length if length > 1.0 else to_center
+
+    expected = expected_align * cfg.alignment_weight + expected_coh * cfg.cohesion_weight
+    expected_mag = np.linalg.norm(expected)
+    if expected_mag > cfg.max_force:
+        expected = expected / expected_mag * cfg.max_force
+
+    assert np.allclose(accel[0], expected, atol=1e-4), (
+        f"bird 0 force {accel[0]} != expected global-mean-based force {expected}"
+    )
+
+
+def test_neighbor_filter_global_does_not_crash_with_no_active(default_config):
+    """S2.B1: 'global' mode with zero active birds is a no-op, not a crash."""
+    from pymurmur.physics.forces.spatial import SpatialMode
+
+    cfg = default_config
+    cfg.mode = "spatial"
+    cfg.num_boids = 10
+    cfg.spatial.neighbor_filter = "global"
+
+    flock = PhysicsFlock(cfg)
+    flock.active[:] = False
+    flock.get_index().rebuild(flock.positions, flock.active)
+
+    accel = np.zeros_like(flock.accelerations)
+    SpatialMode.compute(
+        flock.positions, flock.velocities, accel, flock.active,
+        flock.get_index(), flock.rng, flock.last_theta, cfg,
+    )
+    assert np.allclose(accel, 0.0)
