@@ -178,10 +178,19 @@ class MetricsCollector:
         self._domain_w = config.width if config else 1000.0
         self._domain_h = config.height if config else 1000.0
         self._domain_d = config.depth if config else 1000.0
-        # P9.8: Roost target altitude
+        # S3.8: altitude_deviation's z_target. RoostConfig.z_target is a
+        # static dataclass default (500.0) unaware of domain depth; the
+        # spec wants the default to be the domain-centre z when the
+        # field hasn't been explicitly overridden away from that shared
+        # sentinel default — use domain depth/2 in that case, the user's
+        # value otherwise.
         self._roost_z_target: float | None = None
         if config is not None:
-            self._roost_z_target = config.roost.z_target
+            from ..core.config import RoostConfig
+            if config.roost.z_target == RoostConfig().z_target:
+                self._roost_z_target = config.depth / 2.0
+            else:
+                self._roost_z_target = config.roost.z_target
         # G7: Fastmath × metrics-export warning flag
         self._fastmath: bool = config.perf.fastmath if config else False
         self._warned_fastmath: bool = False

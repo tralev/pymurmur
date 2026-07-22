@@ -354,6 +354,30 @@ def test_altitude_deviation_from_target():
     assert dev == pytest.approx(expected, rel=0.01)
 
 
+def test_altitude_target_defaults_to_domain_centre_z():
+    """S3.8: MetricsCollector's z_target defaults to domain-centre z
+    (depth/2) when roost.z_target hasn't been explicitly overridden
+    away from its shared dataclass default (500.0)."""
+    from pymurmur.core.config import SimConfig
+
+    cfg = SimConfig()
+    cfg.width, cfg.height, cfg.depth = 1000.0, 700.0, 300.0
+    collector = MetricsCollector(cfg)
+    assert collector._roost_z_target == pytest.approx(150.0)
+
+
+def test_altitude_target_respects_explicit_override():
+    """S3.8: an explicitly-set roost.z_target is used as-is, not
+    overridden by the domain-centre default."""
+    from pymurmur.core.config import SimConfig
+
+    cfg = SimConfig()
+    cfg.depth = 300.0
+    cfg.roost.z_target = 42.0
+    collector = MetricsCollector(cfg)
+    assert collector._roost_z_target == pytest.approx(42.0)
+
+
 def test_normalized_angular_momentum_circular():
     """P9.8: Circular motion in XY → L_norm > 0."""
     from pymurmur.analysis.metrics import compute_gyration, compute_normalized_angular_momentum
