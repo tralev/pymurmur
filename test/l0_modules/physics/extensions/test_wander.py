@@ -214,3 +214,18 @@ class TestWanderExtension:
             ctx2.frame += 1
         assert np.allclose(flock1.wander_center, flock2.wander_center)
         assert np.allclose(flock1.wander_heading, flock2.wander_heading)
+
+    def test_wander_publishes_heading_onto_config(self):
+        """S2.A3/P3.6: Wander.apply() also publishes onto cfg._wander_heading.
+
+        FieldMode.compute() is a stateless module function receiving only
+        (arrays, config) — never `flock` — so flock.wander_heading alone
+        is unreachable from field.py's drift-alignment and leader-target
+        terms.  cfg._wander_heading is the actual bridge they read.
+        """
+        flock, ctx, cfg = self._make_flock_and_ctx()
+        w = Wander()
+        w.apply(flock, ctx)
+        assert hasattr(cfg, "_wander_heading")
+        assert cfg._wander_heading is not None
+        np.testing.assert_allclose(cfg._wander_heading, flock.wander_heading)
