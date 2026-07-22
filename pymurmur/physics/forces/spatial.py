@@ -94,8 +94,14 @@ except ImportError:
                                 is_predator: np.ndarray,
                                 threatened: np.ndarray, active: np.ndarray,
                                 escape_factor: float,
-                                accel_boost: float) -> None:
-        """Inline numpy fallback — predator escape force."""
+                                accel_boost: float,
+                                box: np.ndarray | None = None) -> None:
+        """Inline numpy fallback — predator escape force.
+
+        S2.B3: box (3,) enables minimum-image (toroidal) escape distances.
+        """
+        from ...core.types import min_image
+        wrap = box is not None and bool((box > 0).any())
         active_idx = np.where(active)[0]
         for global_i in active_idx:
             if not threatened[global_i]:
@@ -109,6 +115,8 @@ except ImportError:
                 continue
             predator_idx = valid_nbrs[predator_mask]
             diffs = positions[predator_idx] - positions[global_i]
+            if wrap:
+                diffs = min_image(diffs, box)
             dists_sq = np.sum(diffs * diffs, axis=1)
             nearest = np.argmin(dists_sq)
             to_predator = diffs[nearest]
@@ -589,11 +597,22 @@ def _predator_escape(
         if spatial is not None else 1.4
     )
 
+    # S2.B3: minimum-image escape distances on toroidal domains — an
+    # all-zero box disables wrapping for every other boundary mode.
+    boundary_mode = getattr(config, 'boundary_mode', 'toroidal')
+    width = getattr(config, 'width', 0.0)
+    height = getattr(config, 'height', 0.0)
+    depth = getattr(config, 'depth', 0.0)
+    if boundary_mode == 'toroidal' and width and height and depth:
+        box = np.array([width, height, depth], dtype=np.float32)
+    else:
+        box = np.zeros(3, dtype=np.float32)
+
     # Dispatch kernel based on config.perf.use_numba
     _, _, _pred_escape_kernel = _dispatch_kernels(config)
     _pred_escape_kernel(
         escape, positions, neighbor_idx, is_predator, threatened, active,
-        escape_factor, accel_boost,
+        escape_factor, accel_boost, box,
     )
 
     return escape

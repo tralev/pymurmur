@@ -861,6 +861,83 @@ def test_numba_numpy_predator_escape_equivalence():
         f"numba and numpy escape must match: {np.abs(esc_numba - esc_numpy).max():.6f}"
 
 
+# ── S2.B3: minimum-image (toroidal) predator escape ─────────────────
+
+def test_predator_escape_min_image_across_wrap_boundary():
+    """S2.B3: a predator just across a toroidal wrap boundary must be
+    seen as adjacent (short escape distance), not as ~domain-width away."""
+    from pymurmur.physics.forces._kernels import _numpy_predator_escape
+
+    box_size = 1000.0
+    box = np.array([box_size, box_size, box_size], dtype=np.float32)
+    N, k = 2, 4
+    positions = np.zeros((N, 3), dtype=np.float32)
+    # Prey near the low edge, predator near the high edge -- raw distance
+    # ~box_size-10, min-image distance ~10.
+    positions[0] = [5.0, 500.0, 500.0]
+    positions[1] = [box_size - 5.0, 500.0, 500.0]
+    active = np.ones(N, dtype=bool)
+    is_predator = np.array([False, True])
+    threatened = np.array([True, False])
+    n_idx = np.zeros((N, k), dtype=np.int32)
+    n_idx[0, 0] = 1  # prey 0 sees predator 1
+
+    escape_factor, accel_boost = 1e6, 1.4
+
+    esc_wrapped = np.zeros((N, 3), dtype=np.float32)
+    _numpy_predator_escape(esc_wrapped, positions, n_idx, is_predator,
+                            threatened, active, escape_factor, accel_boost, box)
+
+    esc_unwrapped = np.zeros((N, 3), dtype=np.float32)
+    _numpy_predator_escape(esc_unwrapped, positions, n_idx, is_predator,
+                            threatened, active, escape_factor, accel_boost)
+
+    mag_wrapped = np.linalg.norm(esc_wrapped[0])
+    mag_unwrapped = np.linalg.norm(esc_unwrapped[0])
+    # Min-image distance (~10) gives a much stronger 1/d^2 force than the
+    # raw cross-domain distance (~990).
+    assert mag_wrapped > mag_unwrapped * 100, (
+        f"wrapped={mag_wrapped:.4f} unwrapped={mag_unwrapped:.4f}"
+    )
+    # Direction should point from the predator toward the near edge (+x),
+    # i.e. away across the wrap seam, not across the whole domain (-x).
+    assert esc_wrapped[0][0] > 0, f"expected +x escape, got {esc_wrapped[0]}"
+    assert esc_unwrapped[0][0] < 0, f"expected -x escape without wrap, got {esc_unwrapped[0]}"
+
+
+def test_predator_escape_numba_numpy_min_image_equivalence():
+    """S2.B3: numba and numpy min-image escape agree."""
+    from pymurmur.physics.forces._kernels import (
+        _HAS_NUMBA,
+        _numba_predator_escape,
+        _numpy_predator_escape,
+    )
+    if not _HAS_NUMBA:
+        pytest.skip("numba not available")
+
+    box = np.array([1000.0, 1000.0, 1000.0], dtype=np.float32)
+    N, k = 2, 4
+    positions = np.zeros((N, 3), dtype=np.float32)
+    positions[0] = [5.0, 500.0, 500.0]
+    positions[1] = [995.0, 500.0, 500.0]
+    active = np.ones(N, dtype=bool)
+    is_predator = np.array([False, True])
+    threatened = np.array([True, False])
+    n_idx = np.zeros((N, k), dtype=np.int32)
+    n_idx[0, 0] = 1
+
+    escape_factor, accel_boost = 1e6, 1.4
+    esc_numba = np.zeros((N, 3), dtype=np.float32)
+    esc_numpy = np.zeros((N, 3), dtype=np.float32)
+    _numba_predator_escape(esc_numba, positions, n_idx, is_predator,
+                            threatened, active, escape_factor, accel_boost, box)
+    _numpy_predator_escape(esc_numpy, positions, n_idx, is_predator,
+                            threatened, active, escape_factor, accel_boost, box)
+    assert np.allclose(esc_numba, esc_numpy, atol=1e-3), (
+        f"numba/numpy min-image escape mismatch: {np.abs(esc_numba - esc_numpy).max():.6f}"
+    )
+
+
 def test_numba_predator_detect_excludes_predators():
     """P4.10: Predators are never marked as threatened."""
     from pymurmur.physics.forces._kernels import _HAS_NUMBA, _numba_predator_detect
