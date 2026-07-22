@@ -45,10 +45,12 @@ class TestShaders:
 
     # ── Theme palette tests ───────────────────────────────────────
 
-    def test_themes_has_four_palettes(self):
-        """THEMES dict contains exactly 4 named palettes."""
+    def test_themes_has_five_palettes(self):
+        """THEMES dict contains exactly 5 named palettes (S4.6 added "heading")."""
         from pymurmur.viz.shaders import THEMES
-        assert set(THEMES.keys()) == {"ink", "inverse", "paper", "graphite"}
+        assert set(THEMES.keys()) == {
+            "ink", "inverse", "paper", "graphite", "heading",
+        }
 
     def test_theme_keys_all_present(self):
         """Each theme has slow, fast, spec, clear, trail colour keys."""

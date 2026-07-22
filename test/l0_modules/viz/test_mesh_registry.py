@@ -131,10 +131,14 @@ class TestRecommendRenderMode:
 # ── Theme materials ──────────────────────────────────────────────
 
 class TestThemeMaterials:
-    def test_all_valid_themes_are_ink_inverse_paper_graphite(self):
-        assert VALID_THEMES == frozenset({"ink", "inverse", "paper", "graphite"})
+    def test_all_valid_themes_are_ink_inverse_paper_graphite_heading(self):
+        assert VALID_THEMES == frozenset(
+            {"ink", "inverse", "paper", "graphite", "heading"}
+        )
 
-    @pytest.mark.parametrize("theme", ["ink", "inverse", "paper", "graphite"])
+    @pytest.mark.parametrize(
+        "theme", ["ink", "inverse", "paper", "graphite", "heading"]
+    )
     def test_theme_has_required_keys(self, theme):
         mat = MATERIAL_REGISTRY[theme]
         required = {"ambient", "diffuse", "spec", "slow", "fast",
