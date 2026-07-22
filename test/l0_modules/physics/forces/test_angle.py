@@ -1899,3 +1899,79 @@ class TestAngleModeCrossItemPartIV:
             assert (speeds > 0).all(), (
                 f"Zero speed in {speed_mode} mode"
             )
+
+
+# ═══════════════════════════════════════════════════════════════════
+# S2.C8: conf/murmuration_angle.yaml — source-parity preset
+# ═══════════════════════════════════════════════════════════════════
+
+class TestAngleModePreset:
+    """S2.C8: the shipped angle preset loads with the spec-table values
+    and its speed/turn-rate combination doesn't escape a margin
+    boundary over a long run."""
+
+    def test_preset_loads_with_spec_values(self):
+        from pathlib import Path
+
+        cfg = SimConfig.from_file(Path("conf") / "murmuration_angle.yaml")
+
+        assert cfg.mode == "angle"
+        assert cfg.num_boids == 200
+        assert cfg.boid_size == 9.0
+        assert cfg.boundary_mode == "margin"
+        assert cfg.boundary_margin == 42.0
+
+        assert cfg.angle.turn_rate == 120.0
+        assert cfg.angle.max_turn_rate == 200.0
+        assert cfg.angle.turn_threshold == 0.5
+        assert cfg.angle.jitter_deg == 4.0
+        assert cfg.angle.angle_speed_mode == "linear"
+        assert cfg.angle.base_speed == 150.0
+        assert cfg.angle.angle_neighbors == 7
+        assert cfg.angle.sep_radius_bodies == 1.0
+        assert cfg.angle.align_radius_bodies == 5.0
+        assert cfg.angle.range_radius_bodies == 12.0
+
+        assert cfg.per_bird_color is True
+        assert cfg.trails == "ring"
+
+    def test_preset_matches_angleconfig_defaults(self):
+        """The preset is documented as doubling as AngleConfig's
+        dataclass defaults — verify that claim holds, not just that
+        the preset parses."""
+        from pathlib import Path
+
+        preset = SimConfig.from_file(Path("conf") / "murmuration_angle.yaml")
+        defaults = SimConfig()
+
+        assert preset.angle.turn_rate == defaults.angle.turn_rate
+        assert preset.angle.max_turn_rate == defaults.angle.max_turn_rate
+        assert preset.angle.turn_threshold == defaults.angle.turn_threshold
+        assert preset.angle.jitter_deg == defaults.angle.jitter_deg
+        assert preset.angle.base_speed == defaults.angle.base_speed
+        assert preset.angle.angle_neighbors == defaults.angle.angle_neighbors
+        assert preset.angle.sep_radius_bodies == defaults.angle.sep_radius_bodies
+        assert preset.angle.align_radius_bodies == defaults.angle.align_radius_bodies
+        assert preset.angle.range_radius_bodies == defaults.angle.range_radius_bodies
+        assert preset.angle.angle_speed_mode == defaults.angle.angle_speed_mode
+
+    @pytest.mark.slow
+    def test_preset_margin_containment_no_escapes(self):
+        """S2.C4 run on the shipped preset: 10^4 frames, zero escapes
+        past the domain bounds at this preset's speed/turn-rate combo."""
+        from pathlib import Path
+
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = SimConfig.from_file(Path("conf") / "murmuration_angle.yaml")
+        cfg.num_boids = 40  # keep the @slow run cheap; preset physics unchanged
+        cfg.seed = 7
+
+        engine = SimulationEngine(cfg)
+        engine.run_headless(steps=10_000)
+
+        pos = engine.flock.positions[engine.flock.active]
+        assert np.isfinite(pos).all()
+        assert (pos[:, 0] >= -1.0).all() and (pos[:, 0] <= cfg.width + 1.0).all()
+        assert (pos[:, 1] >= -1.0).all() and (pos[:, 1] <= cfg.height + 1.0).all()
+        assert (pos[:, 2] >= -1.0).all() and (pos[:, 2] <= cfg.depth + 1.0).all()
