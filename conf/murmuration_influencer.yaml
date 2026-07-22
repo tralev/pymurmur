@@ -34,11 +34,10 @@ influencer:
   target_phase_offsets: [0, 53, 61]     # starting phases per axis
 
   # ── Influence model ──
-  influence_min: 0.2                   # minimum influence (farthest bird)
-  influence_max: 1.0                   # maximum influence (closest bird)
-  influence_distance_factor: 100.0      # numerator in inf = clamp(100/d², min, max)
+  influence_min: 0.2                   # minimum influence (farthest bird, distance mode only)
+  influence_max: 0.8                   # maximum influence (closest bird, distance mode only)
   rank_exponent: 1.8                   # exponent on rank gradient (1.8 = tight core)
-  use_rank_override: true              # override distance influence with rank-based
+  use_rank_override: true              # force rank-based influence (ignores distance mode)
 
   # ── Update ──
   substeps: 5                          # influencer target updates per simulation frame

@@ -171,6 +171,32 @@ class InfluencerConfig:
     influencer_near_dist_sq: float = 100.0  # P7.3: near-distance for distance-based influence
     influencer_init_separation: float = 0.5  # P7.4: density-scaled init spacing factor
     influencer_tick_rate: float = 1.0       # P7.1: tick increment per substep
+    # S2.E1: optional trajectory-shaping coefficients — default to the
+    # verbatim spec formula (T_raw(t) below); overriding any of these
+    # scales/reshapes the Lissajous path without touching the mode code.
+    influencer_target_freq_primary: tuple[float, float, float] = (97.0, 29.0, 41.0)
+    influencer_target_freq_secondary: tuple[float, float, float] = (217.0, 13.0, 7.0)
+    influencer_target_amp_primary: tuple[float, float, float] = (200.0, 200.0, 100.0)
+    influencer_target_amp_secondary: tuple[float, float, float] = (30.0, 30.0, 27.0)
+    influencer_target_vert_offset: float = 40.0
+    influencer_target_phase_offsets: tuple[float, float, float] = (0.0, 53.0, 61.0)
+    # S2.E3: configurable clip bounds for influence_mode="distance"
+    # (was hardcoded 0.2/0.8).
+    influencer_influence_min: float = 0.2
+    influencer_influence_max: float = 0.8
+    # S2.E3: force rank-based influence regardless of influencer_influence_mode.
+    influencer_use_rank_override: bool = False
+    # S2.E2: move-then-steer is the only implemented update order; the field
+    # exists so conf/*.yaml can document the contract explicitly — setting
+    # it False raises at validate() time rather than being silently ignored.
+    influencer_move_then_steer: bool = True
+    # S2.E4: auto-apply the density-scaled Gaussian init for this mode
+    # without requiring position_init="influencer_density" explicitly.
+    influencer_density_scaled_init: bool = False
+    # S2.E6: pilotable-flock mode — a command-queue-driven pilot point
+    # replaces the Lissajous target when enabled.
+    influencer_pilot_enabled: bool = False
+    influencer_pilot_speed: float = 40.0    # unit-scale U per second
 
 
 @dataclass
@@ -430,6 +456,19 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "influencer_near_dist_sq": ("_influencer", "influencer_near_dist_sq"),
     "influencer_init_separation": ("_influencer", "influencer_init_separation"),
     "influencer_tick_rate": ("_influencer", "influencer_tick_rate"),
+    "influencer_target_freq_primary": ("_influencer", "influencer_target_freq_primary"),
+    "influencer_target_freq_secondary": ("_influencer", "influencer_target_freq_secondary"),
+    "influencer_target_amp_primary": ("_influencer", "influencer_target_amp_primary"),
+    "influencer_target_amp_secondary": ("_influencer", "influencer_target_amp_secondary"),
+    "influencer_target_vert_offset": ("_influencer", "influencer_target_vert_offset"),
+    "influencer_target_phase_offsets": ("_influencer", "influencer_target_phase_offsets"),
+    "influencer_influence_min": ("_influencer", "influencer_influence_min"),
+    "influencer_influence_max": ("_influencer", "influencer_influence_max"),
+    "influencer_use_rank_override": ("_influencer", "influencer_use_rank_override"),
+    "influencer_move_then_steer": ("_influencer", "influencer_move_then_steer"),
+    "influencer_density_scaled_init": ("_influencer", "influencer_density_scaled_init"),
+    "influencer_pilot_enabled": ("_influencer", "influencer_pilot_enabled"),
+    "influencer_pilot_speed": ("_influencer", "influencer_pilot_speed"),
     # AngleConfig
     "turn_rate": ("_angle", "turn_rate"),
     "max_turn_rate": ("_angle", "max_turn_rate"),
@@ -560,6 +599,9 @@ _NON_FIELD_TOP_LEVEL_LISTS: set[str] = {"obstacles"}
 _TUPLE_FIELDS: set[str] = {
     "background_top", "background_bottom",
     "field_drift_direction", "ecology_roost",
+    "influencer_target_freq_primary", "influencer_target_freq_secondary",
+    "influencer_target_amp_primary", "influencer_target_amp_secondary",
+    "influencer_target_phase_offsets",
 }
 
 
@@ -919,7 +961,20 @@ class SimConfig:
                            "influencer_influence_mode": self.influencer_influence_mode,
                            "influencer_near_dist_sq": self.influencer_near_dist_sq,
                            "influencer_init_separation": self.influencer_init_separation,
-                           "influencer_tick_rate": self.influencer_tick_rate},
+                           "influencer_tick_rate": self.influencer_tick_rate,
+                           "influencer_target_freq_primary": list(self.influencer_target_freq_primary),
+                           "influencer_target_freq_secondary": list(self.influencer_target_freq_secondary),
+                           "influencer_target_amp_primary": list(self.influencer_target_amp_primary),
+                           "influencer_target_amp_secondary": list(self.influencer_target_amp_secondary),
+                           "influencer_target_vert_offset": self.influencer_target_vert_offset,
+                           "influencer_target_phase_offsets": list(self.influencer_target_phase_offsets),
+                           "influencer_influence_min": self.influencer_influence_min,
+                           "influencer_influence_max": self.influencer_influence_max,
+                           "influencer_use_rank_override": self.influencer_use_rank_override,
+                           "influencer_move_then_steer": self.influencer_move_then_steer,
+                           "influencer_density_scaled_init": self.influencer_density_scaled_init,
+                           "influencer_pilot_enabled": self.influencer_pilot_enabled,
+                           "influencer_pilot_speed": self.influencer_pilot_speed},
             "field": {"field_separation": self.field_separation,
                       "field_alignment": self.field_alignment,
                       "field_cohesion": self.field_cohesion,
@@ -1077,7 +1132,9 @@ class SimConfig:
             "influencer_rank_exponent", "influencer_substeps",
             "influencer_scale",
             "influencer_near_dist_sq", "influencer_init_separation",
-            "influencer_tick_rate",
+            "influencer_tick_rate", "influencer_pilot_speed",
+            "influencer_influence_min", "influencer_influence_max",
+            "influencer_target_vert_offset",
             "predator_threat_radius", "predator_strength",
             "predator_momentum", "predator_split_gain",
             "field_separation", "field_alignment", "field_cohesion",
@@ -1277,6 +1334,32 @@ class SimConfig:
             if _ok("influencer_tick_rate") and cfg.influencer_tick_rate <= 0:
                 issues.append(
                     f"influencer_tick_rate must be > 0, got {cfg.influencer_tick_rate}"
+                )
+            if not cfg.influencer_move_then_steer:
+                issues.append(
+                    "influencer_move_then_steer=False is not supported — "
+                    "move-then-steer is the only implemented update order (S2.E2)"
+                )
+            if cfg.influencer_influence_min > cfg.influencer_influence_max:
+                issues.append(
+                    f"influencer_influence_min ({cfg.influencer_influence_min}) must be "
+                    f"<= influencer_influence_max ({cfg.influencer_influence_max})"
+                )
+            for tup_name in (
+                "influencer_target_freq_primary", "influencer_target_freq_secondary",
+                "influencer_target_amp_primary", "influencer_target_amp_secondary",
+                "influencer_target_phase_offsets",
+            ):
+                tup_val = getattr(cfg, tup_name)
+                if len(tup_val) != 3:
+                    issues.append(f"{tup_name} must have exactly 3 elements, got {len(tup_val)}")
+            if any(f == 0 for f in cfg.influencer_target_freq_primary) or any(
+                f == 0 for f in cfg.influencer_target_freq_secondary
+            ):
+                issues.append("influencer_target_freq_primary/secondary entries must be nonzero")
+            if _ok("influencer_pilot_speed") and cfg.influencer_pilot_speed <= 0:
+                issues.append(
+                    f"influencer_pilot_speed must be > 0, got {cfg.influencer_pilot_speed}"
                 )
 
         # ── Refinements ───────────────────────────────────────

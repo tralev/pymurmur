@@ -27,23 +27,44 @@ def _lissajous_target(
     t: float,
     C: np.ndarray,   # domain centre [3,]
     s: float,         # spatial scale factor
+    freq_p: tuple[float, float, float] = (97.0, 29.0, 41.0),
+    freq_s: tuple[float, float, float] = (217.0, 13.0, 7.0),
+    amp_p: tuple[float, float, float] = (200.0, 200.0, 100.0),
+    amp_s: tuple[float, float, float] = (30.0, 30.0, 27.0),
+    phase: tuple[float, float, float] = (0.0, 53.0, 61.0),
+    vert_offset: float = 40.0,
 ) -> np.ndarray:
-    """P7.1: Compute 3D Lissajous target at persistent tick t.
+    """P7.1/S2.E1: Compute 3D Lissajous target at persistent tick t.
 
-    T_raw(t) = (sin(t/97)*200 + cos(t/217)*30,
-                cos((t+53)/29)*200 + sin((47-t)/13)*30,
-                cos((t+61)/41)*100 + sin((t+13)/7)*27 + 40)
+    Verbatim spec (default coefficients):
+        T_raw(t) = (sin(t/97)*200 + cos(t/217)*30,
+                    cos((t+53)/29)*200 + sin((47-t)/13)*30,
+                    cos((t+61)/41)*100 + sin((t+13)/7)*27 + 40)
 
-    Scale and offset so (0,0,40) maps to (C_x, C_y, 40s) above centre.
+    freq_p/amp_p/phase parametrize the primary (orbit) term per axis;
+    freq_s/amp_s parametrize the secondary (flutter) term. The secondary
+    term's additive constants (47 on y, 13 on z) and x's lack of a phase
+    shift are structural to the verbatim formula, not exposed as config —
+    only the frequencies/amplitudes/primary-phase and vertical offset are.
+
+    Scale and offset so (0,0,vert_offset) maps to (C_x, C_y, vert_offset*s)
+    above centre.
     """
-    x = math.sin(t / 97.0) * 200.0 + math.cos(t / 217.0) * 30.0
-    y = math.cos((t + 53.0) / 29.0) * 200.0 + math.sin((47.0 - t) / 13.0) * 30.0
-    z = math.cos((t + 61.0) / 41.0) * 100.0 + math.sin((t + 13.0) / 7.0) * 27.0 + 40.0
+    x = math.sin(t / freq_p[0]) * amp_p[0] + math.cos(t / freq_s[0]) * amp_s[0]
+    y = (
+        math.cos((t + phase[1]) / freq_p[1]) * amp_p[1]
+        + math.sin((47.0 - t) / freq_s[1]) * amp_s[1]
+    )
+    z = (
+        math.cos((t + phase[2]) / freq_p[2]) * amp_p[2]
+        + math.sin((t + 13.0) / freq_s[2]) * amp_s[2]
+        + vert_offset
+    )
 
     T_raw = np.array([x, y, z], dtype=np.float32)
-    # Shift: (0,0,40) in raw maps to centre at z + 40s
-    offset = np.array([0.0, 0.0, 40.0], dtype=np.float32)
-    return C + (T_raw - offset) * s + np.array([0.0, 0.0, 40.0 * s], dtype=np.float32)
+    # Shift: (0,0,vert_offset) in raw maps to centre at z + vert_offset*s
+    offset = np.array([0.0, 0.0, vert_offset], dtype=np.float32)
+    return C + (T_raw - offset) * s + np.array([0.0, 0.0, vert_offset * s], dtype=np.float32)
 
 
 # ── P7.4: Density-scaled Gaussian init ──────────────────────────
@@ -57,11 +78,15 @@ def influencer_density_init(
     separation: float,
     rng: np.random.Generator,
 ) -> np.ndarray:
-    """P7.4: Density-scaled Gaussian positions for influencer mode.
+    """P7.4/S2.E4: Density-scaled Gaussian positions for influencer mode.
 
     Math:
         σ = N^(1/3) · separation · s
         positions = rnorm(N,3) · σ + C + U(0, 10s)³
+
+    S2.E4: the U(0, 10s)³ offset is a single SHARED draw applied to every
+    bird (not per-bird jitter) — it shifts the whole cloud, it doesn't
+    fuzz individual positions (that's already sigma's job).
 
     Returns (N, 3) float32 positions clustered around domain centre.
     """
@@ -69,9 +94,9 @@ def influencer_density_init(
     sigma = (n ** (1.0 / 3.0)) * separation * scale
     positions = rng.normal(0.0, sigma, (n, 3)).astype(np.float32)
     positions += C
-    # Small uniform jitter
-    jitter = rng.uniform(0.0, 10.0 * scale, (n, 3)).astype(np.float32)
-    positions += jitter
+    # S2.E4: shared offset — one draw for the whole cloud, not per-bird.
+    shared_offset = rng.uniform(0.0, 10.0 * scale, (3,)).astype(np.float32)
+    positions += shared_offset
     return positions
 
 
@@ -143,7 +168,8 @@ class InfluencerMode(ForceMode):
 
     Class-level metadata:
         needs_index = False  — no neighbour queries
-        owns_positions = True  — future: integrate(move=False)
+        owns_positions = True  — integrate() is called with move=False (D11);
+            true per-substep move-then-steer happens inside compute() itself
         speed_mode = "fixed"   — constant-speed enforcement
 
     The mode steers bird directions toward a 3D Lissajous target
@@ -186,8 +212,12 @@ class InfluencerMode(ForceMode):
         substeps = config.influencer_substeps
         rank_exp = config.influencer_rank_exponent
         scale = config.influencer_scale
-        influence_mode = config.influencer_influence_mode
+        # S2.E3: use_rank_override forces rank-based influence regardless
+        # of the influence_mode selector.
+        influence_mode = "rank" if config.influencer_use_rank_override else config.influencer_influence_mode
         near_dist_sq = config.influencer_near_dist_sq
+        influence_min = config.influencer_influence_min
+        influence_max = config.influencer_influence_max
         tick_rate = config.influencer_tick_rate
         v0 = config.v0
 
@@ -204,6 +234,14 @@ class InfluencerMode(ForceMode):
             config.height / 460.0,
             config.depth / 254.0,
         )
+        traj_kwargs = dict(
+            freq_p=config.influencer_target_freq_primary,
+            freq_s=config.influencer_target_freq_secondary,
+            amp_p=config.influencer_target_amp_primary,
+            amp_s=config.influencer_target_amp_secondary,
+            phase=config.influencer_target_phase_offsets,
+            vert_offset=config.influencer_target_vert_offset,
+        )
 
         pos = positions[active_idx]
         vel = velocities[active_idx]
@@ -219,7 +257,7 @@ class InfluencerMode(ForceMode):
         if pilot_active and pilot is not None:
             target = pilot.position.astype(np.float32)
         else:
-            target = _lissajous_target(config._influencer_tick, C, s_val)
+            target = _lissajous_target(config._influencer_tick, C, s_val, **traj_kwargs)
 
         dt_sub = 1.0 / 60.0  # per-substep dt (matches pilot steering dt)
 
@@ -237,7 +275,7 @@ class InfluencerMode(ForceMode):
                 heading = pilot.heading.astype(np.float32)
                 shell_r = pilot.shell_radius
             else:
-                target = _lissajous_target(t, C, s_val)
+                target = _lissajous_target(t, C, s_val, **traj_kwargs)
                 heading = np.zeros(3, dtype=np.float32)
                 shell_r = 0.0
 
@@ -297,7 +335,7 @@ class InfluencerMode(ForceMode):
                     influence = (1.0 - ranks * 0.8) ** rank_exp
                 else:
                     raw = near_dist_sq * (s_val ** 2) / (dists_to_target ** 2 + 1e-10)
-                    influence = np.clip(raw, 0.2, 0.8)
+                    influence = np.clip(raw, influence_min, influence_max)
 
                 # Blend: d̂_new = normalize(d̂_old·(1−inf) + t̂·inf)
                 t_hat = to_target / (dists_to_target[:, np.newaxis] + 1e-10)
