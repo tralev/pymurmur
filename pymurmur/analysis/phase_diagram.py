@@ -44,6 +44,7 @@ def sweep_vicsek_phase(
     settle_frac: float = 0.5,
     seed: int = 42,
     order_type: str = "polar",   # P9.1: "polar" → alpha, "nematic" → nematic_S
+    quick: bool = False,         # S3.1: single-step snapshot mode
 ) -> PhaseDiagramResult:
     """Sweep (eta, D) parameter space for the Vicsek phase transition.
 
@@ -51,16 +52,32 @@ def sweep_vicsek_phase(
     measures the steady-state order parameter (polar α or nematic S)
     averaged over the final settle_frac fraction of frames.
 
+    S3.1: when quick=True, skips the full settled run entirely — one
+    persistent engine is built once at the sweep's baseline config, and
+    each grid cell just retunes vicsek_couplage/vicsek_diffusion on that
+    SAME engine and takes a single angle-update step, reading the
+    resulting order parameter immediately. This is ~200x cheaper than
+    the full per-cell settled run and is NOT scientifically rigorous
+    (the flock's state carries over between cells rather than each cell
+    starting fresh and settling) — it exists purely for interactive
+    parameter-space exploration in the UI; the default (quick=False)
+    settled-run path remains the one to use for anything published.
+
     Args:
         eta_range: (min, max) for vicsek_couplage η ∈ [0, 1].
         d_range: (min, max) for vicsek_diffusion D.
         n_eta: number of eta grid points.
         n_d: number of D grid points.
         n_boids: flock size.
-        steps: total simulation steps per (eta, D) point.
-        settle_frac: fraction of final frames to average order over.
-        seed: base random seed (incremented per sweep point).
+        steps: total simulation steps per (eta, D) point (ignored when
+            quick=True — quick mode always takes exactly one step).
+        settle_frac: fraction of final frames to average order over
+            (ignored when quick=True).
+        seed: base random seed (incremented per sweep point in the
+            settled-run path; a single seed for the one persistent
+            engine in quick mode).
         order_type: "polar" (default) uses polar α; "nematic" uses nematic S.
+        quick: see above.
 
     Returns:
         PhaseDiagramResult with grids and measured order values.
@@ -82,6 +99,40 @@ def sweep_vicsek_phase(
 
     # Small domain so birds stay close even at low density
     domain = max(50.0, n_boids ** (1 / 3) * 10)
+
+    if quick:
+        # S3.1: one persistent engine, retuned + single-stepped per cell.
+        cfg = SimConfig()
+        cfg.mode = "vicsek"
+        cfg.num_boids = n_boids
+        cfg.width = domain
+        cfg.height = domain
+        cfg.depth = domain
+        cfg.vicsek_radius_influence = domain * 0.3
+        cfg.vicsek_velocity = 1.0
+        cfg.metrics_detail_level = 1
+        cfg.boundary_mode = "toroidal"
+        cfg.seed = seed
+        sim = SimulationEngine(cfg)
+
+        for j, d_val in enumerate(d_grid):
+            for i, eta_val in enumerate(eta_grid):
+                sim.config.vicsek_couplage = float(eta_val)
+                sim.config.vicsek_diffusion = float(d_val)
+                sim.step()
+                snap = sim.metrics.snapshot()
+                value = snap.nematic_S if order_type == "nematic" else snap.alpha
+                if value >= 0:
+                    alpha_grid[j, i] = float(value)
+
+        result = PhaseDiagramResult(
+            eta_grid=eta_grid,
+            d_grid=d_grid,
+            alpha_grid=alpha_grid,
+            order_type=order_type,
+        )
+        result.boundary_eta = _find_phase_boundary(result)
+        return result
 
     for j, d_val in enumerate(d_grid):
         for i, eta_val in enumerate(eta_grid):

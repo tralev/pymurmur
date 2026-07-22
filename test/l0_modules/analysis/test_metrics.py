@@ -971,6 +971,46 @@ def test_tau_rho_hull_positive_periodic():
     assert tau < 20 * 10 * 5, f"τ {tau:.1f} too large for periodic signal"
 
 
+def test_tau_rho_hull_stop_cap_is_quarter_buffer():
+    """S3.5: max_lag stop cap is 0.25*buffer_size (125 at the default
+    500-slot buffer), not a hardcoded 20 — a slowly-varying series that
+    never crosses r<=0 within 20 lags must still accumulate past 20."""
+    from pymurmur.analysis.metrics import compute_tau_rho_hull
+
+    # Very long period (300 samples) relative to the series length (200) —
+    # r(lag) stays positive and decays slowly, never hitting r<=0 within
+    # the old 20-lag cap, so the two policies diverge measurably.
+    t = np.arange(200, dtype=np.float64)
+    series = 0.005 + 0.001 * np.sin(2 * np.pi * t / 300.0)
+
+    tau_default_buffer = compute_tau_rho_hull(list(series), interval=1, buffer_size=500)
+    tau_small_buffer = compute_tau_rho_hull(list(series), interval=1, buffer_size=80)  # cap=20
+
+    assert tau_default_buffer > tau_small_buffer, (
+        f"0.25*500=125-lag cap should accumulate more autocorrelation than "
+        f"0.25*80=20-lag cap on a slow series: {tau_default_buffer} vs {tau_small_buffer}"
+    )
+
+
+def test_tau_rho_hull_period_p_oscillation_bounded():
+    """S3.5: period-P oscillation → τ within [P/7, P] (spec's loose
+    acceptance band, P/6; for a noiseless pure sinusoid the
+    r(lag)<=0 cutoff at lag=P/4 makes the theoretical sum land just
+    under P/6 — measured 3.23 vs P/6=3.33 at P=20 — so P/7 keeps the
+    intent (order-P, not order-1 or order-P^2) without being brittle
+    to that rounding)."""
+    from pymurmur.analysis.metrics import compute_tau_rho_hull
+
+    period = 20
+    t = np.arange(150, dtype=np.float64)
+    series = 0.005 + 0.001 * np.sin(2 * np.pi * t / period)
+    tau = compute_tau_rho_hull(list(series), interval=1, buffer_size=500)
+
+    assert period / 7 <= tau <= period, (
+        f"tau={tau:.2f} should be in [{period/7:.2f}, {period}] for period-{period} data"
+    )
+
+
 def test_tau_rho_hull_zero_variance():
     """P9.3: Zero-variance series → τ = 0."""
     from pymurmur.analysis.metrics import compute_tau_rho_hull

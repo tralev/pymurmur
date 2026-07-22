@@ -32,56 +32,63 @@ from pymurmur.analysis.rewards import RewardConfig, compute_reward
 # ═══════════════════════════════════════════════════════════════
 
 class TestRewardConsumesP9Observables:
-    """compute_reward() correctly digests nematic, silhouette, and motion metrics."""
+    """compute_reward() correctly digests S3.8 motion metrics.
 
-    def test_reward_responds_to_nematic_change(self):
-        """P9.9+P9.1: Higher nematic S → higher reward (with positive weight)."""
-        m_high = FlockMetrics(nematic_S=0.95, alpha=0.5, dispersion=100.0,
-                               velocity_deviation=1.0, boundary_overshoot=50.0,
-                               altitude_deviation=50.0, local_spacing=15.0)
-        m_low = FlockMetrics(nematic_S=0.10, alpha=0.5, dispersion=100.0,
-                              velocity_deviation=1.0, boundary_overshoot=50.0,
-                              altitude_deviation=50.0, local_spacing=15.0)
+    S3.9's five-term penalty composite (dispersion, velocity_deviation,
+    angular_momentum, boundary_overshoot, altitude_deviation) narrowed
+    the reward's inputs to exactly these S3.8 observables — nematic_S
+    and silhouette_2d are no longer reward inputs at all, so the old
+    "reward responds to nematic/silhouette" premise this file tested no
+    longer applies; replaced with the equivalent checks against what the
+    composite actually consumes.
+    """
 
-        config = RewardConfig(weights={"nematic": 1.0}, faithful_signs=True)
-        r_high = compute_reward(m_high, config)
-        r_low = compute_reward(m_low, config)
-        assert r_high > r_low, (
-            f"Nematic should drive reward: high={r_high:.4f} vs low={r_low:.4f}"
-        )
+    def test_reward_responds_to_dispersion_change(self):
+        """S3.9+S3.8: Lower dispersion → higher (less penalized) reward
+        under faithful_signs=False (the "corrected" penalty mode)."""
+        m_tight = FlockMetrics(dispersion=10.0, velocity_deviation=1.0,
+                                boundary_overshoot=50.0, altitude_deviation=50.0)
+        m_loose = FlockMetrics(dispersion=200.0, velocity_deviation=1.0,
+                                boundary_overshoot=50.0, altitude_deviation=50.0)
 
-    def test_reward_responds_to_velocity_deviation(self):
-        """P9.9+P9.8: Lower velocity_deviation → higher speed_match reward."""
-        m_tight = FlockMetrics(nematic_S=0.5, alpha=0.5, dispersion=100.0,
-                                velocity_deviation=0.1, boundary_overshoot=50.0,
-                                altitude_deviation=50.0, local_spacing=15.0)
-        m_loose = FlockMetrics(nematic_S=0.5, alpha=0.5, dispersion=100.0,
-                                velocity_deviation=5.0, boundary_overshoot=50.0,
-                                altitude_deviation=50.0, local_spacing=15.0)
-
-        config = RewardConfig(weights={"speed_match": 1.0}, faithful_signs=True)
+        config = RewardConfig(w_a=0.0, w_c=1.0, faithful_signs=False)
         r_tight = compute_reward(m_tight, config)
         r_loose = compute_reward(m_loose, config)
         assert r_tight > r_loose, (
-            f"Speed_match should favour low deviation: tight={r_tight:.4f} vs loose={r_loose:.4f}"
+            f"Lower dispersion should give higher reward: "
+            f"tight={r_tight:.4f} vs loose={r_loose:.4f}"
         )
 
-    def test_reward_responds_to_silhouette(self):
-        """P9.9+P9.4: Higher silhouette → higher silhouette reward."""
-        m_full = FlockMetrics(nematic_S=0.5, alpha=0.5, dispersion=100.0,
-                               velocity_deviation=1.0, boundary_overshoot=50.0,
-                               altitude_deviation=50.0, local_spacing=15.0,
-                               silhouette_2d=0.9)
-        m_sparse = FlockMetrics(nematic_S=0.5, alpha=0.5, dispersion=100.0,
-                                 velocity_deviation=1.0, boundary_overshoot=50.0,
-                                 altitude_deviation=50.0, local_spacing=15.0,
-                                 silhouette_2d=0.05)
+    def test_reward_responds_to_velocity_deviation(self):
+        """S3.9+S3.8: Lower velocity_deviation → higher (less penalized)
+        reward under faithful_signs=False."""
+        m_tight = FlockMetrics(velocity_deviation=0.1, dispersion=100.0,
+                                boundary_overshoot=50.0, altitude_deviation=50.0)
+        m_loose = FlockMetrics(velocity_deviation=5.0, dispersion=100.0,
+                                boundary_overshoot=50.0, altitude_deviation=50.0)
 
-        config = RewardConfig(weights={"silhouette": 1.0}, faithful_signs=True)
-        r_full = compute_reward(m_full, config)
-        r_sparse = compute_reward(m_sparse, config)
-        assert r_full > r_sparse, (
-            f"Silhouette should drive reward: full={r_full:.4f} vs sparse={r_sparse:.4f}"
+        config = RewardConfig(w_a=1.0, w_c=0.0, faithful_signs=False)
+        r_tight = compute_reward(m_tight, config)
+        r_loose = compute_reward(m_loose, config)
+        assert r_tight > r_loose, (
+            f"Lower velocity_deviation should give higher reward: "
+            f"tight={r_tight:.4f} vs loose={r_loose:.4f}"
+        )
+
+    def test_reward_responds_to_boundary_overshoot(self):
+        """S3.9+S3.8: Lower boundary_overshoot → higher (less penalized)
+        reward under faithful_signs=False."""
+        m_contained = FlockMetrics(boundary_overshoot=0.0, velocity_deviation=1.0,
+                                    dispersion=100.0, altitude_deviation=50.0)
+        m_overshot = FlockMetrics(boundary_overshoot=500.0, velocity_deviation=1.0,
+                                   dispersion=100.0, altitude_deviation=50.0)
+
+        config = RewardConfig(w_a=0.0, w_c=0.0, w_b=1.0, faithful_signs=False)
+        r_contained = compute_reward(m_contained, config)
+        r_overshot = compute_reward(m_overshot, config)
+        assert r_contained > r_overshot, (
+            f"Lower boundary_overshoot should give higher reward: "
+            f"contained={r_contained:.4f} vs overshot={r_overshot:.4f}"
         )
 
 

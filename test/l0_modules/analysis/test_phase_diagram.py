@@ -84,6 +84,67 @@ class TestSweep:
         assert violations <= 1, f"Too many non-monotonic drops in alpha: {alphas}"
 
 
+class TestQuickMode:
+    """S3.1: quick=True single-step snapshot sweep — cheap interactive
+    exploration, not a scientifically rigorous settled-run measurement."""
+
+    def test_quick_returns_same_grid_shape_as_settled(self):
+        result_quick = sweep_vicsek_phase(
+            eta_range=(0.0, 1.0), d_range=(0.0, 2.0),
+            n_eta=5, n_d=3, n_boids=30, seed=42, quick=True,
+        )
+        assert result_quick.eta_grid.shape == (5,)
+        assert result_quick.d_grid.shape == (3,)
+        assert result_quick.alpha_grid.shape == (3, 5)
+        assert not np.all(np.isnan(result_quick.alpha_grid))
+
+    @pytest.mark.slow
+    def test_quick_runs_much_faster_than_settled(self):
+        import time
+
+        t0 = time.perf_counter()
+        sweep_vicsek_phase(
+            eta_range=(0.0, 1.0), d_range=(0.0, 2.0),
+            n_eta=6, n_d=4, n_boids=40, seed=42, quick=True,
+        )
+        t_quick = time.perf_counter() - t0
+
+        t0 = time.perf_counter()
+        sweep_vicsek_phase(
+            eta_range=(0.0, 1.0), d_range=(0.0, 2.0),
+            n_eta=6, n_d=4, n_boids=40, steps=80, seed=42,
+        )
+        t_full = time.perf_counter() - t0
+
+        assert t_quick < t_full, (
+            f"quick={t_quick:.3f}s should be faster than settled={t_full:.3f}s"
+        )
+        # Not asserting the literal ~200x claim (machine/N-dependent) —
+        # a comfortable margin is enough to catch a regression to the
+        # settled-run cost.
+        assert t_quick < t_full / 3, (
+            f"quick mode should be meaningfully cheaper: "
+            f"quick={t_quick:.3f}s, full={t_full:.3f}s"
+        )
+
+    def test_quick_respects_nematic_order_type(self):
+        result = sweep_vicsek_phase(
+            n_eta=3, n_d=2, n_boids=20, seed=1,
+            order_type="nematic", quick=True,
+        )
+        assert result.order_type == "nematic"
+        assert result.alpha_grid.shape == (2, 3)
+
+    def test_quick_produces_valid_boundary_or_nan(self):
+        """boundary_eta computation still runs on quick-mode output
+        without raising, even though quick data is noisier."""
+        result = sweep_vicsek_phase(
+            eta_range=(0.0, 1.0), d_range=(0.0, 2.0),
+            n_eta=6, n_d=3, n_boids=30, seed=7, quick=True,
+        )
+        assert result.boundary_eta.shape == (3,)
+
+
 class TestPhaseBoundary:
     """Phase boundary detection."""
 

@@ -178,10 +178,22 @@ class MetricsCollector:
         self._domain_w = config.width if config else 1000.0
         self._domain_h = config.height if config else 1000.0
         self._domain_d = config.depth if config else 1000.0
-        # P9.8: Roost target altitude
+        # S3.6: silhouette_2d's disk radius — was hardcoded to the
+        # function default (5.0) regardless of the actual bird size.
+        self._boid_size = config.boid_size if config else 5.0
+        # S3.8: altitude_deviation's z_target. RoostConfig.z_target is a
+        # static dataclass default (500.0) unaware of domain depth; the
+        # spec wants the default to be the domain-centre z when the
+        # field hasn't been explicitly overridden away from that shared
+        # sentinel default — use domain depth/2 in that case, the user's
+        # value otherwise.
         self._roost_z_target: float | None = None
         if config is not None:
-            self._roost_z_target = config.roost.z_target
+            from ..core.config import RoostConfig
+            if config.roost.z_target == RoostConfig().z_target:
+                self._roost_z_target = config.depth / 2.0
+            else:
+                self._roost_z_target = config.roost.z_target
         # G7: Fastmath × metrics-export warning flag
         self._fastmath: bool = config.perf.fastmath if config else False
         self._warned_fastmath: bool = False
@@ -239,7 +251,7 @@ class MetricsCollector:
         m.theta_prime = compute_theta_prime(positions, self._theta_prime_grid)
 
         # P9.4: 2D silhouette Θ' — disk rasterization ⊥ observer axis
-        m.silhouette_2d = compute_silhouette_2d(positions)
+        m.silhouette_2d = compute_silhouette_2d(positions, boid_size=self._boid_size)
 
         # Centre of mass and dispersion
         com = np.mean(positions, axis=0)
@@ -257,8 +269,12 @@ class MetricsCollector:
         m.force_avg = float(np.mean(acc_mags))
         m.power_avg = float(np.mean(np.abs(np.sum(accs * velocities, axis=1))))
 
-        # Angular momentum: ⟨r × v⟩ / N
-        m.angular_momentum = np.mean(np.cross(positions, velocities), axis=0)
+        # Angular momentum about the centre of mass: ⟨(r-CoM) × v⟩ = Σ(r-CoM)×v / N.
+        # S3.9: CoM-centered (not origin-centered) so its magnitude is
+        # exactly the reward module's angular-momentum penalty term
+        # ‖Σᵢ(pᵢ−CoM)×vᵢ‖/N, and so it matches
+        # compute_normalized_angular_momentum's own CoM-centering below.
+        m.angular_momentum = np.mean(np.cross(positions - com, velocities), axis=0)
 
         # P9.8: Motion metrics
         m.velocity_deviation = float(
@@ -340,11 +356,12 @@ class MetricsCollector:
                 if len(self._hull_density_ring) > self._hull_density_maxlen:
                     self._hull_density_ring.pop(0)
 
-        # P9.3: Hull autocorrelation time from ring buffer
+        # S3.5: Hull autocorrelation time from ring buffer
         if self._detail_level >= 2 and len(self._hull_density_ring) >= 4:
             m.tau_rho = compute_tau_rho_hull(
                 self._hull_density_ring,
                 interval=self._hull_density_interval,
+                buffer_size=self._hull_density_maxlen,
             )
             # Also set hull-derived fields from latest sample
             if self._hull_density_ring:
@@ -1034,11 +1051,14 @@ def compute_convex_hull_density(positions: np.ndarray) -> float:
 def compute_tau_rho_hull(
     density_ring: list[float],
     interval: int = 10,
+    buffer_size: int = 500,
 ) -> float:
-    """P9.3: Density autocorrelation time from hull-density ring buffer.
+    """S3.5: Density autocorrelation time from hull-density ring buffer.
 
     τ = interval · (0.5 + Σ_{lag≥1} r(lag))
-    Stops summation at the first lag where r(lag) ≤ 0.
+    Stops summation at the first lag where r(lag) ≤ 0, **or** at
+    lag = 0.25·buffer_size, whichever comes first — the cap keeps τ
+    finite on slowly-varying series that never cross zero (S3.5).
 
     Uses the ring buffer convention where index 0 is the oldest sample
     and index -1 is the newest (reverse of the original spec, but both
@@ -1047,6 +1067,10 @@ def compute_tau_rho_hull(
     Args:
         density_ring: list of hull-density samples ρ(t).
         interval: frames between consecutive samples (default 10).
+        buffer_size: capacity of the ring buffer the samples were drawn
+            from (default 500, matching MetricsCollector's
+            `_hull_density_maxlen`) — the 0.25·buffer_size stop cap is
+            relative to this capacity, not the current sample count.
 
     Returns:
         τ_ρ in frame units. Returns 0 if insufficient data or
@@ -1063,7 +1087,7 @@ def compute_tau_rho_hull(
         return 0.0  # constant series → τ = 0
 
     # Compute autocorrelation r(lag) for lags 1..max_lag
-    max_lag = min(n - 1, 20)
+    max_lag = min(n - 1, max(1, int(0.25 * buffer_size)))
     tau_sum = 0.5  # from the formula: 0.5 + Σ r(lag)
 
     for lag in range(1, max_lag + 1):
