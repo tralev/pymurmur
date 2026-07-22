@@ -44,6 +44,7 @@ class Ecology(Extension):
         self._dusk_width = config.ecology_dusk_width
         self._seasonal_amplitude = config.ecology_seasonal_amplitude
         self._temperature_boost = config.ecology_temperature_boost
+        self._predator_presence_mode = config.ecology_predator_presence
         self.predator_active: bool = True  # updated in apply(); public for I5.4
         self.coherence_factor: float = 1.0  # P4.8: exposed for force-weight gating
         self._last_int_day: int = int(self._day)
@@ -60,22 +61,54 @@ class Ecology(Extension):
         """Temperature in °C for a given day of year."""
         return 9.0 - 8.0 * np.cos(2 * np.pi * (day - 20) / 365)
 
-    @staticmethod
-    def predator_present(day: int) -> bool:
-        """Deterministic per-day predator presence via Knuth multiplicative hash.
+    PREDATOR_RATE: float = 0.296
 
-        S2.B8: reconciled to spec formula — `(day·2654435761 mod 1000)/1000
-        < 0.296`. Returns True on ~29.6% of days, deterministically.
+    @staticmethod
+    def predator_present(
+        day: int, rng: np.random.Generator | None = None,
+    ) -> bool:
+        """Predator presence for a given day of year at PREDATOR_RATE (0.296).
+
+        S2.B8: two modes, selected by whether *rng* is supplied.
+        - rng=None (default): deterministic per-day Knuth multiplicative
+          hash — `(day·2654435761 mod 1000)/1000 < RATE`. Same day always
+          gives the same answer (reproducible without a generator).
+        - rng given: a true stochastic draw, `rng.random() < RATE`, for
+          callers that want independent draws per invocation (e.g. a
+          replay-safe seeded rng threaded from ctx.rng). Selected via
+          `cfg.ecology.predator_presence: "deterministic"|"stochastic"`.
         """
+        if rng is not None:
+            return bool(rng.random() < Ecology.PREDATOR_RATE)
         day_int = int(day)
         h = (day_int * 2654435761) % 1000
-        return (h / 1000.0) < 0.296
+        return (h / 1000.0) < Ecology.PREDATOR_RATE
 
     @staticmethod
     def dusk_hour(day: float) -> float:
         """Sunset hour (decimal) for a given day of year."""
         day_len = Ecology.day_length(day)
         return 12.0 + day_len / 2.0
+
+    @staticmethod
+    def is_roosting_time(hour: float, day: float, threshold: float = 0.5) -> bool:
+        """S2.B8: True once the logistic dusk factor crosses *threshold*.
+
+        Convenience predicate over logistic_dusk_factor — "is it late
+        enough in the day that birds are settling into roost".
+        """
+        dusk = Ecology.dusk_hour(day)
+        return Ecology.logistic_dusk_factor(hour, dusk) >= threshold
+
+    @staticmethod
+    def is_murmuration_season(day: float) -> bool:
+        """S2.B8: True during the Oct-Mar murmuration season.
+
+        Day-of-year >= 274 (Oct 1) or <= 90 (Mar 31), wrapping across
+        the year boundary around the winter solstice / _DAY_PEAK.
+        """
+        d = day % 365.0
+        return d >= 274.0 or d <= 90.0
 
     @staticmethod
     def logistic_dusk_factor(
@@ -193,7 +226,8 @@ class Ecology(Extension):
         int_day = int(self._day)
         if int_day != self._last_int_day:
             self._last_int_day = int_day
-            self.predator_active = self.predator_present(int_day)
+            presence_rng = ctx.rng if self._predator_presence_mode == "stochastic" else None
+            self.predator_active = self.predator_present(int_day, rng=presence_rng)
 
         dusk = self.dusk_hour(self._day)
         hour = (self._day % 1) * 24.0
@@ -230,7 +264,14 @@ class Ecology(Extension):
         if ramp <= 0.0:
             return
 
-        active = flock.active
-        for i in np.where(active)[0]:
-            to_roost = self._roost_pos - flock.positions[i]
-            flock.accelerations[i] += to_roost * 0.01 * ramp
+        # S2.B8: roost_force = unit(roost-p)·roost_strength — a
+        # constant-magnitude pull regardless of distance (was a
+        # linear-in-distance force, `to_roost*0.01*ramp`, so far birds
+        # were pulled disproportionately harder than near ones).
+        active_idx = np.where(flock.active)[0]
+        to_roost = self._roost_pos - flock.positions[active_idx]
+        dist = np.linalg.norm(to_roost, axis=1, keepdims=True)
+        safe = (dist > 1e-6).ravel()
+        direction = np.zeros_like(to_roost)
+        direction[safe] = to_roost[safe] / dist[safe]
+        flock.accelerations[active_idx] += direction * (0.01 * ramp)

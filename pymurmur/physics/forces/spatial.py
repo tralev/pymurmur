@@ -94,8 +94,14 @@ except ImportError:
                                 is_predator: np.ndarray,
                                 threatened: np.ndarray, active: np.ndarray,
                                 escape_factor: float,
-                                accel_boost: float) -> None:
-        """Inline numpy fallback — predator escape force."""
+                                accel_boost: float,
+                                box: np.ndarray | None = None) -> None:
+        """Inline numpy fallback — predator escape force.
+
+        S2.B3: box (3,) enables minimum-image (toroidal) escape distances.
+        """
+        from ...core.types import min_image
+        wrap = box is not None and bool((box > 0).any())
         active_idx = np.where(active)[0]
         for global_i in active_idx:
             if not threatened[global_i]:
@@ -109,6 +115,8 @@ except ImportError:
                 continue
             predator_idx = valid_nbrs[predator_mask]
             diffs = positions[predator_idx] - positions[global_i]
+            if wrap:
+                diffs = min_image(diffs, box)
             dists_sq = np.sum(diffs * diffs, axis=1)
             nearest = np.argmin(dists_sq)
             to_predator = diffs[nearest]
@@ -199,13 +207,26 @@ class SpatialMode(ForceMode):
         # ── P11.5: Per-interaction perception cones + max distances ──
         # Defaults (max_dist=0, cos angle=−1) leave the shared neighbour
         # set untouched, so the hot path is unchanged unless genes are set.
+        # S2.B1: separation_distance is an additional absolute gate (0 =
+        # off, falls back to max_dist_sep); alignment_radius_ratio scales
+        # visual_range for a tighter alignment-only subset (1.0 = no
+        # extra restriction, falls back to max_dist_align).
+        sep_gate = (
+            config.spatial.separation_distance
+            if config.spatial.separation_distance > 0.0
+            else config.spatial.max_dist_sep
+        )
+        align_gate = config.spatial.max_dist_align
+        if config.spatial.alignment_radius_ratio < 1.0:
+            ratio_gate = config.spatial.alignment_radius_ratio * config.visual_range
+            align_gate = ratio_gate if align_gate <= 0.0 else min(align_gate, ratio_gate)
         sep_idx = _maybe_perception_filter(
             positions, velocities, neighbor_idx, active,
-            config.spatial.max_dist_sep,
+            sep_gate,
             config.spatial.angle_sep)
         align_idx = _maybe_perception_filter(
             positions, velocities, neighbor_idx, active,
-            config.spatial.max_dist_align,
+            align_gate,
             config.spatial.angle_align)
         coh_idx = _maybe_perception_filter(
             positions, velocities, neighbor_idx, active,
@@ -217,11 +238,46 @@ class SpatialMode(ForceMode):
         sep = separation_force(
             positions, velocities, sep_idx, active,
             kernel=config.spatial.separation_kernel)
-        align = alignment_force(
-            positions, velocities, align_idx, active)
-        coh = cohesion_force(
-            positions, velocities, coh_idx, active)
-        if noise_mode == "none":
+        if config.spatial.neighbor_filter == "global":
+            # S2.B1: degenerate "global" case — alignment/cohesion steer
+            # toward the whole-flock mean velocity / centre of mass, no
+            # radius, no kNN (separation stays local via sep_idx above).
+            align = np.zeros((len(positions), 3), dtype=np.float32)
+            coh = np.zeros((len(positions), 3), dtype=np.float32)
+            global_active_idx = np.where(active)[0]
+            if len(global_active_idx) > 0:
+                mean_vel = velocities[global_active_idx].mean(axis=0)
+                mean_pos = positions[global_active_idx].mean(axis=0)
+                # S1.5 forms: alignment = normalize(v̄ - v_i); cohesion = limit3(p̄ - p_i, 1)
+                steer = mean_vel - velocities[global_active_idx]
+                steer_norms = np.linalg.norm(steer, axis=1)
+                valid = steer_norms > 1e-6
+                align[global_active_idx[valid]] = (
+                    steer[valid] / steer_norms[valid, np.newaxis]
+                )
+                to_center = mean_pos - positions[global_active_idx]
+                lengths = np.linalg.norm(to_center, axis=1)
+                coh_vecs = to_center.copy()
+                long = lengths > 1.0
+                coh_vecs[long] = to_center[long] / lengths[long, np.newaxis]
+                coh[global_active_idx] = coh_vecs
+        else:
+            align = alignment_force(
+                positions, velocities, align_idx, active)
+            coh = cohesion_force(
+                positions, velocities, coh_idx, active)
+        # S2.B2: velocity-domain noise — (U³−0.5)·noise_scale added
+        # directly to velocity, after v+=a and before the final speed
+        # clamp (spec pipeline order), not to accelerations. Stashed on
+        # config for flock.integrate() to consume and clear (one-shot).
+        config._spatial_velocity_noise = None
+        if noise_mode == "velocity":
+            vel_noise = np.zeros((len(positions), 3), dtype=np.float32)
+            u = rng.uniform(0.0, 1.0, (n_active, 3)).astype(np.float32)
+            vel_noise[active] = (u ** 3 - 0.5) * config.noise_scale
+            config._spatial_velocity_noise = vel_noise
+
+        if noise_mode == "none" or noise_mode == "velocity":
             noise_full = np.zeros((len(positions), 3), dtype=np.float32)
         elif noise_mode == "maxwellian":
             # Maxwellian: velocity perturbation scaled by noise_scale
@@ -404,7 +460,12 @@ def _query_neighbors(
         tree = cKDTree(positions[active_idx])
 
     active_pos = positions[active_idx]
-    _, compacted_idx = tree.query(active_pos, k=k + 1, workers=-1)
+    # S2.B6: cfg.perf.num_threads (0 = auto/all cores, matching scipy's
+    # workers=-1 convention; N>0 pins the worker count) instead of a
+    # hardcoded workers=-1.
+    num_threads = getattr(getattr(config, 'perf', None), 'num_threads', 0)
+    workers = -1 if num_threads == 0 else num_threads
+    _, compacted_idx = tree.query(active_pos, k=k + 1, workers=workers)
     neighbor_idx[active_idx] = active_idx[compacted_idx[:, 1:k + 1]]
 
     # ── Apply filter based on mode ──
@@ -547,11 +608,22 @@ def _predator_escape(
         if spatial is not None else 1.4
     )
 
+    # S2.B3: minimum-image escape distances on toroidal domains — an
+    # all-zero box disables wrapping for every other boundary mode.
+    boundary_mode = getattr(config, 'boundary_mode', 'toroidal')
+    width = getattr(config, 'width', 0.0)
+    height = getattr(config, 'height', 0.0)
+    depth = getattr(config, 'depth', 0.0)
+    if boundary_mode == 'toroidal' and width and height and depth:
+        box = np.array([width, height, depth], dtype=np.float32)
+    else:
+        box = np.zeros(3, dtype=np.float32)
+
     # Dispatch kernel based on config.perf.use_numba
     _, _, _pred_escape_kernel = _dispatch_kernels(config)
     _pred_escape_kernel(
         escape, positions, neighbor_idx, is_predator, threatened, active,
-        escape_factor, accel_boost,
+        escape_factor, accel_boost, box,
     )
 
     return escape

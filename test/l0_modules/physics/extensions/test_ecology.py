@@ -583,3 +583,91 @@ def test_ecology_roost_pull_after_dusk_30_min():
     # Outside window → coherence=1.0, no roost pull
     assert eco_outside.coherence_factor == 1.0
     assert np.allclose(flock_outside.accelerations, 0.0)
+
+
+# ── S2.B8: is_roosting_time / is_murmuration_season / roost force ──
+
+def test_is_roosting_time_before_and_after_dusk():
+    """S2.B8: is_roosting_time flips from False to True around dusk."""
+    day = 172.0
+    dusk = Ecology.dusk_hour(day)
+    assert not Ecology.is_roosting_time(dusk - 2.0, day)  # 2h before dusk
+    assert Ecology.is_roosting_time(dusk + 1.0, day)       # 1h after dusk
+
+
+def test_is_murmuration_season_boundaries():
+    """S2.B8: Oct 1 (day 274) through Mar 31 (day 90) is murmuration
+    season; mid-summer (day 172) is not."""
+    assert Ecology.is_murmuration_season(274.0)  # Oct 1
+    assert Ecology.is_murmuration_season(1.0)    # Jan 1
+    assert Ecology.is_murmuration_season(90.0)   # Mar 31
+    assert not Ecology.is_murmuration_season(172.0)  # summer solstice
+    assert not Ecology.is_murmuration_season(200.0)
+
+
+def test_predator_present_deterministic_mode_reproducible():
+    """S2.B8: predator_present(day) with no rng is same-day-same-result."""
+    for day in (1, 50, 100, 365, 1000):
+        r1 = Ecology.predator_present(day)
+        r2 = Ecology.predator_present(day)
+        assert r1 == r2
+
+
+def test_predator_present_stochastic_mode_uses_rate():
+    """S2.B8: predator_present(day, rng=...) draws at PREDATOR_RATE
+    (0.296), not the deterministic hash — frequency should land near
+    the rate over many draws."""
+    import numpy as np
+    rng = np.random.default_rng(123)
+    hits = sum(Ecology.predator_present(0, rng=rng) for _ in range(20000))
+    freq = hits / 20000
+    assert abs(freq - Ecology.PREDATOR_RATE) < 0.02, f"freq={freq:.4f}"
+
+
+def test_ecology_config_predator_presence_selector():
+    """S2.B8: cfg.ecology_predator_presence selects deterministic vs
+    stochastic draws for Ecology.apply()'s day-boundary check."""
+    cfg = SimConfig()
+    assert cfg.ecology_predator_presence == "deterministic"
+    cfg.ecology_predator_presence = "stochastic"
+    eco = Ecology(cfg)
+    assert eco._predator_presence_mode == "stochastic"
+
+
+def test_ecology_roost_force_is_distance_independent_direction_scaled():
+    """S2.B8: roost_force = unit(roost-p)*roost_strength — magnitude is
+    the same for a near bird and a far bird (was linear-in-distance)."""
+    import numpy as np
+
+    from pymurmur.physics.extensions._base import StepContext
+    from pymurmur.physics.flock import PhysicsFlock
+
+    cfg = SimConfig()
+    cfg.num_boids = 2
+    cfg.ecology_roost = (500.0, 350.0, 200.0)
+    cfg.ecology_critical_mass = 1
+    cfg.seed = 42
+
+    flock = PhysicsFlock(cfg)
+    flock.accelerations[:] = 0.0
+    roost = np.array(cfg.ecology_roost, dtype=np.float32)
+    # One bird close, one bird 10x farther, same direction
+    flock.positions[0] = roost + np.array([10.0, 0.0, 0.0], dtype=np.float32)
+    flock.positions[1] = roost + np.array([100.0, 0.0, 0.0], dtype=np.float32)
+
+    eco = Ecology(cfg)
+    eco._day = 172.0 + 19.583 / 24.0  # 40 min before dusk
+    eco._day_dt = 0
+    ctx = StepContext(
+        frame=0, dt=1.0 / 60.0, rng=flock.rng,
+        center=flock.center, config=cfg,
+    )
+    eco.apply(flock, ctx)
+
+    mag_near = np.linalg.norm(flock.accelerations[0])
+    mag_far = np.linalg.norm(flock.accelerations[1])
+    assert mag_near > 0
+    assert np.isclose(mag_near, mag_far, rtol=1e-4), (
+        f"roost pull should be distance-independent: near={mag_near:.6f} "
+        f"far={mag_far:.6f}"
+    )

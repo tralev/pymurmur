@@ -74,13 +74,21 @@ class SpatialConfig:
     alignment_weight: float = 0.65
     cohesion_weight: float = 0.75
     noise_scale: float = 0.0
-    noise_mode: str = "additive"       # additive | maxwellian | none | seed_sinusoidal
+    noise_mode: str = "additive"       # additive | maxwellian | none | seed_sinusoidal | velocity
     acceleration_scale: float = 0.3
     influence_count: int = 7           # P4.1: max topological neighbours (hybrid filter)
     speed_mode: str = "clamp"          # clamp | band | none — how speed is enforced
     flow_weight: float = 0.0           # P11.5: global flow contribution weight
-    neighbor_filter: str = "hybrid"    # hybrid | metric | topological | none
+    neighbor_filter: str = "hybrid"    # hybrid | metric | topological | global | none
     separation_kernel: str = "sum"     # sum | mean | unit — how sep forces are combined
+    # S2.B1: dual-radii — alignment sees a tighter subset than sep/coh.
+    # 1.0 = no extra restriction beyond visual_range (back-compat default);
+    # the starlings preset sets 0.75 per the source-parity table.
+    alignment_radius_ratio: float = 1.0
+    # S2.B1: absolute metric gate for separation neighbours (0 = off,
+    # uses the shared hybrid-filtered set unrestricted; starlings/boids
+    # presets set 20).
+    separation_distance: float = 0.0
     # P11.5: Per-interaction perception cones
     max_dist_sep: float = 0.0          # max sep distance (0 = disabled)
     max_dist_align: float = 0.0        # max align distance (0 = disabled)
@@ -255,6 +263,8 @@ class EcologyConfig:
     ecology_dusk_width: float = 6.0          # logistic transition width (minutes)
     ecology_seasonal_amplitude: float = 0.5  # 0=no season, 1=full seasonal modulation
     ecology_temperature_boost: float = 0.3   # temperature influence on roost pull
+    # S2.B8: predator-presence draw mode
+    ecology_predator_presence: str = "deterministic"  # deterministic | stochastic
 
 
 @dataclass
@@ -371,6 +381,8 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "flow_weight": ("_spatial", "flow_weight"),
     "neighbor_filter": ("_spatial", "neighbor_filter"),
     "separation_kernel": ("_spatial", "separation_kernel"),
+    "alignment_radius_ratio": ("_spatial", "alignment_radius_ratio"),
+    "separation_distance": ("_spatial", "separation_distance"),
     "max_dist_sep": ("_spatial", "max_dist_sep"),
     "max_dist_align": ("_spatial", "max_dist_align"),
     "max_dist_coh": ("_spatial", "max_dist_coh"),
@@ -476,6 +488,7 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "ecology_dusk_width": ("_ecology", "ecology_dusk_width"),
     "ecology_seasonal_amplitude": ("_ecology", "ecology_seasonal_amplitude"),
     "ecology_temperature_boost": ("_ecology", "ecology_temperature_boost"),
+    "ecology_predator_presence": ("_ecology", "ecology_predator_presence"),
     # RoostConfig
     "roost_z_target": ("_roost", "z_target"),
     # PerfConfig
@@ -856,6 +869,8 @@ class SimConfig:
                         "flow_weight": self.flow_weight,
                         "neighbor_filter": self.neighbor_filter,
                         "separation_kernel": self.separation_kernel,
+                        "alignment_radius_ratio": self.alignment_radius_ratio,
+                        "separation_distance": self.separation_distance,
                         "max_dist_sep": self.max_dist_sep,
                         "max_dist_align": self.max_dist_align,
                         "max_dist_coh": self.max_dist_coh,
@@ -900,7 +915,8 @@ class SimConfig:
                         "ecology_critical_mass": self.ecology_critical_mass,
                         "ecology_dusk_width": self.ecology_dusk_width,
                         "ecology_seasonal_amplitude": self.ecology_seasonal_amplitude,
-                        "ecology_temperature_boost": self.ecology_temperature_boost},
+                        "ecology_temperature_boost": self.ecology_temperature_boost,
+                        "ecology_predator_presence": self.ecology_predator_presence},
             "roost": {"roost_z_target": self.roost.z_target},
             "vicsek": {"vicsek_couplage": self.vicsek_couplage,
                        "vicsek_diffusion": self.vicsek_diffusion,
@@ -1337,6 +1353,17 @@ class SimConfig:
         if _ok("parallel_workers") and cfg.parallel_workers < -1:
             issues.append(
                 f"parallel_workers must be >= -1, got {cfg.parallel_workers}"
+            )
+        # S2.B10: fastmath relaxes IEEE float semantics — only safe when
+        # metrics aren't being exported for scientific analysis (detail
+        # level 0 = visual-only runs). detail_level >= 1 requires
+        # IEEE-precise kernels so IEEE-precise observables stay meaningful.
+        if cfg.fastmath and cfg.metrics_detail_level > 0:
+            issues.append(
+                "perf.fastmath=True requires perf.metrics_detail_level == 0 "
+                f"(visual-only runs) -- got metrics_detail_level={cfg.metrics_detail_level}. "
+                "fastmath relaxes IEEE float semantics, which would make exported "
+                "metrics non-reproducible."
             )
 
         # ── Visualization ─────────────────────────────────────

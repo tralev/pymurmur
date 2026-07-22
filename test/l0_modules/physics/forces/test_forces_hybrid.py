@@ -861,6 +861,83 @@ def test_numba_numpy_predator_escape_equivalence():
         f"numba and numpy escape must match: {np.abs(esc_numba - esc_numpy).max():.6f}"
 
 
+# ── S2.B3: minimum-image (toroidal) predator escape ─────────────────
+
+def test_predator_escape_min_image_across_wrap_boundary():
+    """S2.B3: a predator just across a toroidal wrap boundary must be
+    seen as adjacent (short escape distance), not as ~domain-width away."""
+    from pymurmur.physics.forces._kernels import _numpy_predator_escape
+
+    box_size = 1000.0
+    box = np.array([box_size, box_size, box_size], dtype=np.float32)
+    N, k = 2, 4
+    positions = np.zeros((N, 3), dtype=np.float32)
+    # Prey near the low edge, predator near the high edge -- raw distance
+    # ~box_size-10, min-image distance ~10.
+    positions[0] = [5.0, 500.0, 500.0]
+    positions[1] = [box_size - 5.0, 500.0, 500.0]
+    active = np.ones(N, dtype=bool)
+    is_predator = np.array([False, True])
+    threatened = np.array([True, False])
+    n_idx = np.zeros((N, k), dtype=np.int32)
+    n_idx[0, 0] = 1  # prey 0 sees predator 1
+
+    escape_factor, accel_boost = 1e6, 1.4
+
+    esc_wrapped = np.zeros((N, 3), dtype=np.float32)
+    _numpy_predator_escape(esc_wrapped, positions, n_idx, is_predator,
+                            threatened, active, escape_factor, accel_boost, box)
+
+    esc_unwrapped = np.zeros((N, 3), dtype=np.float32)
+    _numpy_predator_escape(esc_unwrapped, positions, n_idx, is_predator,
+                            threatened, active, escape_factor, accel_boost)
+
+    mag_wrapped = np.linalg.norm(esc_wrapped[0])
+    mag_unwrapped = np.linalg.norm(esc_unwrapped[0])
+    # Min-image distance (~10) gives a much stronger 1/d^2 force than the
+    # raw cross-domain distance (~990).
+    assert mag_wrapped > mag_unwrapped * 100, (
+        f"wrapped={mag_wrapped:.4f} unwrapped={mag_unwrapped:.4f}"
+    )
+    # Direction should point from the predator toward the near edge (+x),
+    # i.e. away across the wrap seam, not across the whole domain (-x).
+    assert esc_wrapped[0][0] > 0, f"expected +x escape, got {esc_wrapped[0]}"
+    assert esc_unwrapped[0][0] < 0, f"expected -x escape without wrap, got {esc_unwrapped[0]}"
+
+
+def test_predator_escape_numba_numpy_min_image_equivalence():
+    """S2.B3: numba and numpy min-image escape agree."""
+    from pymurmur.physics.forces._kernels import (
+        _HAS_NUMBA,
+        _numba_predator_escape,
+        _numpy_predator_escape,
+    )
+    if not _HAS_NUMBA:
+        pytest.skip("numba not available")
+
+    box = np.array([1000.0, 1000.0, 1000.0], dtype=np.float32)
+    N, k = 2, 4
+    positions = np.zeros((N, 3), dtype=np.float32)
+    positions[0] = [5.0, 500.0, 500.0]
+    positions[1] = [995.0, 500.0, 500.0]
+    active = np.ones(N, dtype=bool)
+    is_predator = np.array([False, True])
+    threatened = np.array([True, False])
+    n_idx = np.zeros((N, k), dtype=np.int32)
+    n_idx[0, 0] = 1
+
+    escape_factor, accel_boost = 1e6, 1.4
+    esc_numba = np.zeros((N, 3), dtype=np.float32)
+    esc_numpy = np.zeros((N, 3), dtype=np.float32)
+    _numba_predator_escape(esc_numba, positions, n_idx, is_predator,
+                            threatened, active, escape_factor, accel_boost, box)
+    _numpy_predator_escape(esc_numpy, positions, n_idx, is_predator,
+                            threatened, active, escape_factor, accel_boost, box)
+    assert np.allclose(esc_numba, esc_numpy, atol=1e-3), (
+        f"numba/numpy min-image escape mismatch: {np.abs(esc_numba - esc_numpy).max():.6f}"
+    )
+
+
 def test_numba_predator_detect_excludes_predators():
     """P4.10: Predators are never marked as threatened."""
     from pymurmur.physics.forces._kernels import _HAS_NUMBA, _numba_predator_detect
@@ -1532,3 +1609,165 @@ def test_curl_flow_magnitude_bounded():
     assert np.allclose(mags, 0.08, atol=1e-5), (
         f"All flow magnitudes should be 0.08, got {mags.min():.6f}..{mags.max():.6f}"
     )
+
+
+# ═══════════════════════════════════════════════════════════════════
+# S2.B1: alignment_radius_ratio / separation_distance / global filter
+# ═══════════════════════════════════════════════════════════════════
+
+def test_alignment_radius_ratio_restricts_alignment_subset(default_config):
+    """S2.B1: alignment set is a subset of the sep/coh neighbour set
+    when alignment_radius_ratio < 1.0."""
+    from pymurmur.physics.forces.spatial import SpatialMode
+
+    cfg = default_config
+    cfg.seed = 42
+    cfg.mode = "spatial"
+    cfg.num_boids = 80
+    cfg.visual_range = 200.0
+    cfg.spatial.alignment_radius_ratio = 0.3  # tight subset
+
+    flock = PhysicsFlock(cfg)
+    flock.get_index().rebuild(flock.positions, flock.active)
+
+    accel_restricted = np.zeros_like(flock.accelerations)
+    SpatialMode.compute(
+        flock.positions, flock.velocities, accel_restricted, flock.active,
+        flock.get_index(), flock.rng, flock.last_theta, cfg,
+    )
+
+    cfg.spatial.alignment_radius_ratio = 1.0  # no restriction (baseline)
+    accel_baseline = np.zeros_like(flock.accelerations)
+    SpatialMode.compute(
+        flock.positions, flock.velocities, accel_baseline, flock.active,
+        flock.get_index(), flock.rng, flock.last_theta, cfg,
+    )
+
+    assert not np.allclose(accel_restricted, accel_baseline), (
+        "tightening alignment_radius_ratio should change the alignment contribution"
+    )
+
+
+def test_alignment_radius_ratio_default_is_noop(default_config):
+    """S2.B1: default alignment_radius_ratio=1.0 must not change forces
+    vs before the feature existed (no max_dist_align set)."""
+    from pymurmur.physics.forces.spatial import SpatialMode
+
+    cfg = default_config
+    cfg.seed = 7
+    cfg.mode = "spatial"
+    cfg.num_boids = 60
+    assert cfg.spatial.alignment_radius_ratio == 1.0
+    assert cfg.spatial.separation_distance == 0.0
+
+    flock = PhysicsFlock(cfg)
+    flock.get_index().rebuild(flock.positions, flock.active)
+
+    accel = np.zeros_like(flock.accelerations)
+    SpatialMode.compute(
+        flock.positions, flock.velocities, accel, flock.active,
+        flock.get_index(), flock.rng, flock.last_theta, cfg,
+    )
+    assert np.isfinite(accel).all()
+    assert (np.linalg.norm(accel, axis=1) > 0).any(), "default config should still produce forces"
+
+
+def test_separation_distance_gate_restricts_separation(default_config):
+    """S2.B1: separation_distance gates separation neighbours to a tighter
+    absolute distance than visual_range."""
+    from pymurmur.physics.forces.spatial import SpatialMode
+
+    cfg = default_config
+    cfg.seed = 3
+    cfg.mode = "spatial"
+    cfg.num_boids = 80
+    cfg.visual_range = 200.0
+    cfg.separation_weight = 5.0
+
+    flock = PhysicsFlock(cfg)
+    flock.get_index().rebuild(flock.positions, flock.active)
+
+    accel_wide = np.zeros_like(flock.accelerations)
+    SpatialMode.compute(
+        flock.positions, flock.velocities, accel_wide, flock.active,
+        flock.get_index(), flock.rng, flock.last_theta, cfg,
+    )
+
+    cfg.spatial.separation_distance = 15.0  # much tighter than visual_range
+    accel_tight = np.zeros_like(flock.accelerations)
+    SpatialMode.compute(
+        flock.positions, flock.velocities, accel_tight, flock.active,
+        flock.get_index(), flock.rng, flock.last_theta, cfg,
+    )
+
+    assert not np.allclose(accel_wide, accel_tight), (
+        "separation_distance should change the separation contribution"
+    )
+
+
+def test_neighbor_filter_global_uses_flock_wide_mean(default_config):
+    """S2.B1: neighbor_filter='global' steers every bird's alignment/
+    cohesion toward the whole-flock mean velocity / centre of mass."""
+    from pymurmur.physics.forces._base import alignment_force, cohesion_force
+    from pymurmur.physics.forces.spatial import SpatialMode
+
+    cfg = default_config
+    cfg.seed = 11
+    cfg.mode = "spatial"
+    cfg.num_boids = 40
+    cfg.spatial.neighbor_filter = "global"
+    cfg.alignment_weight = 1.0
+    cfg.cohesion_weight = 1.0
+    cfg.separation_weight = 0.0
+    cfg.noise_scale = 0.0
+
+    flock = PhysicsFlock(cfg)
+    flock.get_index().rebuild(flock.positions, flock.active)
+
+    accel = np.zeros_like(flock.accelerations)
+    SpatialMode.compute(
+        flock.positions, flock.velocities, accel, flock.active,
+        flock.get_index(), flock.rng, flock.last_theta, cfg,
+    )
+
+    active_idx = np.where(flock.active)[0]
+    mean_vel = flock.velocities[active_idx].mean(axis=0)
+    mean_pos = flock.positions[active_idx].mean(axis=0)
+
+    # Hand-check bird 0: align+coh should point toward global mean vel/CoM
+    steer = mean_vel - flock.velocities[0]
+    steer_norm = np.linalg.norm(steer)
+    expected_align = steer / steer_norm if steer_norm > 1e-6 else np.zeros(3)
+    to_center = mean_pos - flock.positions[0]
+    length = np.linalg.norm(to_center)
+    expected_coh = to_center / length if length > 1.0 else to_center
+
+    expected = expected_align * cfg.alignment_weight + expected_coh * cfg.cohesion_weight
+    expected_mag = np.linalg.norm(expected)
+    if expected_mag > cfg.max_force:
+        expected = expected / expected_mag * cfg.max_force
+
+    assert np.allclose(accel[0], expected, atol=1e-4), (
+        f"bird 0 force {accel[0]} != expected global-mean-based force {expected}"
+    )
+
+
+def test_neighbor_filter_global_does_not_crash_with_no_active(default_config):
+    """S2.B1: 'global' mode with zero active birds is a no-op, not a crash."""
+    from pymurmur.physics.forces.spatial import SpatialMode
+
+    cfg = default_config
+    cfg.mode = "spatial"
+    cfg.num_boids = 10
+    cfg.spatial.neighbor_filter = "global"
+
+    flock = PhysicsFlock(cfg)
+    flock.active[:] = False
+    flock.get_index().rebuild(flock.positions, flock.active)
+
+    accel = np.zeros_like(flock.accelerations)
+    SpatialMode.compute(
+        flock.positions, flock.velocities, accel, flock.active,
+        flock.get_index(), flock.rng, flock.last_theta, cfg,
+    )
+    assert np.allclose(accel, 0.0)

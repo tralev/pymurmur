@@ -1,0 +1,84 @@
+# murmuration_boids.yaml — S2.B2 source-parity preset for Reynolds
+# spatial mode: verifies update-order fidelity (predator boost before
+# acceleration_scale, force clamp before v+=a, velocity noise after
+# v+=a and before the ceiling clamp) and the "unit" separation kernel.
+# Right-click in the viewer to spawn predators and exercise the boost
+# ordering.
+
+# ── Simulation Domain ───────────────────────────────────────────────
+domain:
+  width: 1000.0
+  height: 700.0
+  depth: 400.0
+
+# ── Flock Parameters ────────────────────────────────────────────────
+flock:
+  num_boids: 150
+  boid_size: 9.0
+  v0: 6.0
+  max_force: 1.0
+  visual_range: 100
+
+# ── Flocking Mode ───────────────────────────────────────────────────
+mode: spatial
+
+# ── Reynolds Spatial Mode ────────────────────────────────────────────
+spatial:
+  separation_weight: 4.5
+  alignment_weight: 0.65
+  cohesion_weight: 0.75
+  acceleration_scale: 0.3
+  separation_kernel: unit    # sum | mean | unit — Sigma -u(d_ij), distance-independent
+  noise_mode: velocity       # S2.B2 — (U^3-0.5)*noise_scale added post v+=a
+  noise_scale: 0.05
+  speed_mode: ceiling        # |v| <= v0, not clamped to a band
+  separation_distance: 20    # metric gate on the separation neighbourhood
+
+# ── Boundary Mode ───────────────────────────────────────────────────
+boundary_mode: toroidal
+use_toroidal_distance: true
+
+# ── Behavioural Extensions ──────────────────────────────────────────
+# Predators are spawned interactively (right-click) — species dynamics
+# (boost 1.8x speed / 1.5x perception / 1.4x acceleration, escape
+# replacing separation, hard-zero align/coh) activate automatically
+# once a predator bird exists.
+extensions:
+  predator_enabled: false
+  roosting_enabled: false
+  wander_enabled: false
+  ripple_enabled: false
+
+# ── Performance Tuning ───────────────────────────────────────────────
+performance:
+  spatial_index: auto
+  instance_buffer_chunk: 50000
+
+# ── Metrics Detail ──────────────────────────────────────────────────
+metrics:
+  detail_level: 1
+  interval: 60
+
+# ── Seed ────────────────────────────────────────────────────────────
+seed: 42
+
+# ── Visualization ─────────────────────────────────────────────────────
+visual:
+  fps: 60
+  window_width: 1200
+  window_height: 800
+  show_grid: false
+  auto_rotate: false
+  theme: ink
+
+# ── Capture Settings ─────────────────────────────────────────────────
+capture:
+  width: 800
+  height: 600
+  frames: 300              # S2.B2 acceptance: alpha > 0.6 within 300 frames
+  every: 3
+  fps: 20
+  output: output/murmuration_boids.gif
+  metrics_csv: output/metrics_boids.csv
+  metrics_json: output/metrics_boids.json
+  with_viz: true

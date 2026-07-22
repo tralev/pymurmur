@@ -165,7 +165,13 @@ class PhysicsFlock:
             center=None,
             move=move,
             inertia=inertia,
+            # S2.B2: one-shot velocity-domain noise set by SpatialMode
+            # when spatial.noise_mode=="velocity"; cleared right after
+            # use so a stale array can't leak into a later mode switch.
+            velocity_noise=getattr(config, '_spatial_velocity_noise', None),
         )
+        if hasattr(config, '_spatial_velocity_noise'):
+            config._spatial_velocity_noise = None
 
         # 3. Update smoothed centre (EMA centroid)
         self.update_center()

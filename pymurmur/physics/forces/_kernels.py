@@ -141,17 +141,24 @@ def _numba_predator_escape(
     active: np.ndarray,             # (N,) bool
     escape_factor: float,
     accel_boost: float,
+    box: np.ndarray = np.zeros(3, dtype=np.float32),  # (3,) domain size; all-zero = no wrap
 ) -> None:
     """P4.3/P4.10: Predator escape force — numba-accelerated.
 
     For each threatened prey bird, finds the nearest predator among
     its neighbours and computes a 1/d² repulsive force away from it.
 
+    S2.B3: *box* enables minimum-image (toroidal) escape distances —
+    a predator just across the wrap boundary is otherwise seen as
+    almost the full domain width away instead of adjacent. Pass an
+    all-zero box to disable wrapping (open/margin/sphere boundaries).
+
     Mutates `escape` array in-place for zero-allocation performance.
     """
     active_idx = np.where(active)[0]
     n_active = len(active_idx)
     k = neighbor_idx.shape[1]
+    wrap = box[0] > 0.0 or box[1] > 0.0 or box[2] > 0.0
 
     for idx in range(n_active):
         global_i = active_idx[idx]
@@ -176,6 +183,13 @@ def _numba_predator_escape(
             dx = pi[0] - pj[0]
             dy = pi[1] - pj[1]
             dz = pi[2] - pj[2]
+            if wrap:
+                if box[0] > 0.0:
+                    dx -= box[0] * np.round(dx / box[0])
+                if box[1] > 0.0:
+                    dy -= box[1] * np.round(dy / box[1])
+                if box[2] > 0.0:
+                    dz -= box[2] * np.round(dz / box[2])
             dist_sq = dx * dx + dy * dy + dz * dz
             if dist_sq < nearest_dist_sq:
                 nearest_dist_sq = dist_sq
@@ -184,11 +198,18 @@ def _numba_predator_escape(
         if nearest_pred < 0 or nearest_dist_sq < 1e-12:
             continue
 
-        # Compute escape direction (away from predator)
+        # Compute escape direction (away from predator), min-image aware
         pj = positions[nearest_pred]
         dx = pi[0] - pj[0]
         dy = pi[1] - pj[1]
         dz = pi[2] - pj[2]
+        if wrap:
+            if box[0] > 0.0:
+                dx -= box[0] * np.round(dx / box[0])
+            if box[1] > 0.0:
+                dy -= box[1] * np.round(dy / box[1])
+            if box[2] > 0.0:
+                dz -= box[2] * np.round(dz / box[2])
         d = np.sqrt(dx * dx + dy * dy + dz * dz)
 
         # 1/d² falloff, scaled by escape_factor * accel_boost
@@ -255,8 +276,16 @@ def _numpy_predator_escape(
     active: np.ndarray,
     escape_factor: float,
     accel_boost: float,
+    box: np.ndarray | None = None,
 ) -> None:
-    """Pure-numpy fallback for predator escape (identical logic)."""
+    """Pure-numpy fallback for predator escape (identical logic).
+
+    S2.B3: *box* (3,) enables minimum-image (toroidal) escape distances;
+    None or all-zero disables wrapping.
+    """
+    from ...core.types import min_image
+
+    wrap = box is not None and bool((box > 0).any())
     active_idx = np.where(active)[0]
     for global_i in active_idx:
         if not threatened[global_i]:
@@ -270,6 +299,8 @@ def _numpy_predator_escape(
             continue
         predator_idx = valid_nbrs[predator_mask]
         diffs = positions[predator_idx] - positions[global_i]
+        if wrap:
+            diffs = min_image(diffs, box)
         dists_sq = np.sum(diffs * diffs, axis=1)
         nearest = np.argmin(dists_sq)
         to_predator = diffs[nearest]
