@@ -427,6 +427,11 @@ def init_velocities_cube(
     birds near cube corners have |v| ≈ v0√3 ≈ 1.73·v0.
     Mean speed ≈ 0.96·v0 (expected value of ‖U(−1,1)³‖).
 
+    S2.B9: verified against the roadmap's own bug list — this mode is
+    NOT flagged as divergent (only speed_uniform's lower bound and
+    tangential's constant speed are), despite the roadmap's separate
+    *math* line writing the law as `(U³−0.5)·2v0`. Left as-is.
+
     Returns (n, 3) float32 velocity array.
     """
     rng = rng or np.random.default_rng()
@@ -438,16 +443,20 @@ def init_velocities_speed_uniform(
     v0: float,
     rng: np.random.Generator | None = None,
 ) -> np.ndarray:
-    """P4.9: Uniform speed [0, v0] with random sphere directions.
+    """S2.B9: Uniform speed in [min(1, 0.3·v0), v0] with random sphere directions.
 
     Unlike fixed-speed sphere, this produces a flat speed histogram,
     giving natural variation in individual bird speeds from the start.
+    The lower bound keeps a floor speed at low v0 (matches
+    speed_min_factor's 0.3 band-clamp default) rather than allowing
+    near-zero initial speeds.
 
     Returns (n, 3) float32 velocity array.
     """
     rng = rng or np.random.default_rng()
     dirs = random_unit_sphere(n, rng)
-    speeds = rng.uniform(0.0, v0, (n, 1)).astype(np.float32)
+    lo = min(1.0, 0.3 * v0)
+    speeds = rng.uniform(lo, v0, (n, 1)).astype(np.float32)
     return (dirs * speeds).astype(np.float32)
 
 
@@ -458,11 +467,12 @@ def init_velocities_tangential(
     center: np.ndarray | None = None,
     positions: np.ndarray | None = None,
 ) -> np.ndarray:
-    """P4.9: Tangential velocities — perpendicular to radial from centre.
+    """S2.B9: Tangential velocities — perpendicular to radial from centre.
 
     Each bird orbits the flock centre rather than moving radially.
     Uses Gram–Schmidt to find a random perpendicular direction from
-    the radial vector, then scales to v0.
+    the radial vector, then scales by a random speed in U(1, v0) (was
+    a constant v0 — the spec wants per-bird speed variation here too).
 
     Args:
         n: number of birds
@@ -476,9 +486,10 @@ def init_velocities_tangential(
     rng = rng or np.random.default_rng()
     if center is None:
         center = np.zeros(3, dtype=np.float32)
+    speeds = rng.uniform(min(1.0, v0), max(1.0, v0), n).astype(np.float32)
     if positions is None:
         # No positions → fall back to random_unit_sphere (reasonable default)
-        return random_unit_sphere(n, rng) * v0
+        return random_unit_sphere(n, rng) * speeds[:, np.newaxis]
 
     v = np.empty((n, 3), dtype=np.float32)
     for i in range(n):
@@ -486,7 +497,7 @@ def init_velocities_tangential(
         r_norm = np.linalg.norm(radial)
         if r_norm < 1e-6:
             # At centre → use random direction
-            v[i] = random_unit_sphere(1, rng).ravel() * v0
+            v[i] = random_unit_sphere(1, rng).ravel() * speeds[i]
             continue
         radial /= r_norm
         # Pick a random vector and Gram–Schmidt out the radial component
@@ -499,7 +510,7 @@ def init_velocities_tangential(
             if t_norm < 1e-6:
                 tangent = np.cross(radial, np.array([0.0, 1.0, 0.0], dtype=np.float32))
                 t_norm = np.linalg.norm(tangent)
-        v[i] = (tangent / t_norm) * v0
+        v[i] = (tangent / t_norm) * speeds[i]
     return v
 
 

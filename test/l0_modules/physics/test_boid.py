@@ -1598,15 +1598,29 @@ def test_init_velocities_cube_seeded():
 
 
 def test_init_velocities_speed_uniform_range():
-    """P4.9: Speed_uniform mode produces speeds in [0, v0]."""
+    """S2.B9: Speed_uniform mode produces speeds in [min(1, 0.3v0), v0]."""
     rng = np.random.default_rng(42)
     v = init_velocities_speed_uniform(1000, 4.0, rng)
     speeds = np.linalg.norm(v, axis=1)
-    # All speeds in [0, v0]
-    assert (speeds >= 0.0).all(), f"min speed={speeds.min():.4f}"
+    lo = min(1.0, 0.3 * 4.0)  # 1.0
+    # All speeds in [lo, v0]
+    assert (speeds >= lo - 1e-4).all(), f"min speed={speeds.min():.4f}"
     assert (speeds <= 4.05).all(), f"max speed={speeds.max():.4f}"
-    # Uniform distribution → mean ≈ v0/2 ≈ 2.0
-    assert 1.8 < speeds.mean() < 2.2, f"mean speed={speeds.mean():.2f}"
+    # Uniform distribution over [1, 4] → mean ≈ 2.5
+    assert 2.3 < speeds.mean() < 2.7, f"mean speed={speeds.mean():.2f}"
+
+
+def test_init_velocities_speed_uniform_lower_bound_capped_at_one():
+    """S2.B9: At high v0, the floor caps at 1.0 (min(1, 0.3v0) = 1.0
+    once 0.3v0 exceeds 1, i.e. v0 > 10/3), not 0.3v0."""
+    rng = np.random.default_rng(7)
+    v0 = 10.0  # 0.3*v0 = 3.0 > 1.0 → floor caps at 1.0
+    v = init_velocities_speed_uniform(2000, v0, rng)
+    speeds = np.linalg.norm(v, axis=1)
+    assert speeds.min() >= 1.0 - 1e-3, f"min speed={speeds.min():.4f}, floor should be 1.0"
+    # A handful of samples should land near the floor (uniform draw over a
+    # wide [1, 10] range), confirming the floor is 1.0 not 0.3*v0=3.0.
+    assert (speeds < 2.5).any(), "expected some speeds below 0.3*v0=3.0"
 
 
 def test_init_velocities_speed_uniform_directions():
@@ -1639,6 +1653,22 @@ def test_init_velocities_tangential_perpendicular():
         assert dot < 0.1, (
             f"Bird {i}: velocity not tangential, dot(vel, radial)={dot:.4f}"
         )
+
+
+def test_init_velocities_tangential_speed_in_range_not_constant():
+    """S2.B9: Tangential speeds vary over U(1, v0), not fixed at v0."""
+    rng = np.random.default_rng(3)
+    center = np.array([500.0, 350.0, 200.0], dtype=np.float32)
+    positions = center + rng.uniform(-100, 100, (300, 3)).astype(np.float32)
+    positions += np.array([1.0, 0.0, 0.0], dtype=np.float32)
+
+    v0 = 4.0
+    v = init_velocities_tangential(300, v0, rng, center, positions)
+    speeds = np.linalg.norm(v, axis=1)
+    assert (speeds >= 1.0 - 1e-3).all() and (speeds <= v0 + 1e-3).all(), (
+        f"speeds out of [1, v0]: min={speeds.min():.3f} max={speeds.max():.3f}"
+    )
+    assert speeds.std() > 0.1, "tangential speeds must not be constant"
 
 
 def test_init_velocities_tangential_at_centre():
