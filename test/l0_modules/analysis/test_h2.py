@@ -107,6 +107,27 @@ class TestH2Robustness:
         _, h2_with_tree = compute_h2(positions, m=4, tree=tree)
         assert h2_no_tree == pytest.approx(h2_with_tree, rel=0.01)
 
+    def test_hand_3node_max_form_symmetrization(self):
+        """S1.8: 3-node directed k-NN graph symmetrizes via max(A, Aᵀ),
+        not (A + Aᵀ)/2.
+
+        Points at x=0,1,3 with m=1 (k=2): node 0's nearest other point
+        is node 1 (0→1); node 1's nearest is node 0 (1→0); node 2's
+        nearest is node 1 (2→1), but node 1's nearest is node 0, not
+        node 2 — so the raw k-NN graph has a one-directional edge
+        1↔2. Under max-form symmetrization this becomes a *full-weight*
+        edge, producing the unweighted path graph P3 (0-1-2), whose
+        Laplacian eigenvalues are analytically {0, 1, 3}
+        (2 − 2·cos(kπ/3) for k=0,1,2). Under the old average-form
+        ((A+Aᵀ)/2) the 1-2 edge would have weight 0.5 and this exact
+        value would not hold.
+        """
+        positions = np.array([[0, 0, 0], [1, 0, 0], [3, 0, 0]], dtype=np.float32)
+        h2_sq, h2 = compute_h2(positions, m=1)
+        # h2_sq = (1/2N) Σ 1/λ_i over nonzero λ = (1/6)(1/1 + 1/3) = 2/9
+        assert h2_sq == pytest.approx(2.0 / 9.0, abs=1e-6)
+        assert h2 == pytest.approx(np.sqrt(2.0 / 9.0), abs=1e-6)
+
     def test_metrics_collector_computes_h2(self):
         """MetricsCollector computes h2 at gated intervals."""
 

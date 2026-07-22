@@ -555,7 +555,10 @@ def compute_h2(positions: np.ndarray, m: int, tree=None) -> tuple[float, float]:
     # Build directed adjacency, then symmetrize
     from scipy.sparse import coo_matrix
     A_dir = coo_matrix((data, (rows, cols)), shape=(N, N)).tocsr()
-    A = (A_dir + A_dir.T) / 2.0  # symmetrize with average weight
+    # S1.8: max-form symmetrization — an edge exists at full weight if
+    # either endpoint's k-NN includes the other (was averaging, which
+    # halved the weight of one-directional k-NN edges).
+    A = A_dir.maximum(A_dir.T)
 
     # Laplacian L = D - A
     degrees = np.array(A.sum(axis=1)).flatten()
