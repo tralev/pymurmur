@@ -4,6 +4,10 @@ import ast
 import importlib
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.guard
+
 
 def _get_imports(module_path: Path) -> set[str]:
     """Extract imported module names from a Python file via AST."""

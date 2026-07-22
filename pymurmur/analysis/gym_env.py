@@ -191,7 +191,13 @@ class MurmurationEnv(_BaseEnv):
         return np.clip(obs, -1.0, 1.0)
 
     def _compute_reward(self) -> float:
-        """Compute reward from the current flock metrics."""
+        """Compute reward from the current flock metrics.
+
+        S3.9: reward weights are YAML-configurable via cfg.marl.reward_w_*
+        rather than hardcoded to RewardConfig's own defaults, so a preset
+        can shape the composite (e.g. adding a boundary or altitude
+        penalty) without a code change.
+        """
         assert self._engine is not None
         from ..analysis.rewards import RewardConfig, compute_reward
 
@@ -199,4 +205,12 @@ class MurmurationEnv(_BaseEnv):
         if not history:
             return 0.0
         m = history[-1]
-        return compute_reward(m, RewardConfig(faithful_signs=False))
+        reward_cfg = RewardConfig(
+            w_a=self._base_config.marl_reward_w_a,
+            w_c=self._base_config.marl_reward_w_c,
+            w_L=self._base_config.marl_reward_w_L,
+            w_b=self._base_config.marl_reward_w_b,
+            w_z=self._base_config.marl_reward_w_z,
+            faithful_signs=False,
+        )
+        return compute_reward(m, reward_cfg)

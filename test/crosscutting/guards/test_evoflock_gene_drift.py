@@ -19,7 +19,11 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 from pymurmur.analysis.evoflock import EVOLVABLE_PARAMS
+
+pytestmark = pytest.mark.guard
 
 # ── Source scanning ────────────────────────────────────────────────
 

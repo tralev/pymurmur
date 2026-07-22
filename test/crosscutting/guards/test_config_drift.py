@@ -13,7 +13,11 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 from pymurmur.core.config import _ALL_FIELD_NAMES
+
+pytestmark = pytest.mark.guard
 
 # ── Field name extraction ──────────────────────────────────────────
 
