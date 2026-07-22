@@ -86,6 +86,10 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.flock",
         "pymurmur.physics.extensions._base",
     },
+    "pymurmur.physics.forces._kernels": {
+        # S2.B3: min_image for toroidal-aware predator escape distances.
+        "pymurmur.core.types",
+    },
     "pymurmur.physics.forces.spatial": {
         "pymurmur.core.types",
         "pymurmur.physics.forces._mode",
