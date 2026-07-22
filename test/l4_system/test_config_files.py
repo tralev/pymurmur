@@ -49,8 +49,10 @@ class TestConfigFileValidation:
             assert "interval" in metrics, f"{path.name}: metrics.interval missing"
 
     def test_config_modes_valid(self):
-        """Config mode is one of the 5 valid values."""
-        valid = {"projection", "spatial", "field", "vicsek", "influencer"}
+        """Config mode is a registered ForceMode (S2.C8: was a stale
+        hardcoded 5-mode set that predated angle/marl registration)."""
+        from pymurmur.physics.forces._mode import MODE_REGISTRY
+        valid = set(MODE_REGISTRY.keys())
         for path in ALL_CONFIGS:
             data = _load_config(path)
             mode = data.get("mode", "")

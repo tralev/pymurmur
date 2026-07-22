@@ -1,0 +1,53 @@
+# murmuration_angle.yaml — Angle-based (axis-angle steering) mode configuration
+# Rodrigues heading rotation with unified neighbour modes, adaptive speed,
+# and cardinal-axis edge avoidance. Source-parity preset (S2.C8).
+# These values also double as the AngleConfig dataclass defaults.
+
+# ── Simulation Domain ───────────────────────────────────────────────
+domain:
+  width: 800.0
+  height: 800.0
+  depth: 600.0
+
+# ── Flock Parameters ────────────────────────────────────────────────
+flock:
+  num_boids: 200
+  boid_size: 9.0
+
+# ── Angle Mode ──────────────────────────────────────────────────────
+mode: angle
+
+# ── Boundary Mode ───────────────────────────────────────────────────
+boundary_mode: margin
+boundary_margin: 42.0
+
+# ── Angle Parameters ────────────────────────────────────────────────
+# Source-parity values — match AngleConfig's dataclass defaults exactly.
+angle:
+  turn_rate: 120.0            # base steering rate (deg/s)
+  max_turn_rate: 200.0        # max steering rate near boundaries (deg/s)
+  turn_threshold: 0.5         # dead-zone half-angle (deg)
+  jitter_deg: 4.0             # heading jitter amplitude (deg)
+  speed_mode: linear          # linear | quadratic | softened
+  base_speed: 150.0           # base cruise speed (units/frame)
+  neighbors: 7                # nearest neighbour count
+  sep_radius_bodies: 1.0      # flee radius, in body-size units
+  align_radius_bodies: 5.0    # align+cohere radius, in body-size units
+  range_radius_bodies: 12.0   # cohere-only radius, in body-size units
+
+# ── Performance ─────────────────────────────────────────────────────
+performance:
+  spatial_index: auto
+
+# ── Metrics Detail ──────────────────────────────────────────────────
+metrics:
+  detail_level: 1
+  interval: 60
+
+# ── Seed ────────────────────────────────────────────────────────────
+seed: 42
+
+# ── Visualization ───────────────────────────────────────────────────
+viz:
+  per_bird_color: true
+  trails: ring
