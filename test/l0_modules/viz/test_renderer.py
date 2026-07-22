@@ -865,7 +865,7 @@ class TestVisualizerIntegration:
     def _make_one_shot_handle_events(input_ctrl, monkeypatch):
         """Make handle_events return True once, then False (exit loop)."""
         calls = [0]
-        def _handle_once():
+        def _handle_once(positions=None):
             calls[0] += 1
             return calls[0] == 1
         monkeypatch.setattr(input_ctrl, "handle_events", _handle_once)

@@ -157,13 +157,21 @@ class OrbitCamera:
     def screen_to_world(
         self, screen_x: float, screen_y: float,
         viewport_width: int, viewport_height: int,
+        positions: np.ndarray | None = None,
     ) -> tuple[float, float, float] | None:
-        """P10.4: Unproject screen coords to world position on target Z plane.
+        """S5.4/P10.4: Unproject screen coords to a world spawn position.
 
-        Uses glm.unProject to cast a ray from the camera through the
-        screen point and intersect it with the Z = target.z plane.
+        Casts a ray from the camera through the screen point and
+        intersects it with a plane perpendicular to the camera's view
+        axis, at the flock's median depth along that axis
+        (`depth = median((p_i - o)*f_hat)`, spec S5.4) when *positions*
+        is given (S5.4: `spawn = o + r_hat*depth/(r_hat*f_hat)`).
+        Falls back to the `Z = target.z` plane when no flock context is
+        available (positions is None/empty) — matches the pre-S5.4
+        behaviour used by callers that don't have live flock state.
 
-        Returns None if the ray is parallel to the target plane.
+        Returns None if the ray is parallel to the intersection plane
+        or the intersection is behind the camera.
         """
         view = self.view_matrix()
         aspect = viewport_width / max(viewport_height, 1)
@@ -179,7 +187,24 @@ class OrbitCamera:
 
         direction = glm.normalize(far - near)
 
-        # Intersect with Z = target.z plane
+        if positions is not None and len(positions) > 0:
+            eye = glm.vec3(*self.eye_position())
+            forward = glm.normalize(self.target - eye)
+            o = np.array([eye.x, eye.y, eye.z])
+            f_hat = np.array([forward.x, forward.y, forward.z])
+            r_hat = np.array([direction.x, direction.y, direction.z])
+
+            denom = float(np.dot(r_hat, f_hat))
+            if abs(denom) < 1e-10:
+                return None
+            depth = float(np.median(np.asarray(positions) @ f_hat - np.dot(o, f_hat)))
+            t = depth / denom
+            if t < 0:
+                return None
+            hit = o + r_hat * t
+            return (float(hit[0]), float(hit[1]), float(hit[2]))
+
+        # Fallback: intersect with Z = target.z plane
         if abs(direction.z) < 1e-10:
             return None
         t = (self.target.z - near.z) / direction.z

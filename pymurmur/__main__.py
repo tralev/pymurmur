@@ -15,7 +15,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .core.config import SimConfig
+from .core.config import _ALL_FIELD_NAMES, SimConfig
 from .core.logging import (
     cli_err,
     cli_out,
@@ -252,6 +252,15 @@ def _apply_set_overrides(cfg: SimConfig, overrides: list[str]) -> None:
         elif len(parts) == 1:
             # Flat key: route via flat accessor (handles _SETTER_ONLY too)
             field_name = key
+            # S5.5: SimConfig.__setattr__ silently accepts unknown flat
+            # attribute names (falls through to a plain object.__setattr__
+            # for anything not in _FIELD_MAP) -- validate against the
+            # known-field set here instead, so a typo'd --set key fails
+            # loudly with the full field list, not a stray unused attribute.
+            if field_name not in _ALL_FIELD_NAMES:
+                cli_err(f"Error: --set '{key}': unknown field. "
+                        f"Known fields: {', '.join(sorted(_ALL_FIELD_NAMES))}")
+                sys.exit(1)
             value = _coerce_value(value_str)
             setattr(cfg, field_name, value)
         else:
@@ -361,6 +370,15 @@ def main() -> None:
         # P10.6: Enforce φp + φa ≤ 1 after CLI overrides
         _enforce_phi_cli(cfg)
 
+    # S5.5: --light-scheme -> theme mapping. Applied before engine
+    # construction (which validates the config) so it works for both
+    # the headless/capture path and the windowed path, not just the
+    # latter; "paper" is the light-background theme (was the invalid
+    # literal string "light", which isn't in SimConfig._VALID_THEMES
+    # and would have raised on the next validate() call).
+    if args.light_scheme:
+        cfg.theme = "paper"
+
     # P10.5: --print-config dumps resolved YAML and exits
     if args.print_config:
         # Dump as nested YAML using the to_file() format
@@ -438,10 +456,6 @@ def main() -> None:
         (cfg.window_width, cfg.window_height),
         flags,
     )
-
-    # P10.5: --light-scheme flag
-    if args.light_scheme:
-        cfg.theme = "light"
 
     t0 = time.time()
     _log.info("Lifecycle | viz_started")

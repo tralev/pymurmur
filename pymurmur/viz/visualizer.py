@@ -181,7 +181,10 @@ class Visualizer:
             # P10.4: Update viewport for cursor-ray unprojection
             input_ctrl.set_viewport(self.config.window_width, self.config.window_height)
 
-            running = input_ctrl.handle_events()
+            # S5.4: median-flock-depth spawn-ray intersection needs live
+            # active positions; empty/None falls back to the Z=target.z plane.
+            active_pos = self.sim.flock.positions[self.sim.flock.active]
+            running = input_ctrl.handle_events(positions=active_pos)
 
             # P10.3: TAB toggles HUD visibility (gated by config.viz.hud)
             if input_ctrl.pending_hud_toggle and self.config.viz.hud:

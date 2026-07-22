@@ -75,8 +75,15 @@ class InputControl:
         self._viewport_w = width
         self._viewport_h = height
 
-    def handle_events(self) -> bool:
-        """Process one frame of pygame events. Returns False to quit."""
+    def handle_events(self, positions: np.ndarray | None = None) -> bool:
+        """Process one frame of pygame events. Returns False to quit.
+
+        Args:
+            positions: (N, 3) active flock positions, for S5.4's
+                median-flock-depth spawn-ray intersection. None falls
+                back to the Z=target.z plane (see
+                ``OrbitCamera.screen_to_world``).
+        """
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
@@ -94,7 +101,7 @@ class InputControl:
                     self._last_mouse_pos = event.pos
                     self._mouse_down_pos = event.pos
                 elif event.button == 3:  # P10.4: right-click → spawn predator
-                    world = self._unproject_mouse(event.pos)
+                    world = self._unproject_mouse(event.pos, positions)
                     if world is not None:
                         self.pending_spawn_predator.append(world)
 
@@ -106,7 +113,7 @@ class InputControl:
                         dx = event.pos[0] - self._mouse_down_pos[0]
                         dy = event.pos[1] - self._mouse_down_pos[1]
                         if dx * dx + dy * dy < 25:  # < 5px movement
-                            world = self._unproject_mouse(event.pos)
+                            world = self._unproject_mouse(event.pos, positions)
                             if world is not None:
                                 self.pending_spawn_bird.append(world)
                     self._mouse_down_pos = None
@@ -297,10 +304,11 @@ class InputControl:
     # ── P10.4: Cursor-ray unprojection helper ──────────────────
 
     def _unproject_mouse(
-        self, pos: tuple[int, int]
+        self, pos: tuple[int, int], positions: np.ndarray | None = None
     ) -> tuple[float, float, float] | None:
-        """P10.4: Convert screen coords to world position via camera ray."""
+        """P10.4/S5.4: Convert screen coords to world position via camera ray."""
         return self.camera.screen_to_world(
             float(pos[0]), float(pos[1]),
             self._viewport_w, self._viewport_h,
+            positions=positions,
         )

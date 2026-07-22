@@ -407,3 +407,54 @@ class TestMainErrorPaths:
         ])
         with pytest.raises(FileNotFoundError):
             main()
+
+    def test_set_unknown_flat_key_exits_with_field_list(self, monkeypatch, capsys):
+        """S5.5: --set with an unknown flat key exits(1) and prints the
+        full known-field list, not a silently-accepted stray attribute."""
+        from pymurmur.__main__ import main
+        monkeypatch.setattr(sys, "argv", [
+            "pymurmur", "--set", "totally_bogus_field=5", "--print-config",
+        ])
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        assert "unknown field" in err
+        # Sample of real field names that must appear in the printed list
+        assert "num_boids" in err
+        assert "separation_weight" in err
+
+    def test_set_known_flat_key_does_not_exit(self, monkeypatch):
+        """S5.5: a known flat --set key is applied normally, no exit."""
+        from pymurmur.__main__ import main
+        monkeypatch.setattr(sys, "argv", [
+            "pymurmur", "--set", "num_boids=42", "--print-config",
+        ])
+        main()  # must not raise/exit
+
+
+class TestLightScheme:
+    """S5.5: --light-scheme maps to a real, valid theme."""
+
+    def test_light_scheme_sets_paper_theme(self, monkeypatch, capsys):
+        from pymurmur.__main__ import main
+        monkeypatch.setattr(sys, "argv", [
+            "pymurmur", "--light-scheme", "--print-config",
+        ])
+        main()
+        out = capsys.readouterr().out
+        assert "theme: paper" in out
+
+    def test_light_scheme_theme_is_valid(self):
+        """The mapped theme must actually be one SimConfig accepts."""
+        from pymurmur.core.config import SimConfig
+        cfg = SimConfig()
+        cfg.theme = "paper"
+        cfg.validate()  # must not raise
+
+    def test_without_light_scheme_theme_unchanged(self, monkeypatch, capsys):
+        from pymurmur.__main__ import main
+        monkeypatch.setattr(sys, "argv", ["pymurmur", "--print-config"])
+        main()
+        out = capsys.readouterr().out
+        assert "theme: paper" not in out
