@@ -156,6 +156,23 @@ class Predator(Extension):
         to_center = center - self._pos
         to_center_dir = to_center / max(np.linalg.norm(to_center), 1e-6)
 
+        # ── S2.A8: sign-aligned EMA turn axis ──
+        # desired = normalize(dir × to_center̂); flip sign toward the
+        # previous axis (the cross product's sign flips discontinuously
+        # as the threat crosses the centre line, which would otherwise
+        # jerk the egress arc's lift/drift direction each such crossing).
+        raw_axis = np.cross(self._dir, to_center_dir)
+        raw_axis_norm = np.linalg.norm(raw_axis)
+        if raw_axis_norm > 1e-8:
+            desired_axis = raw_axis / raw_axis_norm
+            if np.dot(self._turn_axis, desired_axis) < 0.0:
+                desired_axis = -desired_axis
+            amt = 0.15  # per-frame EMA blend rate
+            blended = self._turn_axis * (1.0 - amt) + desired_axis * amt
+            blended_norm = np.linalg.norm(blended)
+            if blended_norm > 1e-8:
+                self._turn_axis = (blended / blended_norm).astype(np.float32)
+
         # C1: cursor mode targets the bridge position directly when live;
         # the FSM phase update is skipped in that case (phase is only used
         # for turn_rate below, and stays frozen at its last value).
@@ -179,9 +196,16 @@ class Predator(Extension):
         # ── Turn rate: different for approach vs egress (P3.9) ──
         if self._phase == "approach":
             turn_rate = (0.54 + acceleration * 0.025) * (1.0 - momentum * 0.24)
+            # S2.A8: steer-response multiplier — approach turns are far
+            # more responsive than the raw turn_rate cap alone implies
+            # (the threat commits hard to closing the distance).
+            steer_response = 1.86 + (1.0 - momentum) * 0.48
         else:
             turn_rate = 0.42 * (1.0 - momentum * 0.24)
-        max_turn = turn_rate * dt
+            # S2.A8: egress is comparatively sluggish to turn — it's
+            # riding the arc out, not actively hunting.
+            steer_response = 0.34 + (1.0 - momentum) * 0.44
+        max_turn = turn_rate * steer_response * dt
 
         # ── Target selection ──
         if cursor_target is not None:

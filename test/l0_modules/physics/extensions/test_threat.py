@@ -353,3 +353,88 @@ def test_predator_zero_active():
     # P3.9: threat_prox is set to zeros (not None) for downstream consumers
     assert ctx.threat_prox is not None, "threat_prox should be set (zeros) even with no active birds"
     assert np.allclose(ctx.threat_prox, 0.0)
+
+
+# ── S2.A8: steer-response multiplier + sign-aligned EMA turn axis ──
+
+def test_steer_response_makes_approach_faster_than_raw_turn_rate():
+    """S2.A8: approach's steer_response (>1) lets the threat rotate
+    further per frame than turn_rate*dt alone would allow — verified by
+    placing it in a state where max_turn is the binding constraint
+    (target directly opposite current heading) and confirming the
+    achieved turn exceeds the raw turn_rate*dt bound."""
+    cfg = SimConfig()
+    cfg.num_boids = 30
+    flock = PhysicsFlock(cfg)
+    p = Predator(cfg)
+    p._phase = "approach"
+    p._dir = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    # Flock centred directly behind the threat's heading, and far enough
+    # away (beyond capture_dist) that the phase stays "approach" rather
+    # than immediately flipping to "egress" on this same apply() call —
+    # worst-case turn angle (~180 degrees) so the rotation cap binds.
+    flock.positions[flock.active] = np.array([-5000.0, 0.0, 0.0], dtype=np.float32)
+    p._pos = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+
+    dt = 1.0 / 60.0
+    raw_turn_rate = (0.54 + cfg.predator.predator_acceleration * 0.025) * (
+        1.0 - cfg.predator.predator_momentum * 0.24
+    )
+    raw_max_turn = raw_turn_rate * dt
+
+    dir_before = p._dir.copy()
+    p.apply(flock, _make_ctx(flock, cfg, dt=dt))
+    angle_turned = np.arccos(np.clip(np.dot(dir_before, p._dir), -1.0, 1.0))
+
+    assert angle_turned > raw_max_turn * 1.5, (
+        f"steer_response should widen the achievable turn beyond the raw "
+        f"turn_rate*dt bound ({raw_max_turn:.5f}), got {angle_turned:.5f}"
+    )
+
+
+def test_turn_axis_updates_and_stays_unit_length():
+    """S2.A8: turn_axis is no longer frozen at (0,1,0) — it EMA-tracks
+    dir × to_center_hat and stays normalized every frame."""
+    cfg = SimConfig()
+    cfg.num_boids = 30
+    flock = PhysicsFlock(cfg)
+    p = Predator(cfg)
+    p._dir = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    flock.positions[flock.active] = np.array([0.0, 100.0, 0.0], dtype=np.float32)
+
+    axis_before = p._turn_axis.copy()
+    for _ in range(5):
+        p.apply(flock, _make_ctx(flock, cfg))
+
+    assert not np.allclose(p._turn_axis, axis_before), (
+        "turn_axis must move away from its (0,1,0) initial value"
+    )
+    assert np.isclose(np.linalg.norm(p._turn_axis), 1.0, atol=1e-5)
+
+
+def test_turn_axis_sign_stays_aligned_across_centre_crossing():
+    """S2.A8: the sign-alignment guard prevents the EMA axis from
+    flipping discontinuously when dir × to_center_hat's raw sign flips
+    (e.g. as the threat crosses the flock's centre line)."""
+    cfg = SimConfig()
+    cfg.num_boids = 30
+    flock = PhysicsFlock(cfg)
+    p = Predator(cfg)
+    p._dir = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    p._turn_axis = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+
+    # Flock centre on one side, then the other — raw cross-product sign
+    # would flip between these two calls.
+    flock.positions[flock.active] = np.array([0.0, 10.0, 0.0], dtype=np.float32)
+    p.apply(flock, _make_ctx(flock, cfg))
+    axis_after_side_a = p._turn_axis.copy()
+
+    flock.positions[flock.active] = np.array([0.0, -10.0, 0.0], dtype=np.float32)
+    p.apply(flock, _make_ctx(flock, cfg))
+    axis_after_side_b = p._turn_axis.copy()
+
+    # Sign-aligned EMA means consecutive axes stay on the same side
+    # (positive dot product), not flipping ~180 degrees frame-to-frame.
+    assert np.dot(axis_after_side_a, axis_after_side_b) > 0.0, (
+        "turn_axis should not flip sign across a single centre crossing"
+    )
