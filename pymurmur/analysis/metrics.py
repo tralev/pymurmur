@@ -178,6 +178,9 @@ class MetricsCollector:
         self._domain_w = config.width if config else 1000.0
         self._domain_h = config.height if config else 1000.0
         self._domain_d = config.depth if config else 1000.0
+        # S3.6: silhouette_2d's disk radius — was hardcoded to the
+        # function default (5.0) regardless of the actual bird size.
+        self._boid_size = config.boid_size if config else 5.0
         # S3.8: altitude_deviation's z_target. RoostConfig.z_target is a
         # static dataclass default (500.0) unaware of domain depth; the
         # spec wants the default to be the domain-centre z when the
@@ -248,7 +251,7 @@ class MetricsCollector:
         m.theta_prime = compute_theta_prime(positions, self._theta_prime_grid)
 
         # P9.4: 2D silhouette Θ' — disk rasterization ⊥ observer axis
-        m.silhouette_2d = compute_silhouette_2d(positions)
+        m.silhouette_2d = compute_silhouette_2d(positions, boid_size=self._boid_size)
 
         # Centre of mass and dispersion
         com = np.mean(positions, axis=0)

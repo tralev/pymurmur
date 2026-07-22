@@ -33,6 +33,37 @@ def test_silhouette_2d_flat_wall():
     assert theta < 0.1, f"3D theta for flat wall should be < 0.1, got {theta:.4f}"
 
 
+def test_metrics_collector_wires_boid_size_into_silhouette():
+    """S3.6: MetricsCollector.collect() passes cfg.flock.boid_size into
+    compute_silhouette_2d instead of the function's hardcoded 5.0
+    default — a larger boid_size must raise silhouette coverage for the
+    same sparse flock."""
+    from pymurmur.core.config import SimConfig
+    from pymurmur.physics.flock import PhysicsFlock
+
+    def _silhouette_for(boid_size):
+        cfg = SimConfig()
+        cfg.num_boids = 5
+        cfg.boid_size = boid_size
+        cfg.metrics_detail_level = 1
+        flock = PhysicsFlock(cfg)
+        flock.positions[:] = np.array(
+            [[0, 0, 0], [200, 0, 0], [0, 200, 0], [200, 200, 0], [100, 100, 0]],
+            dtype=np.float32,
+        )
+        flock.active[:] = True
+        collector = MetricsCollector(cfg)
+        collector.collect(flock, 0)
+        return collector.snapshot().silhouette_2d
+
+    sil_small = _silhouette_for(2.0)
+    sil_large = _silhouette_for(60.0)
+    assert sil_large > sil_small, (
+        f"Larger boid_size should raise silhouette coverage: "
+        f"small={sil_small:.4f} vs large={sil_large:.4f}"
+    )
+
+
 def test_silhouette_2d_two_coincident_birds():
     """P9.4: Two birds at same XY → silhouette counts them once."""
     from pymurmur.analysis.metrics import compute_silhouette_2d
