@@ -257,8 +257,12 @@ class MetricsCollector:
         m.force_avg = float(np.mean(acc_mags))
         m.power_avg = float(np.mean(np.abs(np.sum(accs * velocities, axis=1))))
 
-        # Angular momentum: ⟨r × v⟩ / N
-        m.angular_momentum = np.mean(np.cross(positions, velocities), axis=0)
+        # Angular momentum about the centre of mass: ⟨(r-CoM) × v⟩ = Σ(r-CoM)×v / N.
+        # S3.9: CoM-centered (not origin-centered) so its magnitude is
+        # exactly the reward module's angular-momentum penalty term
+        # ‖Σᵢ(pᵢ−CoM)×vᵢ‖/N, and so it matches
+        # compute_normalized_angular_momentum's own CoM-centering below.
+        m.angular_momentum = np.mean(np.cross(positions - com, velocities), axis=0)
 
         # P9.8: Motion metrics
         m.velocity_deviation = float(

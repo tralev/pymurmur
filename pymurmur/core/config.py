@@ -232,6 +232,12 @@ class MarlConfig:
     marl_separation_radius: float = 2.0  # sep radius in unit scale U
     marl_action_scale: float = 0.05      # external action scaling factor
     marl_episode_steps: int = 500        # truncation horizon
+    # S3.9: five-term penalty-composite reward weights (analysis/rewards.py)
+    marl_reward_w_a: float = 1.0         # velocity_deviation weight
+    marl_reward_w_c: float = 1.0         # dispersion weight
+    marl_reward_w_L: float = 0.0         # angular-momentum penalty weight
+    marl_reward_w_b: float = 0.0         # boundary_overshoot weight
+    marl_reward_w_z: float = 0.0         # altitude_deviation weight
 
 
 @dataclass
@@ -498,6 +504,11 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "marl_separation_radius": ("_marl", "marl_separation_radius"),
     "marl_action_scale": ("_marl", "marl_action_scale"),
     "marl_episode_steps": ("_marl", "marl_episode_steps"),
+    "marl_reward_w_a": ("_marl", "marl_reward_w_a"),
+    "marl_reward_w_c": ("_marl", "marl_reward_w_c"),
+    "marl_reward_w_L": ("_marl", "marl_reward_w_L"),
+    "marl_reward_w_b": ("_marl", "marl_reward_w_b"),
+    "marl_reward_w_z": ("_marl", "marl_reward_w_z"),
     # IndexConfig
     "spatial_index": ("_index", "spatial_index"),
     "topological_cap": ("_index", "topological_cap"),
@@ -1079,7 +1090,12 @@ class SimConfig:
                      "marl_rule_weight": self.marl_rule_weight,
                      "marl_separation_radius": self.marl_separation_radius,
                      "marl_action_scale": self.marl_action_scale,
-                     "marl_episode_steps": self.marl_episode_steps},
+                     "marl_episode_steps": self.marl_episode_steps,
+                     "marl_reward_w_a": self.marl_reward_w_a,
+                     "marl_reward_w_c": self.marl_reward_w_c,
+                     "marl_reward_w_L": self.marl_reward_w_L,
+                     "marl_reward_w_b": self.marl_reward_w_b,
+                     "marl_reward_w_z": self.marl_reward_w_z},
             "seed": self.seed,
             "velocity_init": self.velocity_init,
         }
@@ -1176,6 +1192,8 @@ class SimConfig:
             "marl_velocity_cap", "marl_rule_weight",
             "marl_separation_radius", "marl_action_scale",
             "marl_episode_steps",
+            "marl_reward_w_a", "marl_reward_w_c", "marl_reward_w_L",
+            "marl_reward_w_b", "marl_reward_w_z",
             # PredatorConfig extras
             "predator_acceleration", "predator_vacuole_strength",
             "predator_blackening_gain",
