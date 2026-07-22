@@ -279,9 +279,9 @@ class TestRecorderHeadlessPipeline:
 
         orig_step = engine.step
 
-        def spy_step(dt=1.0 / 60.0):
+        def spy_step(dt=1.0 / 60.0, control=None):
             order_log.append("step")
-            return orig_step(dt)
+            return orig_step(dt, control=control)
 
         engine.step = spy_step
 

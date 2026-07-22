@@ -119,7 +119,9 @@ class PhysicsFlock:
 
         Pure state operation — never imports forces. The caller (engine)
         is responsible for force computation before calling this method.
-        speed_mode is wired from config.spatial.speed_mode.
+        D2: speed_mode is wired from the active mode's own declaration,
+        falling back to config.spatial.speed_mode if the mode doesn't
+        declare one.
         D11: move=False skips position update (modes that own their positions).
         D12: inertia is wired from config.field_inertia.
         """
@@ -466,7 +468,21 @@ class SpatialHashGrid:
         return touched
 
     def query_radius(self, pos: np.ndarray, radius: float) -> list[int]:
-        """Return candidate indices within the 27-cell neighborhood.
+        """Return candidate indices within the cell neighborhood covering
+        ``radius``.
+
+        D5: the neighborhood half-width scales with the requested radius
+        (``ceil(radius / cell_size)`` cells each direction) instead of a
+        hardcoded ±1 — a caller asking for a radius smaller or larger
+        than the grid's own cell_size previously got the wrong candidate
+        set (always exactly the fixed 27-cell block regardless of what
+        was asked for). Capped at 10 cells/direction (2 121 cells) so a
+        pathologically large radius can't turn one query into an
+        effective full-grid scan.
+
+        Cell-block membership, not an exact circle — callers that need
+        exact-radius filtering (e.g. query_knn) re-filter by real
+        distance afterward; this is deliberately a safe superset.
 
         P2.5: Neighbour cell keys are modulo-wrapped for toroidal
         cross-seam queries.
@@ -476,15 +492,25 @@ class SpatialHashGrid:
         cx = int(pos[0] // cell_size) % cols
         cy = int(pos[1] // cell_size) % rows
         cz = int(pos[2] // cell_size) % slices
+        reach = max(1, min(10, int(np.ceil(radius / cell_size))))
+        # Dedup wrapped keys, not just raw offsets: on a small grid
+        # (cols/rows/slices <= 2*reach), modulo-wrapping can revisit the
+        # same cell from different (dx,dy,dz) offsets — without this, a
+        # bird's index would appear multiple times in candidates and
+        # corrupt query_knn's downstream top-k selection.
+        visited_keys: set[tuple[int, int, int]] = set()
         candidates: list[int] = []
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                for dz in (-1, 0, 1):
+        for dx in range(-reach, reach + 1):
+            for dy in range(-reach, reach + 1):
+                for dz in range(-reach, reach + 1):
                     key = (
                         (cx + dx) % cols,
                         (cy + dy) % rows,
                         (cz + dz) % slices,
                     )
+                    if key in visited_keys:
+                        continue
+                    visited_keys.add(key)
                     if key in self._bins:
                         candidates.extend(self._bins[key])
         return candidates

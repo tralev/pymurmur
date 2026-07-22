@@ -25,7 +25,8 @@ class ForceMode(ABC):
     """Protocol for force modes.
 
     Each subclass overrides compute() with the 8-arg force signature
-    and sets class-level metadata flags (needs_index).
+    and sets class-level metadata flags (needs_index, owns_positions,
+    speed_mode).
 
     Usage::
 
@@ -37,9 +38,21 @@ class ForceMode(ABC):
             def compute(positions, velocities, accelerations,
                         active, index, rng, last_theta, config):
                 ...  # force computation
+
+    D2: ``owns_positions`` (default False) tells the engine to call
+    ``integrate(..., move=False)`` — the mode moves positions itself.
+    ``speed_mode`` (default None) overrides the generic post-integration
+    speed clamp with the mode's own policy ("fixed" if the mode already
+    sets exact per-bird velocities directly, "none" if the mode owns its
+    speed policy end-to-end on a different unit scale than v0). When
+    unset, the engine falls back to ``config.spatial.speed_mode`` — the
+    historical default, and still the right choice for modes (spatial,
+    projection, field) that want it to stay configurable per-preset.
     """
 
     needs_index: ClassVar[bool] = False
+    owns_positions: ClassVar[bool] = False
+    speed_mode: ClassVar[str | None] = None
 
     @staticmethod
     @abstractmethod

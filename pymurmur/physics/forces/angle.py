@@ -39,6 +39,7 @@ class AngleMode(ForceMode):
     """
 
     needs_index = True
+    speed_mode = "fixed"  # D2: sets velocities[i] = heading * adaptive per-bird speed directly
 
     @staticmethod
     def compute(

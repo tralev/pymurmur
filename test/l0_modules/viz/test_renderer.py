@@ -15,21 +15,34 @@ class TestInstanceSchema:
     """P2.7: InstanceSchema is a pure dataclass — testable without GPU."""
 
     def test_instance_schema_defaults(self):
-        """P2.7: InstanceSchema has correct default field values."""
+        """D7: InstanceSchema has correct default field values — one
+        merged 8-float layout (pos.xyz vel.xyz hue scale), not the old
+        6-float pos+vel with a separate colour VBO."""
         from pymurmur.viz.renderer import InstanceSchema
         s = InstanceSchema()
-        assert s.floats == 6, "Default floats must be 6 (pos.xyz + vel.xyz)"
-        assert s.layout == "3f 3f/i", "Default layout must be ModernGL format string"
-        assert s.attrs == ("in_bird_pos", "in_bird_vel"), (
-            "Default attrs must be shader attribute names"
+        assert s.floats == 8, (
+            "Default floats must be 8 (pos.xyz + vel.xyz + hue + scale)"
         )
+        assert s.layout == "3f 3f 1f 1f/i", "Default layout must be ModernGL format string"
+        assert s.attrs == (
+            "in_bird_pos", "in_bird_vel", "in_bird_hue", "in_bird_scale",
+        ), "Default attrs must be shader attribute names"
+
+    def test_instance_schema_pos_vel_only_view(self):
+        """D7: the pos+vel-only padded view skips the trailing hue+scale
+        floats (8 bytes = 2×float32) for shaders that don't declare
+        them, e.g. the impostor VAO."""
+        from pymurmur.viz.renderer import InstanceSchema
+        s = InstanceSchema()
+        assert s.pos_vel_layout == "3f 3f 8x/i"
+        assert s.pos_vel_attrs == ("in_bird_pos", "in_bird_vel")
 
     def test_instance_schema_custom_floats(self):
         """P2.7: InstanceSchema accepts custom float count."""
         from pymurmur.viz.renderer import InstanceSchema
         s = InstanceSchema(floats=9)
         assert s.floats == 9
-        assert s.layout == "3f 3f/i"  # layout unchanged unless explicitly set
+        assert s.layout == "3f 3f 1f 1f/i"  # layout unchanged unless explicitly set
 
     def test_instance_schema_custom_layout(self):
         """P2.7: InstanceSchema accepts custom ModernGL layout string."""
@@ -296,13 +309,11 @@ class TestRenderer3D:
         assert r._fbo is None            # line 90 (else: no FBO in windowed)
         assert r.ctx is real_ctx         # line 49 (windowed context creation)
 
-    def test_renderer_one_write_per_vbo(self, gpu_available, small_flock):
-        """update_instances() writes instance + colour VBOs (2 writes).
-
-        P8.5: Per-bird colour data (hue + scale) is packed into a
-        separate colour VBO alongside the position+velocity instance VBO.
-        Both writes happen in the same update_instances() call.
-        """
+    def test_renderer_single_memcpy(self, gpu_available, small_flock):
+        """D7: update_instances() writes the instance VBO exactly once
+        per frame — pos+vel+hue+scale all interleave into one merged
+        InstanceSchema buffer now (was 2 writes: instance + a separate
+        colour VBO for hue+scale, before the D7 schema merge)."""
         if not gpu_available:
             pytest.skip("GPU not available")
         from pymurmur.viz.renderer import Renderer3D
@@ -322,13 +333,11 @@ class TestRenderer3D:
         try:
             count = r.update_instances(small_flock)
             assert count == small_flock.N_active
-            # P8.5: 2 vbo.write() calls — instance (pos+vel) + colour (hue+scale)
-            assert len(write_calls) == 2, (
-                f"Expected 2 vbo.write() calls (instance + colour), got {len(write_calls)}"
+            assert len(write_calls) == 1, (
+                f"Expected 1 vbo.write() call (single merged instance "
+                f"buffer), got {len(write_calls)}"
             )
-            # Sanity: both writes are non-trivial
             assert write_calls[0] > 0
-            assert write_calls[1] > 0
         finally:
             Buffer.write = original_write
 
@@ -347,6 +356,85 @@ class TestRenderer3D:
         r.begin_frame(OrbitCamera())
         r.draw_birds(flock)
         r.end_frame()
+
+
+@pytest.mark.gpu
+class TestDrawLayer:
+    """D7: draw_layer — single non-instanced marker seam, feeds S2.A8
+    (threat marker) and S2.E5 (influencer target marker)."""
+
+    def test_draw_layer_default_mesh_no_crash(self, gpu_available):
+        """Default call (ellipsoid mesh) renders without error."""
+        if not gpu_available:
+            pytest.skip("GPU not available")
+        from pymurmur.viz.camera import OrbitCamera
+        from pymurmur.viz.renderer import Renderer3D
+        r = Renderer3D(200, 150, headless=True)
+        r.begin_frame(OrbitCamera())
+        r.draw_layer((100.0, 50.0, 25.0))
+        r.end_frame()
+
+    def test_draw_layer_each_registered_mesh(self, gpu_available):
+        """Every S4.4a mesh usable as a marker renders without error."""
+        if not gpu_available:
+            pytest.skip("GPU not available")
+        from pymurmur.viz.camera import OrbitCamera
+        from pymurmur.viz.renderer import Renderer3D
+        r = Renderer3D(200, 150, headless=True)
+        r.begin_frame(OrbitCamera())
+        for mesh in ("ellipsoid", "cone", "arrow"):
+            r.draw_layer((0.0, 0.0, 0.0), mesh=mesh)
+        r.end_frame()
+
+    def test_draw_layer_unknown_mesh_falls_back(self, gpu_available):
+        """An unrecognised mesh name falls back to ellipsoid instead of
+        raising (e.g. "tetra"/"winged"/"impostor" use a different
+        shader program and aren't valid draw_layer meshes)."""
+        if not gpu_available:
+            pytest.skip("GPU not available")
+        from pymurmur.viz.camera import OrbitCamera
+        from pymurmur.viz.renderer import Renderer3D
+        r = Renderer3D(200, 150, headless=True)
+        r.begin_frame(OrbitCamera())
+        r.draw_layer((0.0, 0.0, 0.0), mesh="tetra")  # not in _mesh_vbos
+        r.end_frame()
+
+    def test_draw_layer_does_not_touch_bird_instance_data(self, gpu_available, small_flock):
+        """D7 regression guard: draw_layer must not corrupt the shared
+        per-bird instance buffer (it uses a separate, non-instanced VAO
+        — this is exactly the bug the docstring warns about avoiding)."""
+        if not gpu_available:
+            pytest.skip("GPU not available")
+        from pymurmur.viz.camera import OrbitCamera
+        from pymurmur.viz.renderer import Renderer3D
+        r = Renderer3D(200, 150, headless=True)
+        r.update_instances(small_flock)
+        packed_before = r._packed[: small_flock.N_active].copy()
+
+        r.begin_frame(OrbitCamera())
+        r.draw_layer((999.0, -999.0, 500.0), hue=0.9, scale=5.0)
+        r.draw_birds(small_flock)
+        r.end_frame()
+
+        packed_after = r._packed[: small_flock.N_active]
+        assert np.array_equal(packed_before, packed_after), (
+            "draw_layer must not mutate the shared instance buffer"
+        )
+
+    def test_draw_layer_caches_marker_vao_per_mesh(self, gpu_available):
+        """Repeated calls for the same mesh reuse one cached VAO rather
+        than rebuilding it every call."""
+        if not gpu_available:
+            pytest.skip("GPU not available")
+        from pymurmur.viz.camera import OrbitCamera
+        from pymurmur.viz.renderer import Renderer3D
+        r = Renderer3D(200, 150, headless=True)
+        r.begin_frame(OrbitCamera())
+        r.draw_layer((0.0, 0.0, 0.0), mesh="cone")
+        vao_first = r._marker_vao_cone
+        r.draw_layer((1.0, 2.0, 3.0), mesh="cone")
+        r.end_frame()
+        assert r._marker_vao_cone is vao_first
 
 
 @pytest.mark.gpu

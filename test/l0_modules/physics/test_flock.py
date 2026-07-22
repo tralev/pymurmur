@@ -234,6 +234,68 @@ def test_hash_grid_inactive_excluded(small_flock):
         assert len(candidates) == 0
 
 
+def test_hash_grid_query_radius_is_honored():
+    """D5: query_radius's radius argument actually changes what's found —
+    previously it always searched a fixed ±1-cell block regardless of the
+    requested radius, so the same query point with a small vs. large
+    radius returned identical results."""
+    from pymurmur.core.config import SimConfig
+    cfg = SimConfig()
+    cfg.num_boids = 1
+    cfg.width = 1000
+    cfg.height = 700
+    cfg.depth = 400
+    cfg.visual_range = 100  # cell_size = 100
+    flock = PhysicsFlock(cfg)
+    grid = flock.get_index()
+    if isinstance(grid, SpatialHashGrid):
+        # Bird at cell x=4; query at cell x=0 — 4 cells away, well outside
+        # the old fixed ±1-cell (3-cell-wide) neighborhood.
+        flock.positions[:] = np.array([[450, 350, 200]], dtype=np.float32)
+        grid.rebuild(flock.positions, flock.active)
+        query_pos = np.array([50, 350, 200], dtype=np.float32)
+
+        small_radius_hits = grid.query_radius(query_pos, 50.0)
+        assert 0 not in small_radius_hits, (
+            "a 50-unit radius should not reach a bird 400 units away"
+        )
+
+        large_radius_hits = grid.query_radius(query_pos, 450.0)
+        assert 0 in large_radius_hits, (
+            "a 450-unit radius should reach a bird 400 units away — "
+            "if this fails, query_radius is still ignoring its argument"
+        )
+
+
+def test_hash_grid_query_radius_no_duplicates_on_small_grid():
+    """D5: a large radius on a small grid (few cells per axis) must not
+    return the same bird's index more than once via modulo-wrapped cell
+    revisits."""
+    from pymurmur.core.config import SimConfig
+    cfg = SimConfig()
+    cfg.num_boids = 3
+    cfg.width = 200
+    cfg.height = 200
+    cfg.depth = 200
+    cfg.visual_range = 100  # cell_size = 100 → only 2 cells per axis
+    flock = PhysicsFlock(cfg)
+    grid = flock.get_index()
+    if isinstance(grid, SpatialHashGrid):
+        flock.positions[:] = np.array(
+            [[10, 10, 10], [110, 110, 110], [190, 190, 190]], dtype=np.float32,
+        )
+        grid.rebuild(flock.positions, flock.active)
+
+        # Large radius relative to the tiny (2×2×2-cell) grid — forces a
+        # wide, wrap-heavy search window.
+        candidates = grid.query_radius(
+            np.array([100, 100, 100], dtype=np.float32), 1000.0,
+        )
+        assert len(candidates) == len(set(candidates)), (
+            f"duplicate indices in query_radius result: {candidates}"
+        )
+
+
 def test_hash_grid_cell_wrapping():
     """Query near domain edge finds birds across the toroidal seam (P2.5).
 

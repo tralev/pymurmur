@@ -145,17 +145,23 @@ class TestColourPacking:
         assert scale[2] == 1.0
         assert scale[3] == 1.35
 
-    def test_colour_vbo_two_floats_per_bird(self):
-        """P8.5: Colour VBO packs exactly 2 floats per bird."""
+    def test_colour_slice_two_floats_per_bird(self):
+        """P8.5/D7: Colour data (hue + scale) is exactly 2 floats per
+        bird — packed as the trailing 2 columns of the merged 8-float
+        InstanceSchema buffer since D7, not a separate colour VBO."""
         n = 50
-        packed = np.zeros((n, 2), dtype=np.float32)
-        assert packed.shape == (n, 2)
-        assert packed.dtype == np.float32
+        packed = np.zeros((n, 8), dtype=np.float32)
+        colour_slice = packed[:, 6:8]
+        assert colour_slice.shape == (n, 2)
+        assert colour_slice.dtype == np.float32
 
-    def test_colour_vbo_stride(self):
-        """P8.5: Colour VBO stride is 8 bytes (2 × float32)."""
+    def test_colour_slice_stride(self):
+        """P8.5: Colour data's own stride is 8 bytes (2 × float32),
+        sitting at byte offset 24 within the merged 32-byte-per-bird
+        InstanceSchema layout (D7)."""
         assert np.dtype(np.float32).itemsize == 4
         assert 2 * 4 == 8  # 2 floats × 4 bytes
+        assert 6 * 4 == 24  # colour columns start after pos.xyz + vel.xyz
 
 
 # ── P8.5d: Renderer GPU integration ──────────────────────────────
@@ -175,39 +181,46 @@ class TestColourRenderer:
             winged_mesh=True, gradient_sky=False,
         )
 
-    def test_colour_vbo_created(self, headless_renderer):
-        """P8.5: _colour_vbo exists after construction."""
-        assert headless_renderer._colour_vbo is not None
+    def test_instance_vbo_created(self, headless_renderer):
+        """D7: _instance_vbo exists after construction (colour data now
+        lives in the same merged buffer as pos+vel — no separate
+        _colour_vbo since the D7 InstanceSchema merge)."""
+        assert headless_renderer._instance_vbo is not None
+        assert not hasattr(headless_renderer, "_colour_vbo"), (
+            "D7 merged colour into _instance_vbo — _colour_vbo should be gone"
+        )
 
-    def test_colour_packed_initialised(self, headless_renderer):
-        """P8.5: _colour_packed is (max_instances, 2) float32."""
-        cp = headless_renderer._colour_packed
-        assert cp.shape[1] == 2
-        assert cp.dtype == np.float32
+    def test_packed_initialised_with_colour_columns(self, headless_renderer):
+        """D7: _packed is (max_instances, 8) float32 — columns 6:8 are
+        hue + scale (was a separate (max_instances, 2) _colour_packed)."""
+        p = headless_renderer._packed
+        assert p.shape[1] == 8
+        assert p.dtype == np.float32
 
     def test_update_instances_packs_colours(self, headless_renderer):
-        """P8.5: update_instances fills _colour_packed with hue + scale."""
+        """P8.5/D7: update_instances fills _packed[:, 6:8] with hue + scale."""
         from pymurmur.core.config import SimConfig
         from pymurmur.physics.flock import PhysicsFlock
         cfg = SimConfig(num_boids=10, seed=123)
         flock = PhysicsFlock(cfg)
         n = headless_renderer.update_instances(flock)
         assert n == 10
-        cp = headless_renderer._colour_packed
+        p = headless_renderer._packed
         # Colours should be packed for active birds
-        assert cp[0, 0] != 0.0 or cp[0, 1] != 0.0  # at least one non-zero
-        assert cp[0, 1] == 1.0  # first bird is prey (unless predator enabled)
+        assert p[0, 6] != 0.0 or p[0, 7] != 0.0  # at least one non-zero
+        assert p[0, 7] == 1.0  # first bird is prey (unless predator enabled)
 
-    def test_colour_vbo_written(self, headless_renderer):
-        """P8.5: Colour VBO receives data after update_instances."""
+    def test_instance_vbo_written(self, headless_renderer):
+        """D7: the merged instance VBO receives pos+vel+hue+scale data
+        after update_instances (32 bytes/bird, was 24+8 across two VBOs)."""
         from pymurmur.core.config import SimConfig
         from pymurmur.physics.flock import PhysicsFlock
         cfg = SimConfig(num_boids=10, seed=42)
         flock = PhysicsFlock(cfg)
         headless_renderer.update_instances(flock)
         # Read back to verify data was written (VBO has data)
-        data = headless_renderer._colour_vbo.read()
-        assert len(data) >= 10 * 2 * 4  # at least 80 bytes for 10 birds
+        data = headless_renderer._instance_vbo.read()
+        assert len(data) >= 10 * 8 * 4  # at least 320 bytes for 10 birds
 
     def test_begin_frame_sets_ambient_diffuse(self, headless_renderer):
         """P8.5: begin_frame uploads u_Ambient and u_Diffuse to both programs."""
@@ -233,7 +246,8 @@ class TestColourRenderer:
         headless_renderer.draw_birds(flock)
 
     def test_predator_gets_redder(self, headless_renderer):
-        """P8.5: Predator birds get scale 1.35 in colour VBO."""
+        """P8.5/D7: Predator birds get scale 1.35 in the merged instance
+        buffer's scale column (index 7)."""
         from pymurmur.core.config import SimConfig
         from pymurmur.physics.flock import PhysicsFlock
         cfg = SimConfig(num_boids=5, seed=42)
@@ -242,9 +256,9 @@ class TestColourRenderer:
         # Add a predator
         flock.add_boids(1, cfg, is_predator=True)
         n = headless_renderer.update_instances(flock)
-        cp = headless_renderer._colour_packed
+        p = headless_renderer._packed
         # Last bird is predator
-        assert cp[n - 1, 1] == pytest.approx(1.35), "Predator should have scale 1.35"
+        assert p[n - 1, 7] == pytest.approx(1.35), "Predator should have scale 1.35"
 
     def test_renderer_with_predator_colours(self, headless_renderer):
         """P8.5: Render a frame with predator birds (no crash)."""

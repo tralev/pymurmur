@@ -303,8 +303,11 @@ class TestImpostorLargeFlock:
         assert n == 20000, f"Expected 20000 active, got {n}"
 
         # Verify single instance VBO holds all 20000 birds
-        # (6 floats × 4 bytes × 20000 = 480,000 bytes)
-        expected_bytes = 6 * 4 * 20000
+        # D7: 8 floats/bird (pos.xyz vel.xyz hue scale) × 4 bytes ×
+        # 20000 = 640,000 bytes — the impostor VAO reads only the first
+        # 6 of those 8 floats (padded format string), but the
+        # underlying buffer itself is still the full merged schema size.
+        expected_bytes = 8 * 4 * 20000
         assert r._instance_vbo.size >= expected_bytes, (
             f"Instance VBO too small: {r._instance_vbo.size} < {expected_bytes}"
         )
