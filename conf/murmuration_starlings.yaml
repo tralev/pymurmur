@@ -1,0 +1,86 @@
+# murmuration_starlings.yaml — S2.B1 source-parity preset for Reynolds
+# spatial mode: hybrid metric+topological neighbour filter, dual radii
+# (alignment subset of the separation/cohesion neighbourhood), and
+# per-frame parameter jitter for organic variation.
+
+# ── Simulation Domain ───────────────────────────────────────────────
+domain:
+  width: 1000.0
+  height: 700.0
+  depth: 400.0
+
+# ── Flock Parameters ────────────────────────────────────────────────
+flock:
+  num_boids: 150
+  boid_size: 9.0
+  v0: 4.0
+  max_force: 0.15
+  visual_range: 80
+
+# ── Flocking Mode ───────────────────────────────────────────────────
+mode: spatial
+
+# ── Reynolds Spatial Mode ────────────────────────────────────────────
+spatial:
+  separation_weight: 3.0
+  cohesion_weight: 0.2
+  alignment_weight: 0.02
+  noise_scale: 0.05
+  neighbor_filter: hybrid    # knn | hybrid | global
+  influence_count: 7         # topological cap (S2.B1 hybrid filter)
+  alignment_radius_ratio: 0.75  # alignment subset of the sep/coh neighbourhood
+  speed_mode: fixed          # constant |v| = v0
+  # S2.B5: per-frame parameter jitter (organic variation) — multiplicative
+  # weight*(1+U(0,jitter)) per the already-implemented P4.5 mechanism.
+  jitter_separation: 0.15
+  jitter_cohesion: 0.15
+  jitter_alignment: 0.15
+
+# ── Boundary Mode ───────────────────────────────────────────────────
+boundary_mode: sphere
+boundary_sphere_radius: 300.0
+boundary_avoidance_factor: 0.05
+use_toroidal_distance: true
+
+# ── Behavioural Extensions ──────────────────────────────────────────
+extensions:
+  predator_enabled: false
+  roosting_enabled: false
+  wander_enabled: false
+  ripple_enabled: false
+
+# ── Performance Tuning ───────────────────────────────────────────────
+performance:
+  spatial_index: auto
+  instance_buffer_chunk: 50000
+
+# ── Metrics Detail ──────────────────────────────────────────────────
+metrics:
+  detail_level: 1
+  interval: 60
+
+# ── Seed ────────────────────────────────────────────────────────────
+seed: 42
+
+# ── Visualization ─────────────────────────────────────────────────────
+visual:
+  fps: 60
+  window_width: 1200
+  window_height: 800
+  show_grid: false
+  auto_rotate: false
+  theme: ink
+  bird_mesh: winged
+  gradient_sky: true
+
+# ── Capture Settings ─────────────────────────────────────────────────
+capture:
+  width: 800
+  height: 600
+  frames: 500              # S2.B1 acceptance: cohesive rotating groups within 500 frames
+  every: 3
+  fps: 20
+  output: output/murmuration_starlings.gif
+  metrics_csv: output/metrics_starlings.csv
+  metrics_json: output/metrics_starlings.json
+  with_viz: true
