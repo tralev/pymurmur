@@ -891,6 +891,41 @@ class TestVicsekSpecies:
             f"Prey not pushed beyond R_avoid: x={flock.positions[2, 0]:.1f}"
         )
 
+    def test_numba_matches_numpy_species_collisions(self):
+        """P8: the numba-compiled kernel must match the pure-numpy fallback
+        (within float32 rounding) on a dense, collision-heavy scene —
+        exercises the same sequential Gauss-Seidel branch decisions on
+        both paths, not just the isolated per-pair math."""
+        from pymurmur.physics.forces._kernels import (
+            _HAS_NUMBA,
+            _numba_species_collisions,
+            _numpy_species_collisions,
+        )
+        if not _HAS_NUMBA:
+            pytest.skip("numba not installed")
+
+        rng = np.random.default_rng(7)
+        n = 200
+        pos_a = rng.uniform(0, 20, (n, 3)).astype(np.float32)  # dense -> many collisions
+        pos_b = pos_a.copy()
+        is_pred = rng.random(n) < 0.05
+        active_idx = np.arange(n)
+
+        count_numpy = _numpy_species_collisions(
+            pos_a, is_pred, active_idx, 5.0, 8.0, 100.0, 100.0, 100.0,
+        )
+        count_numba = _numba_species_collisions(
+            pos_b, is_pred, active_idx.astype(np.int64), 5.0, 8.0, 100.0, 100.0, 100.0,
+        )
+
+        assert count_numpy == count_numba, (
+            "Numba and numpy paths must take identical branch decisions "
+            f"(same corrections count): {count_numpy} vs {count_numba}"
+        )
+        np.testing.assert_allclose(
+            pos_a, pos_b, atol=1e-3,
+            err_msg="Numba kernel must match numpy fallback within float32 tolerance",
+        )
 
     # ── P6 Integration: stress-test interactions ─────────────
 

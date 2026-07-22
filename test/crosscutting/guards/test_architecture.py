@@ -124,6 +124,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.core.types",
         "pymurmur.physics.forces._mode",
         "pymurmur.physics.forces._base",
+        "pymurmur.physics.forces._kernels",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
         "pymurmur.physics.flock",
