@@ -473,11 +473,19 @@ class TrailRenderer:
         flock: PhysicsFlock,
         instance_count: int,
     ) -> None:
-        """Render CPU-generated sinusoidal ribbon lines.
+        """S4.3: Render CPU-generated sinusoidal ribbon lines.
 
-        For each active bird, generates a polyline traced backward along
-        velocity with a sinusoidal wave offset perpendicular to the
-        velocity direction. Rendered as LINE_STRIP.
+        Spec layout: 5 segments per bird traced backward along velocity
+        (vertex k at ``p - v_hat * trailScale * prog``,
+        ``trailScale = 0.1 * trail_length``, ``prog = k/5``); a ribbon
+        wave displaces vertices along the camera-plane (XY, z-up)
+        perpendicular ``(-v_y, v_x, 0)/sqrt(v_x^2+v_y^2)`` (falling back
+        to ``(1,0,0)`` when v_x = v_y = 0) by
+        ``sin(prog*2*pi*2.6 + seed) * waveScale * prog^2`` — amplitude
+        vanishing at the head (prog=0). One GL_LINES draw of
+        ``2*5 = 10`` disjoint vertices per bird (not LINE_STRIP — segment
+        k's own pair of endpoints, so adjacent segments don't need to
+        share a vertex and every bird's ribbon draws in one call).
         """
         import moderngl
 
@@ -486,55 +494,48 @@ class TrailRenderer:
         if n == 0:
             return
 
-        # Ribbon parameters
-        segments_per_bird = min(self._trail_length, 20)
-        ribbon_points = n * segments_per_bird
-        amplitude = 2.0       # world-unit wave amplitude
-        frequency = 3.0        # wave cycles along trail
+        segments = 5
+        verts_per_bird = segments * 2  # GL_LINES: 2 endpoints/segment
+        total_verts = n * verts_per_bird
+        trail_scale = 0.1 * self._trail_length
+        wave_scale = 2.0  # world-unit wave amplitude at prog=1 (not spec-pinned)
 
-        if ribbon_points > self._lines_capacity:
-            self._lines_capacity = ribbon_points + 50000
+        if total_verts > self._lines_capacity:
+            self._lines_capacity = total_verts + 50000
             self._lines_vbo = self._ctx.buffer(
                 reserve=self._lines_capacity * 3 * 4
             )
             self._lines_vao = None
 
-        # Generate ribbon vertices
-        positions = flock.positions[active_idx]
-        velocities = flock.velocities[active_idx]
+        positions = flock.positions[active_idx].astype(np.float64)
+        velocities = flock.velocities[active_idx].astype(np.float64)
+        seeds = flock.seeds[active_idx].astype(np.float64)
 
-        verts = np.zeros((n, segments_per_bird, 3), dtype=np.float32)
-        step_scale = self._trail_length * 0.15
+        speed = np.linalg.norm(velocities, axis=1)
+        forward = np.zeros_like(velocities)
+        moving = speed > 1e-9
+        forward[moving] = velocities[moving] / speed[moving, np.newaxis]
+        # Stationary birds (speed ~= 0): forward stays zero -> every
+        # segment collapses to `positions` (finite, degenerate ribbon).
 
-        for i in range(n):
-            pos = positions[i].astype(np.float64)
-            vel = velocities[i].astype(np.float64)
-            speed = np.linalg.norm(vel)
-            if speed < 1e-6:
-                # Stationary bird: no trail, just repeat position
-                verts[i, :, :] = pos.astype(np.float32)
-                continue
+        vx, vy = velocities[:, 0], velocities[:, 1]
+        speed_xy = np.sqrt(vx * vx + vy * vy)
+        perp = np.zeros((n, 3), dtype=np.float64)
+        has_xy = speed_xy > 1e-9
+        perp[has_xy, 0] = -vy[has_xy] / speed_xy[has_xy]
+        perp[has_xy, 1] = vx[has_xy] / speed_xy[has_xy]
+        perp[~has_xy, 0] = 1.0  # degenerate vertical-v fallback
 
-            forward = vel / speed
-            # Perpendicular in the XY plane (z-up world)
-            perp = np.array([-forward[1], forward[0], 0.0], dtype=np.float64)
-            perp_norm = np.linalg.norm(perp)
-            if perp_norm < 1e-6:
-                perp = np.array([1.0, 0.0, 0.0], dtype=np.float64)
-            else:
-                perp /= perp_norm
+        verts = np.zeros((n, verts_per_bird, 3), dtype=np.float64)
+        for k in range(segments):
+            for j, prog in enumerate((k / segments, (k + 1) / segments)):
+                base = positions - forward * (trail_scale * prog)
+                wave_amount = np.sin(prog * 2.0 * np.pi * 2.6 + seeds) * wave_scale * (prog ** 2)
+                verts[:, 2 * k + j] = base + perp * wave_amount[:, np.newaxis]
 
-            for j in range(segments_per_bird):
-                t = j / max(segments_per_bird - 1, 1)
-                # Point traced backward along velocity
-                base = pos - forward * speed * t * step_scale
-                # Sinusoidal wave offset
-                wave = perp * np.sin(t * frequency * np.pi) * amplitude
-                verts[i, j] = (base + wave).astype(np.float32)
-
-        flat = verts.reshape(-1, 3)
+        flat = verts.reshape(-1, 3).astype(np.float32)
         self._lines_vbo.write(flat.tobytes())
-        self._lines_count = ribbon_points
+        self._lines_count = total_verts
 
         if self._lines_vao is None:
             self._lines_vao = self._ctx.vertex_array(
@@ -542,15 +543,8 @@ class TrailRenderer:
                 [(self._lines_vbo, "3f", "in_position")],
             )
 
-        # Draw each bird's ribbon as a separate LINE_STRIP
         self._ctx.disable(moderngl.DEPTH_TEST)
-        for i in range(n):
-            offset = i * segments_per_bird
-            self._lines_vao.render(
-                moderngl.LINE_STRIP,
-                vertices=segments_per_bird,
-                first=offset,
-            )
+        self._lines_vao.render(moderngl.LINES, vertices=total_verts)
         self._ctx.enable(moderngl.DEPTH_TEST)
 
     # ── Cleanup ────────────────────────────────────────────────

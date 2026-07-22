@@ -41,6 +41,7 @@ def fake_flock():
         active = np.array([True]*20 + [False]*10, dtype=bool)
         positions = np.random.default_rng(42).uniform(0, 500, (30, 3)).astype(np.float32)
         velocities = np.random.default_rng(43).uniform(-2, 2, (30, 3)).astype(np.float32)
+        seeds = np.random.default_rng(44).uniform(0.0, 1.0, 30).astype(np.float32)
         position_history = None
     return FakeFlock()
 
@@ -355,14 +356,14 @@ class TestDrawLines:
 
     def test_lines_ribbon_vertex_count(self, headless_ctx, fake_flock,
                                          fake_instance_vbo, fake_camera, gpu_available):
-        """Lines mode generates segments_per_bird vertices per active bird."""
+        """S4.3: Lines mode generates exactly 10 GL_LINES vertices (5
+        disjoint segments) per active bird, regardless of trail_length —
+        trail_length only scales trailScale, not the segment count."""
         from pymurmur.viz.trails import TrailRenderer
         t = TrailRenderer(headless_ctx, mode="lines", trail_length=20)
         t.begin_frame(fake_camera, aspect=1.0)
         t.draw(fake_flock, fake_instance_vbo, fake_flock.N_active)
-        # segments_per_bird = min(trail_length, 20) = 20
-        # 20 active × 20 segments = 400 vertices
-        assert t._lines_count == 400
+        assert t._lines_count == 200  # 20 active x 10 vertices/bird
 
     def test_lines_stationary_bird_no_crash(self, headless_ctx, fake_instance_vbo,
                                               fake_camera, gpu_available):
@@ -376,26 +377,28 @@ class TestDrawLines:
             active = np.array([True], dtype=bool)
             positions = np.array([[250, 250, 250]], dtype=np.float32)
             velocities = np.array([[0, 0, 0]], dtype=np.float32)
+            seeds = np.array([0.5], dtype=np.float32)
             position_history = None
 
         t.begin_frame(fake_camera, aspect=1.0)
         t.draw(StationaryFlock(), fake_instance_vbo, 1)  # should not crash
 
-    def test_lines_trail_length_affects_segments(self, headless_ctx, fake_flock,
-                                                    fake_instance_vbo, fake_camera,
-                                                    gpu_available):
-        """Longer trail_length → more segments (capped at 20)."""
+    def test_lines_trail_length_scales_reach_not_segment_count(
+        self, headless_ctx, fake_flock, fake_instance_vbo, fake_camera, gpu_available,
+    ):
+        """S4.3: trail_length changes trailScale (how far back the ribbon
+        reaches), not the number of segments — always 10 vertices/bird."""
         from pymurmur.viz.trails import TrailRenderer
 
         t5 = TrailRenderer(headless_ctx, mode="lines", trail_length=5)
         t5.begin_frame(fake_camera, aspect=1.0)
         t5.draw(fake_flock, fake_instance_vbo, fake_flock.N_active)
-        assert t5._lines_count == 100  # 20 × 5
+        assert t5._lines_count == 200  # 20 x 10, unaffected by trail_length
 
         t30 = TrailRenderer(headless_ctx, mode="lines", trail_length=30)
         t30.begin_frame(fake_camera, aspect=1.0)
         t30.draw(fake_flock, fake_instance_vbo, fake_flock.N_active)
-        assert t30._lines_count == 400  # 20 × 20 (capped)
+        assert t30._lines_count == 200  # still 20 x 10
 
 
 # ── Edge cases (continued) ─────────────────────────────────────
@@ -594,3 +597,71 @@ class TestRendererTrailWiring:
         if not gpu_available:
             pytest.skip("GPU not available")
         self._run_mode("lines")
+
+
+class TestLinesRibbonGeometry:
+    """S4.3: verify the exact per-vertex layout of the lines ribbon
+    directly on the CPU-side buffer (not just that it renders)."""
+
+    def test_head_vertex_has_zero_wave_displacement(
+        self, headless_ctx, fake_camera, gpu_available,
+    ):
+        """prog=0 (the head, k=0/j=0) must equal the bird's raw position
+        exactly — the wave amplitude vanishes as prog^2 at the head."""
+        if not gpu_available:
+            pytest.skip("GPU not available")
+        import moderngl
+
+        from pymurmur.viz.trails import TrailRenderer
+
+        class OneBird:
+            N_capacity = 1
+            N_active = 1
+            active = np.array([True], dtype=bool)
+            positions = np.array([[10.0, 20.0, 30.0]], dtype=np.float32)
+            velocities = np.array([[1.0, 0.0, 0.0]], dtype=np.float32)
+            seeds = np.array([0.3], dtype=np.float32)
+            position_history = None
+
+        flock = OneBird()
+        t = TrailRenderer(headless_ctx, mode="lines", trail_length=10)
+        t.begin_frame(fake_camera, aspect=1.0)
+        t.draw(flock, headless_ctx.buffer(reserve=8 * 4), 1)
+
+        raw = t._lines_vbo.read(10 * 3 * 4)
+        verts = np.frombuffer(raw, dtype=np.float32).reshape(10, 3)
+        # Vertex 0 is (k=0, j=0) -> prog=0 -> zero wave, zero trailScale offset
+        assert np.allclose(verts[0], flock.positions[0], atol=1e-4)
+
+    def test_segments_trace_backward_along_velocity(
+        self, headless_ctx, fake_camera, gpu_available,
+    ):
+        """Later segments (higher prog) are displaced further backward
+        along -v_hat than earlier ones (trailScale*prog term)."""
+        if not gpu_available:
+            pytest.skip("GPU not available")
+        from pymurmur.viz.trails import TrailRenderer
+
+        class OneBird:
+            N_capacity = 1
+            N_active = 1
+            active = np.array([True], dtype=bool)
+            positions = np.array([[0.0, 0.0, 0.0]], dtype=np.float32)
+            velocities = np.array([[1.0, 0.0, 0.0]], dtype=np.float32)
+            seeds = np.array([0.0], dtype=np.float32)
+            position_history = None
+
+        flock = OneBird()
+        t = TrailRenderer(headless_ctx, mode="lines", trail_length=10)
+        t.begin_frame(fake_camera, aspect=1.0)
+        t.draw(flock, headless_ctx.buffer(reserve=8 * 4), 1)
+
+        raw = t._lines_vbo.read(10 * 3 * 4)
+        verts = np.frombuffer(raw, dtype=np.float32).reshape(10, 3)
+        # Vertex indices 0,2,4,6,8 are the "j=0" (segment start) endpoints
+        # at prog = 0, 1/5, 2/5, 3/5, 4/5 — x should decrease monotonically
+        # (moving backward, i.e. -x, since velocity is +x).
+        xs = verts[0::2, 0]
+        assert all(xs[i] >= xs[i + 1] for i in range(len(xs) - 1)), (
+            f"Segments should trace backward along velocity: {xs}"
+        )

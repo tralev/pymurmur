@@ -142,6 +142,7 @@ uniform vec3 u_Ambient;   // P8.5: theme ambient material
 uniform vec3 u_Diffuse;   // P8.5: theme diffuse material
 uniform vec3 u_theme_slow;   // colour at low speed (for hue base)
 uniform vec3 u_theme_spec;   // specular highlight tint
+uniform float u_rim_power;   // S4.2: mesh Fresnel rim exponent (k ~= 2-3)
 
 vec3 hsv2rgb(vec3 c) {
     // c.x = hue [0,1], c.y = sat, c.z = val
@@ -159,6 +160,12 @@ void main() {
     float diff = max(dot(N, L), 0.0);
     float specular = pow(max(dot(N, H), 0.0), 32.0) * 0.25;
 
+    // S4.2: Fresnel rim — view-angle silhouette highlight, the 3D
+    // generalisation of a 1-px outline. Distinct from the impostor
+    // disc's r^2-based rim (IMPOSTOR_FRAGMENT_SHADER) since meshes have
+    // real normals to take a N.V angle from.
+    float rim = pow(1.0 - max(dot(N, V), 0.0), u_rim_power);
+
     // P8.5: Per-bird hue — rotate the base colour by seed-derived hue
     float t = clamp(v_speed / 6.0, 0.0, 1.0);
     vec3 base_color = mix(u_theme_slow, vec3(1.0), t);  // brighten at speed
@@ -174,6 +181,7 @@ void main() {
     // P8.5: Theme ambient + diffuse instead of hardcoded constants
     vec3 lit = u_Ambient + u_Diffuse * diff * bright;
     lit += specular * u_theme_spec;
+    lit += rim * u_theme_spec;  // S4.2: rim-light tinted by the theme's specular colour
     lit *= base_color;
 
     frag_color = vec4(lit, 1.0);
@@ -482,6 +490,20 @@ THEMES: dict[str, dict[str, tuple[float, float, float]]] = {
         "trail": (0.5, 0.5, 0.5),
         "paper": (0.25, 0.25, 0.25),
         "ink": (0.05, 0.05, 0.05),
+    },
+    # S4.6: heading-hue debug theme — same lighting as "ink"; per-bird
+    # hue source (velocity azimuth vs seed) is a renderer-level decision,
+    # not a lighting decision.
+    "heading": {
+        "ambient": (0.02, 0.04, 0.10),
+        "diffuse": (0.06, 0.12, 0.40),
+        "slow": (0.1, 0.2, 0.5),
+        "fast": (0.4, 0.8, 1.0),
+        "spec": (1.0, 1.0, 1.0),
+        "clear": (0.05, 0.05, 0.1),
+        "trail": (0.3, 0.6, 0.9),
+        "paper": (0.15, 0.25, 0.55),
+        "ink": (0.02, 0.04, 0.12),
     },
 }
 

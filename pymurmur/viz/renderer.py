@@ -159,6 +159,7 @@ class Renderer3D:
         # backward compatibility during migration and will be retired.
         self._theme = THEMES.get(theme, THEMES["ink"])
         self._materials = get_theme_materials(theme)  # S4.4a: per-theme material set
+        self._theme_name = theme  # S4.6: raw name, needed for the heading-hue debug theme
         self._point_sprites = point_sprites
         self._winged_mesh = winged_mesh
         self._bird_mesh = bird_mesh          # config.viz.bird_mesh
@@ -457,10 +458,20 @@ class Renderer3D:
 
         self._packed[:n, 0:3] = active_pos[:n]
         self._packed[:n, 3:6] = active_vel[:n]
-        # P8.5: per-bird hue (seed, if enabled) or flat gold
-        self._packed[:n, 6] = (
-            active_seeds[:n] if self._per_bird_color else np.full(n, 0.33)
-        )
+        # P8.5: per-bird hue (seed, if enabled) or flat gold.
+        # S4.6: the "heading" debug theme overrides this with a
+        # velocity-azimuth-derived hue instead — birds flying in
+        # different directions render in visibly different colours,
+        # which is the whole point of the debug view (z-up world, so
+        # azimuth is atan2(vel_y, vel_x) in the XY plane).
+        if self._theme_name == "heading":
+            vx = active_vel[:n, 0]
+            vy = active_vel[:n, 1]
+            self._packed[:n, 6] = (np.arctan2(vy, vx) + np.pi) / (2.0 * np.pi)
+        else:
+            self._packed[:n, 6] = (
+                active_seeds[:n] if self._per_bird_color else np.full(n, 0.33)
+            )
         self._packed[:n, 7] = np.where(active_pred[:n], 1.35, 1.0)  # predator scale
         self._instance_vbo.write(self._packed[:n].tobytes())
         return n
@@ -611,6 +622,7 @@ class Renderer3D:
         # Legacy theme colours
         self._prog["u_theme_slow"].write(np.array(mats["slow"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
         self._prog["u_theme_spec"].write(np.array(mats["spec"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
+        self._prog["u_rim_power"] = 3.0  # S4.2: mesh Fresnel rim exponent
 
         # P8.4: Winged program uniforms
         self._winged_prog["u_view"].write(_mat4_bytes(camera.view_matrix()))  # type: ignore[union-attr]
@@ -627,6 +639,7 @@ class Renderer3D:
         self._winged_prog["u_Diffuse"].write(np.array(mats["diffuse"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
         self._winged_prog["u_theme_slow"].write(np.array(mats["slow"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
         self._winged_prog["u_theme_spec"].write(np.array(mats["spec"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
+        self._winged_prog["u_rim_power"] = 3.0  # S4.2: mesh Fresnel rim exponent
 
         # P8.1+P8.2: Impostor program uniforms
         self._impostor_prog["u_view"].write(_mat4_bytes(camera.view_matrix()))  # type: ignore[union-attr]
