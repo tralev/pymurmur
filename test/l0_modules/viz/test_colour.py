@@ -61,10 +61,12 @@ class TestThemeMaterials:
             missing = legacy - set(theme.keys())
             assert not missing, f"Theme '{name}' missing legacy keys: {missing}"
 
-    def test_four_themes_exist(self):
-        """P8.5: Four themes: ink, inverse, paper, graphite."""
+    def test_five_themes_exist(self):
+        """P8.5/S4.6: Five themes: ink, inverse, paper, graphite, heading."""
         from pymurmur.viz.shaders import THEMES
-        assert set(THEMES.keys()) == {"ink", "inverse", "paper", "graphite"}
+        assert set(THEMES.keys()) == {
+            "ink", "inverse", "paper", "graphite", "heading",
+        }
 
 
 # ── P8.5b: Fragment shader HSV + predator ────────────────────────
@@ -272,3 +274,102 @@ class TestColourRenderer:
         cam = OrbitCamera()
         headless_renderer.begin_frame(cam)
         headless_renderer.draw_birds(flock)
+
+
+# ── S4.6: heading-hue debug theme ─────────────────────────────────
+
+class TestHeadingHueTheme:
+    """S4.6: theme="heading" sources per-bird hue from velocity azimuth
+    (atan2(vel_y, vel_x), z-up world) instead of the seed column — birds
+    flying in different directions render in visibly different colours."""
+
+    def test_heading_is_a_valid_theme(self):
+        from pymurmur.core.config import SimConfig
+        cfg = SimConfig(num_boids=5)
+        cfg.theme = "heading"
+        cfg.validate()  # must not raise
+
+    def test_hue_tracks_velocity_azimuth(self, gpu_available):
+        if not gpu_available:
+            pytest.skip("GPU not available")
+        import numpy as np
+
+        from pymurmur.core.config import SimConfig
+        from pymurmur.physics.flock import PhysicsFlock
+        from pymurmur.viz.renderer import Renderer3D
+
+        cfg = SimConfig(num_boids=4)
+        flock = PhysicsFlock(cfg)
+        flock.velocities[0] = [1.0, 0.0, 0.0]    # azimuth 0      -> hue 0.5
+        flock.velocities[1] = [0.0, 1.0, 0.0]    # azimuth pi/2   -> hue 0.75
+        flock.velocities[2] = [-1.0, 0.0, 0.0]   # azimuth +-pi   -> hue ~1.0/0.0
+        flock.velocities[3] = [0.0, -1.0, 0.0]   # azimuth -pi/2  -> hue 0.25
+        flock.active[:] = True
+
+        r = Renderer3D(width=100, height=100, headless=True, theme="heading")
+        r.update_instances(flock)
+        hue = r._packed[:4, 6]
+
+        assert hue[0] == pytest.approx(0.5, abs=1e-5)
+        assert hue[1] == pytest.approx(0.75, abs=1e-5)
+        assert hue[2] == pytest.approx(1.0, abs=1e-4) or hue[2] == pytest.approx(0.0, abs=1e-4)
+        assert hue[3] == pytest.approx(0.25, abs=1e-5)
+
+    def test_opposite_headings_differ_by_half_turn(self, gpu_available):
+        """+x vs -x flight should differ by ~180 degrees in hue (0.5 of
+        the hue wheel) — the roadmap's own acceptance check."""
+        if not gpu_available:
+            pytest.skip("GPU not available")
+        from pymurmur.core.config import SimConfig
+        from pymurmur.physics.flock import PhysicsFlock
+        from pymurmur.viz.renderer import Renderer3D
+
+        cfg = SimConfig(num_boids=2)
+        flock = PhysicsFlock(cfg)
+        flock.velocities[0] = [1.0, 0.0, 0.0]
+        flock.velocities[1] = [-1.0, 0.0, 0.0]
+        flock.active[:] = True
+
+        r = Renderer3D(width=100, height=100, headless=True, theme="heading")
+        r.update_instances(flock)
+        hue = r._packed[:2, 6]
+        diff = abs(float(hue[0]) - float(hue[1]))
+        diff = min(diff, 1.0 - diff)  # hue wraps at 1.0
+        assert diff == pytest.approx(0.5, abs=1e-3)
+
+    def test_hue_stable_across_frames_for_constant_heading(self, gpu_available):
+        if not gpu_available:
+            pytest.skip("GPU not available")
+        from pymurmur.core.config import SimConfig
+        from pymurmur.physics.flock import PhysicsFlock
+        from pymurmur.viz.renderer import Renderer3D
+
+        cfg = SimConfig(num_boids=1)
+        flock = PhysicsFlock(cfg)
+        flock.velocities[0] = [0.6, 0.8, 0.0]
+        flock.active[0] = True
+
+        r = Renderer3D(width=100, height=100, headless=True, theme="heading")
+        r.update_instances(flock)
+        hue1 = float(r._packed[0, 6])
+        r.update_instances(flock)
+        hue2 = float(r._packed[0, 6])
+        assert hue1 == pytest.approx(hue2, abs=1e-6)
+
+    def test_default_theme_still_uses_seed_hue(self, gpu_available):
+        """Non-"heading" themes are unaffected — seed-based hue unchanged."""
+        if not gpu_available:
+            pytest.skip("GPU not available")
+        from pymurmur.core.config import SimConfig
+        from pymurmur.physics.flock import PhysicsFlock
+        from pymurmur.viz.renderer import Renderer3D
+
+        cfg = SimConfig(num_boids=3, seed=42)
+        flock = PhysicsFlock(cfg)
+        flock.active[:] = True
+        seeds = flock.seeds[flock.active].copy()
+
+        r = Renderer3D(width=100, height=100, headless=True, theme="ink",
+                       per_bird_color=True)
+        r.update_instances(flock)
+        assert np.allclose(r._packed[:3, 6], seeds[:3])

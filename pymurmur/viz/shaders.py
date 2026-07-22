@@ -491,6 +491,20 @@ THEMES: dict[str, dict[str, tuple[float, float, float]]] = {
         "paper": (0.25, 0.25, 0.25),
         "ink": (0.05, 0.05, 0.05),
     },
+    # S4.6: heading-hue debug theme — same lighting as "ink"; per-bird
+    # hue source (velocity azimuth vs seed) is a renderer-level decision,
+    # not a lighting decision.
+    "heading": {
+        "ambient": (0.02, 0.04, 0.10),
+        "diffuse": (0.06, 0.12, 0.40),
+        "slow": (0.1, 0.2, 0.5),
+        "fast": (0.4, 0.8, 1.0),
+        "spec": (1.0, 1.0, 1.0),
+        "clear": (0.05, 0.05, 0.1),
+        "trail": (0.3, 0.6, 0.9),
+        "paper": (0.15, 0.25, 0.55),
+        "ink": (0.02, 0.04, 0.12),
+    },
 }
 
 # ── Grid line vertices (XY plane, centered on origin) ────────────

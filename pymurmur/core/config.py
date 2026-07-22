@@ -1094,7 +1094,7 @@ class SimConfig:
     _VALID_INDEX_TYPES = {"auto", "hash_grid", "kdtree", "none"}
     # S4.4a: Valid themes and mesh names — mirror mesh_registry.py values.
     # Defined here statically to avoid core→viz import (forbidden per arch.md).
-    _VALID_THEMES = frozenset({"ink", "inverse", "paper", "graphite"})
+    _VALID_THEMES = frozenset({"ink", "inverse", "paper", "graphite", "heading"})
     _VALID_MESH_NAMES = frozenset({
         "auto", "sphere", "tetra", "winged", "impostor",
         "ellipsoid", "cone", "arrow", "points",

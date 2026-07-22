@@ -265,6 +265,22 @@ MATERIAL_REGISTRY: dict[str, dict[str, tuple[float, float, float]]] = {
         "paper":    (0.20, 0.20, 0.20),
         "ink":      (0.05, 0.05, 0.05),
     },
+    # S4.6: heading-hue debug theme — reuses "ink"'s lighting/material
+    # values verbatim; the only difference is that Renderer3D sources
+    # per-bird hue from velocity azimuth instead of the seed column
+    # (see update_instances()). Not a distinct lighting look, so no new
+    # ambient/diffuse/etc constants are needed.
+    "heading": {
+        "ambient":  (0.02, 0.04, 0.10),
+        "diffuse":  (0.06, 0.12, 0.40),
+        "spec": (1.00, 1.00, 1.00),
+        "slow":     (0.10, 0.20, 0.50),
+        "fast":     (0.40, 0.80, 1.00),
+        "clear":    (0.05, 0.05, 0.10),
+        "trail":    (0.30, 0.60, 0.90),
+        "paper":    (0.12, 0.10, 0.10),
+        "ink":      (0.02, 0.02, 0.06),
+    },
 }
 
 VALID_THEMES: frozenset[str] = frozenset(MATERIAL_REGISTRY.keys())
