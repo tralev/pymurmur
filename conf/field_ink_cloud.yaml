@@ -32,20 +32,26 @@ field:
   shell_influence: 0.85
   tangent_pull: 0.035
   wave_gain: 0.04
-  inertia: 0.82
+  inertia: 0.84
   # Multi-group leader/chaser for layered trails:
   num_groups: 7
   leader_fraction: 0.16
 
 # ── Extensions ──────────────────────────────────────────────────────
+# S2.A9 preset table: threat=autonomous — a slow autonomous threat gives
+# the layered chase groups something to react to (silent otherwise).
 extensions:
   wander_enabled: true
-  predator_enabled: false
+  predator_enabled: true
   ripple_enabled: true
 
 wander:
   attractor_speed: 0.12
   attractor_radius: 350.0
+
+# ── Visualization (S2.A9 preset table: trail=accumulation) ───────────
+viz:
+  trails: accumulation
 
 # ── Seed ────────────────────────────────────────────────────────────
 seed: 42

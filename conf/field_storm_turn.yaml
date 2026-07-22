@@ -25,14 +25,14 @@ field:
   field_cohesion: 1.25
   field_chase_strength: 0.42      # weak chase — autonomy dominates
   # Fast storm — high noise, strong flow, panic-ready
-  noise: 0.05
-  field_flow: 0.35
+  noise: 0.10
+  field_flow: 0.72
   target_pull: 0.16
   drift_pull: 0.08
   tangent_pull: 0.045
   wave_gain: 0.05
   ripple_trains: 3
-  inertia: 0.76
+  inertia: 0.58
   shell_influence: 0.70
   # Fast turns need responsive boundary:
   boundary_radius_factor: 1.6
@@ -46,6 +46,10 @@ extensions:
 wander:
   attractor_speed: 0.16
   attractor_radius: 450.0
+
+# ── Visualization (S2.A9 preset table: trail=velocity) ───────────────
+viz:
+  trails: velocity
 
 predator:
   predator_threat_radius: 100.0

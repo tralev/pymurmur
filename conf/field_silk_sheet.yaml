@@ -15,7 +15,10 @@ flock:
   num_boids: 14000
   v0: 0.46
   boid_size: 4.0
-  position_init: gaussian   # TODO P3.10: switch to position_init: blob when blob init lands
+  # S2.A9: blob position_init has since landed, but gaussian is kept
+  # deliberately here — it's what makes this preset's shallow domain
+  # (height=200) read as a flat sheet; blob's 5-lobe cluster wouldn't.
+  position_init: gaussian
 
 # ── Mode ────────────────────────────────────────────────────────────
 mode: field
@@ -28,12 +31,12 @@ field:
   field_chase_strength: 0.68
   # Thin planar — strong horizontal alignment, weak vertical drift
   noise: 0.025
-  field_flow: 0.22
+  field_flow: 0.24
   target_pull: 0.20
   drift_pull: 0.14
   drift_direction: [0.40, 0.02, 0.12]  # mostly horizontal drift
   tangent_pull: 0.03
-  inertia: 0.86
+  inertia: 0.88
   shell_influence: 0.75
   wave_gain: 0.035
 
@@ -46,6 +49,10 @@ extensions:
 wander:
   attractor_speed: 0.09
   attractor_radius: 350.0
+
+# ── Visualization (S2.A9 preset table: trail=velocity) ───────────────
+viz:
+  trails: velocity
 
 # ── Seed ────────────────────────────────────────────────────────────
 seed: 42

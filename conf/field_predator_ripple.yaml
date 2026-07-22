@@ -25,14 +25,14 @@ field:
   field_cohesion: 1.15
   field_chase_strength: 0.64
   # Predator-driven — strong ripple, moderate wander, panic-ready speed
-  noise: 0.04
-  field_flow: 0.28
+  noise: 0.08
+  field_flow: 0.48
   target_pull: 0.18
   drift_pull: 0.10
   tangent_pull: 0.04
   wave_gain: 0.06         # stronger ripple pulses
   ripple_trains: 4
-  inertia: 0.80
+  inertia: 0.70
   shell_influence: 0.80
 
 # ── Extensions ──────────────────────────────────────────────────────
@@ -46,9 +46,14 @@ wander:
   attractor_radius: 400.0
 
 predator:
+  predator_mode: orbit     # S2.A9 preset table: threat=orbit
   predator_threat_radius: 80.0
   predator_strength: 1.2
   predator_momentum: 0.6
+
+# ── Visualization (S2.A9 preset table: trail=velocity) ───────────────
+viz:
+  trails: velocity
 
 # ── Seed ────────────────────────────────────────────────────────────
 seed: 42

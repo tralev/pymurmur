@@ -26,7 +26,7 @@ field:
   field_chase_strength: 0.76
   # Vacuole cavity — strong shell with inner hollow
   noise: 0.03
-  field_flow: 0.25
+  field_flow: 0.42
   target_pull: 0.24
   drift_pull: 0.10
   shell_influence: 0.90
@@ -36,14 +36,23 @@ field:
   tangent_pull: 0.03
 
 # ── Extensions ──────────────────────────────────────────────────────
+# S2.A9 preset table: threat=autonomous (vacuole_strength 0.9) — the
+# threat's vacuole formation is what carves this preset's hollow core.
 extensions:
   wander_enabled: true
-  predator_enabled: false
+  predator_enabled: true
   ripple_enabled: false
 
 wander:
   attractor_speed: 0.10
   attractor_radius: 250.0
+
+predator:
+  predator_vacuole_strength: 0.9
+
+# ── Visualization (S2.A9 preset table: trail=accumulation) ───────────
+viz:
+  trails: accumulation
 
 # ── Seed ────────────────────────────────────────────────────────────
 seed: 42
