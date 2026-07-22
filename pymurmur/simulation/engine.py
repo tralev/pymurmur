@@ -31,20 +31,37 @@ if TYPE_CHECKING:
 
 
 def _apply_influencer_density_init(flock: PhysicsFlock, config: SimConfig) -> None:
-    """C4: position_init="influencer_density" composer.
+    """C4/S2.E4: position_init="influencer_density" composer.
 
     physics.flock/physics.boid (L0/L1) can't import physics.forces (would
     create an import cycle — see test_architecture.py's forbidden edges),
     so the density-scaled Gaussian init (P7.4) is applied here instead,
     overwriting PhysicsFlock's default position init post-construction.
+
+    S2.E4: also triggers automatically when config.mode == "influencer"
+    and influencer.density_scaled_init is set — a preset shouldn't have
+    to separately set position_init="influencer_density" AND
+    influencer.density_scaled_init:true for one behaviour.
+
+    S2.E4 "zero initial directions": the auto-trigger path also zeroes
+    initial velocities so the first compute() call's blend is driven
+    purely by the target pull rather than an arbitrary initial heading.
+    Explicit position_init="influencer_density" (C4) is documented to
+    override positions only, so an explicit velocity_init (e.g. "drift")
+    survives when triggered that way.
     """
-    if config.position_init != "influencer_density":
+    auto_trigger = (
+        config.mode == "influencer" and config.influencer_density_scaled_init
+    )
+    if config.position_init != "influencer_density" and not auto_trigger:
         return
     from ..physics.forces.influencer import InfluencerMode
     flock.positions = InfluencerMode.density_init_positions(
         config.num_boids, config.width, config.height, config.depth,
         config, flock.rng,
     )
+    if auto_trigger:
+        flock.velocities[:] = 0.0
 
 
 class CommandQueue:
@@ -58,6 +75,10 @@ class CommandQueue:
         self.pending_spawn_bird: list[tuple[float, float, float]] = []
         self.pending_spawn_predator: list[tuple[float, float, float]] = []
         self.pending_clear: bool = False
+        # S2.E6: pilotable-flock — accumulated per-axis move directions
+        # (camera-frame or world-frame, caller's choice) since the last drain.
+        self.pending_pilot_move: list[tuple[float, float, float]] = []
+        self.pending_pilot_toggle: bool | None = None  # None = no change queued
 
 
 class SimulationEngine:
@@ -147,6 +168,18 @@ class SimulationEngine:
         """P10.4: Queue clearing all active boids."""
         self.commands.pending_clear = True
 
+    def enqueue_pilot_move(self, direction: tuple[float, float, float]) -> None:
+        """S2.E6: Queue a pilot-point displacement (unit direction vector).
+
+        Scaled by influencer_pilot_speed * unit-scale U * dt when drained.
+        A no-op unless config.mode == "influencer" and pilot is enabled.
+        """
+        self.commands.pending_pilot_move.append(direction)
+
+    def enqueue_pilot_toggle(self, enabled: bool) -> None:
+        """S2.E6: Queue enabling/disabling pilot mode on the next step()."""
+        self.commands.pending_pilot_toggle = enabled
+
     def drain_commands(self) -> None:
         """Execute all pending add/remove/reset commands.
 
@@ -191,6 +224,44 @@ class SimulationEngine:
             self.flock.active[:] = False
             self.config.num_boids = 0
             cq.pending_clear = False
+
+        # S2.E6: Pilotable flock — drain toggle + accumulated move commands
+        if self.config.mode == "influencer" and self.config.influencer_pilot_enabled:
+            from ..physics.forces.influencer import InfluencerMode, PilotTarget
+
+            pilot = InfluencerMode._pilot
+            if pilot is None:
+                C = np.array(
+                    [self.config.width / 2.0, self.config.height / 2.0,
+                     self.config.depth / 2.0],
+                    dtype=np.float32,
+                )
+                pilot = PilotTarget(position=C)
+                pilot.active = True  # influencer_pilot_enabled implies "on" by default
+                InfluencerMode.set_pilot(pilot)
+
+            # pilot.active only changes on an explicit toggle command —
+            # it must persist across frames, not reset every drain.
+            if cq.pending_pilot_toggle is not None:
+                pilot.active = cq.pending_pilot_toggle
+                cq.pending_pilot_toggle = None
+
+            if cq.pending_pilot_move:
+                U = 0.4 * min(self.config.width, self.config.height, self.config.depth)
+                step_dist = self.config.influencer_pilot_speed * U * self.config.dt_phys
+                for direction in cq.pending_pilot_move:
+                    d = np.array(direction, dtype=np.float32)
+                    d_norm = np.linalg.norm(d)
+                    if d_norm > 1e-10:
+                        d_hat = d / d_norm
+                        pilot.position = pilot.position + d_hat * step_dist
+                        pilot.heading = d_hat
+                cq.pending_pilot_move.clear()
+        elif cq.pending_pilot_move or cq.pending_pilot_toggle is not None:
+            # Queued while pilot mode wasn't active/applicable — drop silently
+            # (mirrors other command-queue no-ops, e.g. spawn with N=0 config).
+            cq.pending_pilot_move.clear()
+            cq.pending_pilot_toggle = None
 
     # ── Step ──────────────────────────────────────────────────
 

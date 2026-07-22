@@ -47,6 +47,10 @@ class FlockMetrics:
     # S6.4: Obstacle collision counter
     collisions_this_step: int = 0    # per-step collision count from ObstacleScene
 
+    # S2.E5: influencer-mode target-distance diagnostics (None outside influencer mode)
+    target_dist_min: float | None = None   # min ‖p − T‖ this frame
+    target_dist_max: float | None = None   # max ‖p − T‖ this frame
+
     # ── P4.4: Physical metrics (real-world units) ────────────────
     speed_real_ms: float = 0.0      # mean speed in m/s
     accel_real_ms2: float = 0.0     # mean acceleration in m/s²
@@ -129,6 +133,9 @@ class FlockMetrics:
             parts.append(f"{self.energy_J:.2f}J")
         if self.tau_rho is not None and self.tau_rho > 0:
             parts.append(f"τρ={self.tau_rho:.0f}")
+        # S2.E5: influencer-mode target-distance readout
+        if self.target_dist_min is not None and self.target_dist_max is not None:
+            parts.append(f"dT=[{self.target_dist_min:.0f},{self.target_dist_max:.0f}]")
         if fps > 0:
             parts.append(f"{fps:.0f}fps")
         return " | ".join(parts)
@@ -178,6 +185,10 @@ class MetricsCollector:
         # G7: Fastmath × metrics-export warning flag
         self._fastmath: bool = config.perf.fastmath if config else False
         self._warned_fastmath: bool = False
+        # S2.E5: kept as a live reference (not a snapshot) — influencer
+        # mode writes _target_dist_min/max onto this same config object
+        # every frame via InfluencerMode.compute().
+        self._config = config
 
     def collect(self, flock: PhysicsFlock, frame: int,
                 collisions_this_step: int = 0) -> None:
@@ -262,6 +273,12 @@ class MetricsCollector:
 
         # S6.4: Obstacle collision counter
         m.collisions_this_step = collisions_this_step
+
+        # S2.E5: influencer-mode target-distance diagnostics — read off the
+        # config object InfluencerMode.compute() writes onto each frame.
+        if self._mode == 'influencer' and self._config is not None:
+            m.target_dist_min = getattr(self._config, '_target_dist_min', None)
+            m.target_dist_max = getattr(self._config, '_target_dist_max', None)
 
         # P9.8: Normalized angular momentum (uses R_g when available)
         # Uses a fast R_g estimate for real-time display; expensive R_g

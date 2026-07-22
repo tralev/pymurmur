@@ -104,6 +104,8 @@ class TestFlockMetricsToDict:
             # P4.4: Physical metrics
             "speed_real_ms", "accel_real_ms2", "force_real_N",
             "power_real_W", "energy_J",
+            # S2.E5: influencer-mode target-distance diagnostics
+            "target_dist_min", "target_dist_max",
         }
         assert set(d.keys()) == expected_keys
 
