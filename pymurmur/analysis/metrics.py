@@ -192,7 +192,13 @@ class MetricsCollector:
                 RuntimeWarning, stacklevel=2,
             )
             self._warned_fastmath = True
-        active = flock.active
+        # S2.B3/S2.D3: flock observables (alpha, dispersion, etc.) are
+        # computed over prey only wherever a species column is populated —
+        # a predator's presence shouldn't count toward the prey's own
+        # order/cohesion signal. is_predator is always a real (N,) bool
+        # array (all-False when n_predators=0), so this is a no-op unless
+        # predators are actually configured.
+        active = flock.active & ~flock.is_predator
         n = active.sum()
         if n == 0:
             return

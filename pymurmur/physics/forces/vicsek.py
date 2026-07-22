@@ -74,8 +74,14 @@ class VicsekMode(ForceMode):
             is_pred = is_predator[active_idx]
             n_pred = int(is_pred.sum())
             n_prey = n_active - n_pred
-            # All-predator flock → skip all interaction (P6.2 early-out)
+            # S2.D1: All-predator flock → skip alignment/hunting interaction,
+            # but still apply a pure random walk (spec) rather than freezing
+            # velocities outright — a flock of only predators isn't inert.
             if n_prey == 0:
+                v_pred = config.vicsek_velocity_predator
+                rand_dirs = rng.normal(size=(n_active, 3)).astype(np.float32)
+                rand_norms = np.linalg.norm(rand_dirs, axis=1, keepdims=True) + 1e-10
+                velocities[active_idx] = (rand_dirs / rand_norms) * v_pred
                 return
         else:
             is_pred = np.zeros(n_active, dtype=bool)
