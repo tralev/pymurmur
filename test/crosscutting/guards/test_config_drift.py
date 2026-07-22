@@ -69,7 +69,16 @@ def _find_string_occurrences(source_text: str, field_name: str) -> bool:
 #
 # (empty as of S2.A5, 2026-07-20 — field_target_pull was the one entry,
 # now wired as the "target_pull" ForceTerm in field.py)
-KNOWN_ORPHANS: set[str] = set()
+#
+# influencer_move_then_steer (S2.E2, 2026-07-22): move-then-steer is the
+# only implemented InfluencerMode update order — there is no runtime
+# branch to gate. The field exists purely as a self-documenting contract:
+# cfg.validate() raises if it's ever set False, so a preset that
+# (mistakenly) tries to opt out fails loudly instead of being silently
+# ignored. That validate()-time check lives in config.py, which this
+# guard deliberately excludes as a source file (see _read_source_files),
+# so it can never be found by the attr-access/string-occurrence heuristics.
+KNOWN_ORPHANS: set[str] = {"influencer_move_then_steer"}
 
 
 # ── Tests ──────────────────────────────────────────────────────────
