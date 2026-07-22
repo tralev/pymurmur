@@ -311,3 +311,103 @@ class TestImpostorLargeFlock:
         assert r._instance_vbo.size >= expected_bytes, (
             f"Instance VBO too small: {r._instance_vbo.size} < {expected_bytes}"
         )
+
+
+# ── S4.2: Mesh Fresnel rim (distinct from the impostor disc rim) ─
+
+@pytest.mark.gpu
+class TestMeshFresnelRim:
+    """S4.2: rim = pow(1 - max(N.V, 0), k) added to the mesh fragment
+    shader — a view-angle silhouette highlight on real 3D meshes
+    (tetra/winged/ellipsoid/cone/arrow), distinct from the impostor
+    disc's r^2-based rim."""
+
+    def _render_single_ellipsoid(self, gpu_available):
+        if not gpu_available:
+            pytest.skip("GPU not available")
+        from pymurmur.core.config import SimConfig
+        from pymurmur.physics.flock import PhysicsFlock
+        from pymurmur.viz.camera import OrbitCamera
+        from pymurmur.viz.renderer import Renderer3D
+
+        cfg = SimConfig(num_boids=1, boid_size=9.0)
+        flock = PhysicsFlock(cfg)
+        flock.positions[0] = [0, 0, 0]
+        flock.velocities[0] = [1.0, 0.0, 0.0]
+        flock.active[0] = True
+
+        r = Renderer3D(width=300, height=300, headless=True,
+                       point_sprites=False, winged_mesh=False,
+                       bird_mesh="ellipsoid", theme="ink",
+                       gradient_sky=False)
+        cam = OrbitCamera(target=(0.0, 0.0, 0.0))
+        cam.distance = 60.0
+        cam.azimuth = 0.0
+        cam.elevation = 0.0
+
+        r.begin_frame(cam)
+        r.draw_birds(flock)
+        r.end_frame()
+        return r.capture_frame()
+
+    @staticmethod
+    def _lum(p):
+        return 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]
+
+    def test_rim_power_uniform_set_on_mesh_programs(self, gpu_available):
+        """u_rim_power exists on both mesh programs (tetra/ellipsoid/
+        cone/arrow share _prog; winged uses its own _winged_prog)."""
+        if not gpu_available:
+            pytest.skip("GPU not available")
+        from pymurmur.viz.renderer import Renderer3D
+        r = Renderer3D(width=100, height=100, headless=True)
+        assert "u_rim_power" in r._prog
+        assert "u_rim_power" in r._winged_prog
+
+    def test_edge_pixels_brighter_than_face_on_centre(self, gpu_available):
+        """S4.2: a grazing-angle (near-silhouette) pixel is brighter
+        than the face-on centre pixel — the rim term dominates where
+        N.V is small."""
+        img = self._render_single_ellipsoid(gpu_available)
+        cx, cy = 150, 150
+        centre_lum = self._lum(img.getpixel((cx, cy)))
+        background_lum = self._lum(img.getpixel((2, 2)))
+
+        # Scan outward from centre; the brightest pixel before falling
+        # back to background is the rim.
+        edge_lum = centre_lum
+        for dx in range(1, 30):
+            p = img.getpixel((cx + dx, cy))
+            lum = self._lum(p)
+            if abs(lum - background_lum) < 1e-6:
+                break
+            edge_lum = max(edge_lum, lum)
+
+        assert edge_lum > centre_lum * 2, (
+            f"Rim (edge) luminance {edge_lum:.1f} should be well above "
+            f"the face-on centre luminance {centre_lum:.1f}"
+        )
+
+    def test_rim_is_monotone_increasing_toward_silhouette(self, gpu_available):
+        """S4.2: luminance rises monotonically (allowing small GPU-precision
+        jitter) from centre toward the silhouette edge, then drops to
+        background — the shape of a Fresnel rim, not a random bright spot."""
+        img = self._render_single_ellipsoid(gpu_available)
+        cx, cy = 150, 150
+        background_lum = self._lum(img.getpixel((2, 2)))
+
+        lums = []
+        for dx in range(0, 20):
+            p = img.getpixel((cx + dx, cy))
+            lum = self._lum(p)
+            if abs(lum - background_lum) < 1e-6:
+                break
+            lums.append(lum)
+
+        assert len(lums) >= 5, "Object silhouette too small to sample a rim gradient"
+        # Non-decreasing (small tolerance for interpolation noise)
+        for i in range(1, len(lums)):
+            assert lums[i] >= lums[i - 1] - 1.0, (
+                f"Luminance should rise toward the silhouette edge: "
+                f"{lums}"
+            )

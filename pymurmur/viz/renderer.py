@@ -611,6 +611,7 @@ class Renderer3D:
         # Legacy theme colours
         self._prog["u_theme_slow"].write(np.array(mats["slow"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
         self._prog["u_theme_spec"].write(np.array(mats["spec"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
+        self._prog["u_rim_power"] = 3.0  # S4.2: mesh Fresnel rim exponent
 
         # P8.4: Winged program uniforms
         self._winged_prog["u_view"].write(_mat4_bytes(camera.view_matrix()))  # type: ignore[union-attr]
@@ -627,6 +628,7 @@ class Renderer3D:
         self._winged_prog["u_Diffuse"].write(np.array(mats["diffuse"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
         self._winged_prog["u_theme_slow"].write(np.array(mats["slow"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
         self._winged_prog["u_theme_spec"].write(np.array(mats["spec"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
+        self._winged_prog["u_rim_power"] = 3.0  # S4.2: mesh Fresnel rim exponent
 
         # P8.1+P8.2: Impostor program uniforms
         self._impostor_prog["u_view"].write(_mat4_bytes(camera.view_matrix()))  # type: ignore[union-attr]
