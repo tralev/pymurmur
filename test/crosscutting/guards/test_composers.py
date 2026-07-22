@@ -18,6 +18,14 @@ import pytest
 
 pytestmark = pytest.mark.guard
 
+# Anchored to __file__ rather than Path(".") (CWD at test-execution
+# time) — a relative root here is only correct if CWD is the repo root
+# for every test in the run, which any other test's unrestored os.chdir
+# silently breaks (a genuine call site then goes undetected because the
+# scan walks the wrong directory tree entirely). Matches the pattern
+# test_collection_count.py already uses for the same reason.
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 # ── L0 atom registry ──────────────────────────────────────────────
 #
 # (module_relative_path, function_name)
@@ -65,8 +73,8 @@ def _find_call_sites(module_path: str, func_name: str) -> bool:
     Skips the defining file, __init__.py re-exports, and hidden modules.
     Returns True if at least one genuine cross-file call site exists.
     """
-    root = Path(".")
-    defining_file = Path(module_path).resolve()
+    root = REPO_ROOT
+    defining_file = (REPO_ROOT / module_path).resolve()
 
     for py_file in sorted(root.rglob("*.py")):
         if py_file.name == "__init__.py":
@@ -130,11 +138,11 @@ def test_real_dead_function_is_detected():
     function definition the AST scanner walks past and correctly finds
     no caller for.
 
-    `_find_call_sites` walks `Path(".").rglob("*.py")`, so the probe
+    `_find_call_sites` walks `REPO_ROOT.rglob("*.py")`, so the probe
     files must live under the repo root (not pytest's `tmp_path`, which
     is outside it) to be discoverable — created and removed here.
     """
-    probe_dir = Path("test/crosscutting/guards")
+    probe_dir = REPO_ROOT / "test/crosscutting/guards"
     defining = probe_dir / "_g1_probe_defining_tmp.py"
     try:
         defining.write_text(
@@ -151,7 +159,7 @@ def test_real_used_function_is_not_flagged_dead():
     """G1: Complement of the above — a real function WITH a genuine
     cross-file call site is correctly recognized as alive, proving the
     detector isn't just biased toward always returning False."""
-    probe_dir = Path("test/crosscutting/guards")
+    probe_dir = REPO_ROOT / "test/crosscutting/guards"
     defining = probe_dir / "_g1_probe_defining_tmp2.py"
     caller = probe_dir / "_g1_probe_caller_tmp2.py"
     try:
