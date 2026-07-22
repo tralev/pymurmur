@@ -224,9 +224,11 @@ class TestVicsekSpecies:
         flock.is_predator[:] = True
 
         _call_force(vicsek_forces, flock, cfg)
-        # All-predator early-out: velocities unchanged.
-        # Just verify no NaN and that the code path doesn't crash.
+        # S2.D1: All-predator early-out applies a pure random walk (not a
+        # frozen no-op) — verify no NaN and speeds match predator speed.
         assert np.isfinite(flock.velocities).all()
+        speeds = np.linalg.norm(flock.velocities[flock.active], axis=1)
+        np.testing.assert_allclose(speeds, cfg.vicsek_velocity_predator, atol=1e-4)
 
     # ── P6.1: Fear-weighted alignment ─────────────────────────
 
@@ -486,7 +488,12 @@ class TestVicsekSpecies:
         assert abs(np.linalg.norm(flock.velocities[0]) - 1.5) < 1e-4
 
     def test_all_predators_no_interaction(self):
-        """All-predator flock gets no velocity changes from interaction."""
+        """All-predator flock skips alignment/hunting but still random-walks.
+
+        S2.D1: the spec calls for a pure random walk on an all-predator
+        flock, not a frozen no-op — velocities must change (direction
+        randomised) while staying at predator speed.
+        """
         cfg = SimConfig()
         cfg.num_boids = 10
         cfg.width = 100
@@ -504,8 +511,11 @@ class TestVicsekSpecies:
 
         _call_force(vicsek_forces, flock, cfg)
 
-        # All-predators → early-out → velocities unchanged
-        np.testing.assert_array_equal(flock.velocities, old_vels)
+        # Random walk → direction changes, but every bird still moves at
+        # predator speed (no alignment/hunting coupling applied).
+        assert not np.allclose(flock.velocities, old_vels)
+        speeds = np.linalg.norm(flock.velocities[flock.active], axis=1)
+        np.testing.assert_allclose(speeds, cfg.vicsek_velocity_predator, atol=1e-4)
 
     # ── P6.2: Independent-entity formula tests ────────────────
 

@@ -91,3 +91,35 @@ class TestConfigFileValidation:
             assert perf.get("spatial_index") == "kdtree", (
                 "300K config should use kdtree spatial index"
             )
+
+    def test_vicsek_config_sentinel_values(self):
+        """S2.D4: murmuration_vicsek.yaml carries the source-parity vector.
+
+        n_preys=100, n_predators=1, R_inf=5, R_avoid=1, R_pred=5,
+        v=v_pred=1, dt=1, D=0.8, eta=0.8, w_afraid=3, detect_ratio=1.5,
+        predator_noise_ratio=0.2, domain 40^3.
+        """
+        path = CONF_DIR / "murmuration_vicsek.yaml"
+        assert path.exists(), "murmuration_vicsek.yaml must exist"
+        data = _load_config(path)
+
+        domain = data["domain"]
+        assert domain["width"] == domain["height"] == domain["depth"] == 40.0
+
+        flock = data["flock"]
+        assert flock["num_boids"] == 101, "100 prey + 1 predator"
+        assert flock["visual_range"] == 5.0  # R_inf
+
+        v = data["vicsek"]
+        assert v["couplage"] == 0.8          # eta
+        assert v["diffusion"] == 0.8         # D
+        assert v["time_step"] == 1.0         # dt
+        assert v["velocity"] == 1.0          # v
+        assert v["radius_influence"] == 5.0  # R_inf
+        assert v["radius_avoid"] == 1.0      # R_avoid
+        assert v["radius_predators"] == 5.0  # R_pred
+        assert v["n_predators"] == 1
+        assert v["velocity_predator"] == 1.0  # v_pred
+        assert v["predator_noise_ratio"] == 0.2
+        assert v["detect_ratio"] == 1.5
+        assert v["weight_afraid"] == 3.0
