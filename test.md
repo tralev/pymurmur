@@ -2,7 +2,7 @@
 
 > **STATUS: ACTIVE.** This document describes the test suite's organization,
 > conventions, and how CI (including Docker) runs it.
-> **3,157 tests collected; 2,759 run in the fast suite** (`-m "not slow and not
+> **3,263 tests collected; 2,854 run in the fast suite** (`-m "not slow and not
 > gl and not gpu"`).
 > **Organization: Bottom-Up / Micro-to-Macro.** The `test/` tree is layered by
 > altitude, mirroring `arch.md` §2.2's bottom-up view: Level 0 (module
@@ -151,10 +151,10 @@ test/
 │   │                             # trails (4 modes), wings, colour, density,
 │   │                             # dual view, hud, input, mesh registry
 │   ├── capture/                  # recorder, mpl_recorder, cinematic sweep
-│   └── analysis/                 # metrics (schema/motion/expensive), h2, presets,
-│                                  # perf+quality governor, phase diagram, density
-│                                  # scaling, rewards, evoflock, evolved-yaml guard,
-│                                  # marl (P12 placeholder)
+│   └── analysis/                 # metrics (schema/motion/expensive/invariance), h2,
+│                                  # presets, perf+quality governor, phase diagram,
+│                                  # density scaling, rewards, evoflock, evolved-yaml
+│                                  # guard, marl (S7 bridge, gymnasium-gated)
 │
 ├── l2_integration/               # ── Level 2: SUBSYSTEM WIRING (meso) ──
 │   ├── test_engine_pipeline.py   # 6-stage engine order under live mutations
@@ -195,6 +195,7 @@ test/
     │   ├── test_golden.py             # golden trajectory regression (test/data)
     │   ├── test_determinism.py        # same-seed identity matrix + subprocess leg
     │   ├── test_config_drift.py       # every SimConfig field used in source
+    │   ├── test_evoflock_gene_drift.py # S6.5 — every EVOLVABLE_PARAMS gene consumed
     │   ├── test_collection_count.py   # per-level floors — suite never shrinks
     │   ├── test_composers.py          # G1 — every public L0 atom has a call site
     │   ├── test_ci_workflow_integrity.py  # the CI YAML itself, as CI executes it
@@ -258,6 +259,7 @@ explains how to update itself when a change is intentional:
 | `test_determinism.py` | Same-seed non-determinism across mode × threads × jitter, plus one subprocess leg per mode |
 | `test_docs.py` | Broken intra-repo links anywhere in the repo's `.md` files; arch.md ↔ test.md guard-topology sync; stale retired-scheme references |
 | `test_config_drift.py` | Orphan `SimConfig` fields no source file reads |
+| `test_evoflock_gene_drift.py` | S6.5: orphan `EVOLVABLE_PARAMS` genes no physics/evaluation code reads (mirrors `test_config_drift.py`) |
 | `test_collection_count.py` | Silent test loss — floors per level, per module mirror, and in total |
 | `test_composers.py` | Dead L0 atoms (public functions with zero call sites) |
 | `test_ci_workflow_integrity.py` | Bugs in the CI YAML itself — invalid bash, dangling `needs:`, unrendered `${{ }}`, summary gate not covering every job |
@@ -494,6 +496,7 @@ Where to look when you want the tests for a concept. Paths are relative to
 | **Suite never silently shrinks** (collection floors) | `crosscutting/guards/test_collection_count.py` |
 | **Docs stay linked & in sync** (arch.md ↔ test.md, retired schemes absent) | `crosscutting/guards/test_docs.py` |
 | **No orphan config fields** | `crosscutting/guards/test_config_drift.py` |
+| **No orphan EvoFlock genes** (S6.5 dead-gene guard) | `crosscutting/guards/test_evoflock_gene_drift.py` |
 | **No dead L0 atoms** (every public atom has a caller) | `crosscutting/guards/test_composers.py` |
 | **CI YAML correctness** (valid bash, dangling `needs:`, summary-gate completeness) | `crosscutting/guards/test_ci_workflow_integrity.py` |
 | **Strictly-3D invariant** (no 2D spatial arrays; `depth > 0`) | `crosscutting/guards/test_strictly_3d.py` |
@@ -530,7 +533,7 @@ Where to look when you want the tests for a concept. Paths are relative to
 | **Phase diagram / density scaling experiments** | `l0m/analysis/test_phase_diagram.py`, `test_density_scaling.py` |
 | **Rewards (shared MARL/Evo scalarization)** | `l0m/analysis/test_rewards.py` |
 | **EvoFlock SSGA evolution** (+ evolved artifact guard) | `l0m/analysis/test_evoflock.py`, `test_evolved_yaml.py` |
-| **MARL bridge (P12 — pending)** | `l0m/analysis/test_marl.py` (placeholder stub) |
+| **MARL bridge** (MarlMode, MurmurationEnv, gym-checker) | `l0m/analysis/test_marl.py` (gymnasium-gated via `importorskip`) |
 | **Renderer** (impostors, depth cues, buffers, HUD GL) | `l0m/viz/test_renderer.py`, `test_renderer_impostor.py` |
 | **Shaders & meshes** (GLSL, tetra/wings, sky, mesh registry) | `l0m/viz/test_shaders.py`, `test_wings.py`, `test_mesh_registry.py` |
 | **Camera** (orbit, cinematic sweep) | `l0m/viz/test_camera.py`, `l0m/capture/test_cinematic.py` |
@@ -628,7 +631,8 @@ One line per file: what idea(s) it pins down. Grouped micro → macro.
 | `test_metrics_schema.py` | `to_dict()` JSON round-trip schema |
 | `test_metrics_motion.py` | Silhouette, η(m), robust gyration, motion metrics |
 | `test_metrics_expensive.py` | Shape PCA, gyration, MSD, θ′, τ_ρ |
-| `test_h2.py` | H₂ k-NN Laplacian robustness, cost-optimal m* |
+| `test_metrics_invariance.py` | T4.4: α rotation-invariance (SO(3)), dispersion/gyration translation-invariance, permutation invariance, `[0,1]`-bounds sweep |
+| `test_h2.py` | H₂ k-NN Laplacian robustness, cost-optimal m*, hand 3-node max-form symmetrization |
 | `test_cross_element.py` | P9 metric chains working together |
 | `test_presets.py` | PRESETS validity + non-mutation |
 | `test_perf.py` | EMA timing, bottleneck classification, QualityGovernor internals |
@@ -638,7 +642,7 @@ One line per file: what idea(s) it pins down. Grouped micro → macro.
 | `test_rewards.py` | Weighted composite reward, linearity |
 | `test_evoflock.py` | SSGA: worst-of-4, crossover, objectives, SDF collisions |
 | `test_evolved_yaml.py` | Evolved-config artifact validity (guard) |
-| `test_marl.py` | **P12 placeholder** — module-skipped until MARL bridge lands |
+| `test_marl.py` | S7 MARL bridge: `MarlMode` control/rules order, `MurmurationEnv` obs/action spaces, gym-checker, seeded determinism (gymnasium-gated) |
 
 ### l2_integration/ — subsystem wiring
 | File | Idea |
@@ -684,6 +688,7 @@ One line per file: what idea(s) it pins down. Grouped micro → macro.
 | `guards/test_determinism.py` | Registry-wide same-seed identity × threads × jitter, plus one subprocess leg per mode |
 | `guards/test_docs.py` | Every repo `.md` file's intra-repo links resolve; arch.md ↔ test.md topology sync; retired schemes absent |
 | `guards/test_config_drift.py` | Every SimConfig field referenced in source |
+| `guards/test_evoflock_gene_drift.py` | S6.5: every `EVOLVABLE_PARAMS` gene consumed by physics/evaluation (not just `setattr`-ed and ignored) |
 | `guards/test_collection_count.py` | Per-level + per-module collection floors |
 | `guards/test_composers.py` | G1: every public L0 atom (types/force-primitive/occlusion/steric/boid/config surface) has ≥ 1 call site |
 | `guards/test_ci_workflow_integrity.py` | Extracts and executes `.github/workflows/*.yml`'s actual run scripts — bash validity, needs-graph completeness, summary-gate coverage, no bare (non-Docker) test invocations |
@@ -746,20 +751,26 @@ degenerate / FBO-lifecycle tests** and **Renderer3D trail-wiring tests**, and
 
 Known remaining gaps (acceptable, tracked):
 
-- `l0m/analysis/test_marl.py` is a stub until Phase 12 lands.
 - `pymurmur/viz/visualizer.py`'s pygame `run()` loop interaction branches
   (HUD toggle, cursor spawns) are only partially covered — they need a real
   event loop; the extracted logic (`_apply_quality_actions`) is now fully
   tested.
 - `_kernels.py` shows low line coverage in fast runs — a tracing artifact:
   numba-jitted bodies bypass the coverage tracer; parity is asserted by
-  `forces/test_kernels.py` and `guards/test_determinism.py`.
+  `forces/test_kernels.py`, `forces/test_vicsek_species.py`'s numba≡numpy
+  equivalence test, and `guards/test_determinism.py`.
 - `analysis/density_scaling.py` sweep body is `@slow`-only by design.
-- `TODO/roadmap6.md`'s Appendix C cross-cutting items (CC1 actionable
-  YAML-error messages, CC2 GPU context-loss graceful fallback, CC3
-  fastmath×metrics-export warning) were not re-verified in this audit — they
-  are `pymurmur/` source-behavior questions, not test-suite gaps, and out of
-  this restructure's scope.
+- `viz/trails.py`'s velocity/accumulation/ring modes have known spec
+  divergences (shaping factors, fade formula, monotone alpha) left open
+  deliberately — see `arch.md`'s scaling/extension-point notes; only the
+  lines mode was reconciled to spec exactly.
+
+Resolved since the prior audit: actionable YAML-error messages (G5,
+`core/config.py::from_file`), GPU context-loss graceful fallback (G6,
+`viz/renderer.py`/`visualizer.py`'s `gl_lost` handling), and the
+fastmath×metrics-export warning (G7, `analysis/metrics.py`) are all
+implemented and tagged in source — previously tracked as open questions
+in the now-deleted TODO/roadmap6.md Appendix C.
 
 ---
 
