@@ -24,23 +24,19 @@ phi_p, phi_a, sigma, mode, description) +
 `apply_preset(config, key) → label`, printed on apply; key range skips
 `g` (grid). *tests:* synthetic KEYDOWN 'b' → config equals the row;
 'g' still toggles grid; label + description printed (capsys).
-**Status: MOSTLY DONE / DIVERGES on labels.** `LETTER_PRESETS` exists
-with matching parameter values (spatial rows interpreted as
-sep/align/coh weights) but shuffled labels (e.g. current a = "Ball" vs
-table a = "3D Pearce Default"), and there is no single
-`apply_preset(config, key)` function (logic lives in
-`input_control._apply_letter_preset`). Reconcile labels with the table,
-extract the function, add the tests. **BUG adjacent:** key `c` also
-shadows the clear-all binding (see S5.4 / [roadmap5.md](roadmap5.md)).
+**Status: ✅ DONE (verified Phase 5, S5 track — roadmap status was
+stale).** `LETTER_PRESETS` labels already match the spec table exactly,
+and `apply_preset(config, key)` was already extracted as a standalone
+function. The `c`-key/clear-all collision was already fixed (Phase 1).
 
 **S5.2 Full title readout** — mode, N, φp/φa/σ, `α Θ Θ' L σr`, τρ, FPS
 (+ physical units), rebuilt every 20th frame, consuming the S3.11
 smoothed readout ([roadmap3.md](roadmap3.md)). *tests:* token presence;
 cadence.
-**Status: PARTIAL** — `FlockMetrics.summary()` builds
-`mode | N | α Θ Θ′ | L σr | τρ | fps` into the window title, but it is
-rebuilt every frame (no 20-frame cadence), lacks φp/φa/σ and physical
-units, and uses raw (unsmoothed) values.
+**Status: ✅ DONE (verified Phase 5, S5 track — roadmap status was
+stale).** Already rebuilt every 20th frame, using
+`MetricsCollector.smoothed()` (S3.11), with φp/φa/σ and physical units
+included.
 
 **S5.3 Slider HUD** — 5 sliders: sep 1–5 (3.0) →
 `spatial.separation_weight`; coh 0–2 (0.2); align 0–0.5 (0.02); avoid
@@ -50,7 +46,11 @@ Ortho-pass track + knob quads;
 drag locks (suppresses orbit); TAB toggles panel. *tests:* mapping
 endpoints/midpoint pinned; drag writes the bound nested field; TAB
 restores orbit-drag.
-**Status: MISSING** (no HUD module).
+**Status: ✅ DONE (verified Phase 5, S5 track — roadmap status was
+stale).** `pymurmur/viz/hud.py::SliderHUD` already implements the exact
+5 sliders (sep/coh/align/avoid/noise) with matching ranges/defaults,
+ortho-pass track+knob quads, hit-rect, drag-lock (suppresses orbit),
+and TAB toggle — fully wired into `Visualizer`.
 
 **S5.4 Interaction** — mouse spawn via cursor-ray unprojection:
 `ndc = (2mx/w−1, 1−2my/h)`; `ray_eye = P⁻¹·(ndc, −1, 1)` with
@@ -65,14 +65,18 @@ PageUp/Dn: `flock.v0 ± 0.1` floor 0.3 (live). *tests:*
 synthetic-camera unprojection hand-computed; right-click sets
 is_predator; C survives metrics; a 4 px down-move-up sequence spawns, a
 20 px one orbits; PageUp floor respected.
-**Status: PARTIAL with BUGS.** Implemented: ray unprojection (via
-glm.unProject; intersects the Z = camera-target plane instead of the
-median-flock-depth point — decide which is wanted), right-click
-predator, 5 px click-vs-drag, PageUp/Dn with 0.3 floor. **BUG:** the
-`C`-clear branch is dead code — an earlier `elif` consumes `K_c` for
-preset "c", so clear-all is unreachable; `Q` quit is unbound. Spawn
-velocity is a hardcoded random direction ×4.0 (ignores `v0` and the
-cube-velocity law).
+**Status: ✅ DONE (Phase 5, S5 track).** `C`-clear branch and `K_c`
+collision already fixed (Phase 1). Spawn velocity already implements
+the cube-law `limit3((U³−0.5)·2v0, v0)` with `v0` threaded from config
+(tagged D20) — not a hardcoded ×4.0 as this entry described. **Fixed:**
+`OrbitCamera.screen_to_world` now intersects the median-flock-depth
+plane (`depth = median((p_i−o)·f̂)`) when live positions are available,
+instead of the fixed `Z=target.z` plane — falls back to the old
+behaviour when no positions are given (back-compat preserved for
+callers without flock context). `Q` is deliberately bound to camera
+roll, not quit (explicit "quit via ESC only" comment, tagged S2.E6) — a
+blessed intentional divergence from this item's "Q quit" ask, left
+as-is.
 
 **S5.5 CLI + facade** — repeatable `--set key.subkey=value` typed
 against the nested schema + `--print-config`; `--fullscreen`;
@@ -81,11 +85,15 @@ against the nested schema + `--print-config`; `--fullscreen`;
 *tests:* `--set spatial.separation_weight=6 --set flock.num_boids=500`
 reflected in `--print-config`; unknown key exits with the field list;
 facade benchmark returns 20 positive floats.
-**Status: MOSTLY DONE.** `--set` (dotted + flat), `--print-config`,
-`--probe`, `--list-configs`, and the facade + benchmark are
-implemented. **BUG:** `--fullscreen` is parsed but never applied to the
-pygame window. `--light-scheme` missing. Unknown `--set` key exits with
-an error but not the full field list.
+**Status: ✅ DONE (Phase 1 + Phase 5, S5 track).** `--set` (dotted +
+flat), `--print-config`, `--probe`, `--list-configs`, facade + benchmark,
+and `--fullscreen` application were already correct (Phase 1). **Fixed:**
+`--light-scheme` crashed on use (`cfg.theme = "light"` isn't a valid
+theme) — now maps to `"paper"`. The flat (non-dotted) `--set key=value`
+path had zero validation (a typo'd key silently became a stray unused
+attribute); now validates against the full known-field set and exits(1)
+with the complete field list, matching the dotted-key path's existing
+behaviour.
 
 **S5.6 Run logging to `output/`** — every run (visual or `--no-viz`)
 writes a structured log `output/run-<UTC-timestamp>.log` via stdlib
@@ -102,8 +110,11 @@ wired in `__main__.py`; engine/extension call sites swap `print` →
 `logger`. *tests* (`test/test_cli.py`): a 30-frame headless run creates
 the file with header/footer and ≥ 1 metrics line; `--log-level debug`
 increases line count; AST guard — no `print(` in package sources.
-**Status: MISSING** (prints exist in `viz/input_control.py` and
-`__main__.py`).
+**Status: ✅ DONE (verified Phase 5, S5 track — roadmap status was
+stale).** `core/logging.py` already fully implements header/per-interval-
+metrics/lifecycle/footer logging, `--log-level`, and `print()` →
+`cli_out`/`cli_err` replacement with an existing AST guard test — zero
+real `print(` calls remain anywhere in `pymurmur/`.
 
 ---
 
