@@ -36,6 +36,7 @@ class VicsekMode(ForceMode):
     and predator-prey species dynamics (P6.1–P6.2)."""
 
     needs_index = True
+    speed_mode = "fixed"  # D2: constant |v| = v0 (or v_pred), set directly below
 
     @staticmethod
     def compute(

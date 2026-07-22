@@ -150,14 +150,14 @@ class MurmurationEnv(_BaseEnv):
 
         action = np.asarray(action, dtype=np.float32)
         action = np.clip(action, -1.0, 1.0)
-        self._engine.config._marl_action = action.reshape(self._num_boids, 3)
 
-        self._engine.step()
+        # D8: control hook — step() takes and clears the action itself
+        # (previously this reached into engine.config._marl_action
+        # directly, which also meant remembering to clear it after so a
+        # stale action wasn't silently re-applied if the engine got used
+        # outside the env wrapper between steps).
+        self._engine.step(control=action.reshape(self._num_boids, 3))
         self._step_count += 1
-
-        # Clear action to prevent stale re-application if engine is used
-        # outside the env wrapper between steps
-        self._engine.config._marl_action = None
 
         obs = self._get_obs()
         reward = self._compute_reward()

@@ -194,16 +194,30 @@ class SimulationEngine:
 
     # ── Step ──────────────────────────────────────────────────
 
-    def step(self, frame_dt: float = 1.0 / 60.0) -> None:
+    def step(self, frame_dt: float = 1.0 / 60.0,
+              control: np.ndarray | None = None) -> None:
         """Accumulate frame time and step physics in fixed dt_phys ticks.
 
         P8.10: Clamps frame_dt at 1/20s to avoid spiral-of-death,
         then drains the accumulator in dt_phys-sized physics steps.
         After the physics loop, computes lerped render_positions for
         smooth display at any framerate via the visualizer.
+
+        D8: control is an optional (N, 3) external per-bird action,
+        applied by marl mode (the only mode that currently reads it) —
+        the prerequisite seam for the MARL bridge (S7). One-shot: only
+        touches config._marl_action when control is explicitly passed
+        (set before this step, cleared after), so direct manual mutation
+        of config._marl_action by other callers between step() calls is
+        left alone. Formalises what MurmurationEnv previously did by
+        reaching into engine.config._marl_action directly, and now also
+        auto-clears it (the old code had to remember to do that itself).
         """
         if self._perf is not None:
             t0 = time.perf_counter()
+
+        if control is not None:
+            self.config._marl_action = control
 
         dt_phys = max(self.config.dt_phys, 1e-6)  # P8.10: guard against zero
 
@@ -220,6 +234,11 @@ class SimulationEngine:
         while self._accumulator >= dt_phys:
             self._step_physics(dt_phys)
             self._accumulator -= dt_phys
+
+        # D8: one-shot control — clear after use so a stale action isn't
+        # silently re-applied if step() is next called without one.
+        if control is not None:
+            self.config._marl_action = None
 
         # P8.10: Compute lerped render positions for smooth display
         alpha = self._accumulator / dt_phys if self._accumulator > 0.0 else 0.0
@@ -273,8 +292,6 @@ class SimulationEngine:
         compute_all_forces(self.flock, self.config)
 
         # 4. Integrate (stash + physics + centre update)
-        # Wire speed_mode from config — spatial.speed_mode controls
-        # how speeds are clamped after force application.
         # D11: honour owns_positions — if the mode claims ownership
         # of position updates, pass move=False so integrate() skips
         # the position step (mode handles its own positions).
@@ -283,6 +300,17 @@ class SimulationEngine:
             getattr(mode_cls, 'owns_positions', False)
             if mode_cls is not None else False
         )
+        # D2: each mode may declare its own speed_mode (e.g. vicsek/angle
+        # already set exact per-bird velocities directly — "fixed" makes
+        # the generic clamp below a documented no-op rather than an
+        # implicit one; marl clamps on a different unit scale (v_cap, not
+        # v0) and needs "none" so this step doesn't re-clamp it against
+        # the wrong reference). Modes that don't declare one (spatial,
+        # projection, field) keep the historical, still-configurable
+        # config.spatial.speed_mode default.
+        mode_speed_mode = (
+            getattr(mode_cls, 'speed_mode', None) if mode_cls is not None else None
+        ) or self.config.spatial.speed_mode
         # D12: field_inertia is a field-mode parameter — the raw/clamped
         # velocity lerp softens the speed clamp, which would violate the
         # hard speed-band contract of the other modes (P4 acceptance).
@@ -290,7 +318,7 @@ class SimulationEngine:
             self.config.field_inertia if self.config.mode == "field" else 0.0
         )
         self.flock.integrate(self.config, dt,
-                            speed_mode=self.config.spatial.speed_mode,
+                            speed_mode=mode_speed_mode,
                             move=not mode_owns_positions,
                             inertia=mode_inertia)
 
@@ -347,21 +375,30 @@ class SimulationEngine:
         self,
         steps: int | None = None,
         callback: Callable | None = None,
+        controller: Callable[["SimulationEngine"], np.ndarray | None] | None = None,
     ) -> None:
         """Run the simulation loop.
 
         Args:
             steps: number of steps to run (None = infinite).
             callback: called with (engine) after each step (for Recorder).
+            controller: D8/S7 — called with (engine) *before* each step to
+                produce this step's external control action (or None),
+                which is passed straight through to step(control=...).
+                The MARL bridge scripts use this to drive an external
+                policy without the engine importing gymnasium or any
+                RL dependency.
         """
         if steps is None:
             while True:
-                self.step()
+                control = controller(self) if controller else None
+                self.step(control=control)
                 if callback:
                     callback(self)
         else:
             for _ in range(steps):
-                self.step()
+                control = controller(self) if controller else None
+                self.step(control=control)
                 if callback:
                     callback(self)
 

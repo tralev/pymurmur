@@ -38,6 +38,11 @@ class MarlMode(ForceMode):
     """
 
     needs_index = False  # no index — global neighbourhood
+    # D2: mode clamps velocities to its own [0.3*v_cap, v_cap] band using
+    # v_cap (unit-scale U-relative), not v0 — the generic integrate() clamp
+    # uses v0 as its reference and would double-clamp against a mismatched
+    # scale, so the mode must own its speed policy entirely.
+    speed_mode = "none"
 
     @staticmethod
     def compute(
