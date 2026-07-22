@@ -1,12 +1,14 @@
 # Architecture — pymurmur
 
-> **What this document is.** The architecture of pymurmur as built by the
-> self-contained implementation roadmap in the audited
-> spec-vs-code decision register in the
-> [TODO/roadmap0.md](TODO/roadmap0.md)–[TODO/roadmap5.md](TODO/roadmap5.md)
-> set. The P0–P14 implementation roadmap (formerly `roadmap_deepseek.md`)
-> is complete — its history is preserved in git, not tracked as a live
-> file. Test-tree layout, plan, and Docker/CI usage: [test.md](test.md).
+> **What this document is.** The architecture of pymurmur as actually
+> built. Two implementation efforts predate this document's current
+> state — the P0–P14 roadmap (formerly `roadmap_deepseek.md`) and the
+> later `TODO/roadmap0–6.md` absorption plan (D0–D9/T0–T6 foundations,
+> S1–S7 science/UX/EvoFlock/MARL, a codebase audit) — both are complete;
+> their history is preserved in git and PR descriptions, not tracked as
+> live files. This document and [test.md](test.md) are the two docs that
+> survive them and must stand alone, independently accurate against
+> current `pymurmur/`.
 >
 > **Organization: Top-Down / Macro-to-Micro.** §1–§13 read in one
 > direction — start at the system goal (Level 0), decompose into
@@ -48,8 +50,10 @@ control hook; training stays external in `scripts/`).
 
 **Does not do:** audio, VR/XR, networking, ML training in-core,
 screensaver/desktop-overlay modes, GPU-compute simulation backends,
-config-file editing (YAML → text editor). *(Excluded-tier record:
-[TODO/roadmap5.md](TODO/roadmap5.md) Appendix A.)*
+config-file editing (YAML → text editor), Hildenbrandt–Hemelrijk flight
+physics, further EvoFlock research directions (CMA-ES, GP evolution,
+non-uniform agents, non-reciprocal interactions, stigmergy), multi-flock
+parallax scenes. All deliberately out of scope, not partially-built.
 
 ---
 
@@ -176,7 +180,10 @@ pymurmur/                          # pip-installable package
 │   │                          #   SpatialIndex Protocol, rotate_about, min_image,
 │   │                          #   normalize3/limit3, hash01, smoothstep,
 │   │                          #   fibonacci_sphere, seed_noise3, isfinite3
-│   └── config.py              # nested SimConfig (+ sub-config dataclasses), YAML I/O, validate()
+│   ├── config.py              # nested SimConfig (+ sub-config dataclasses), YAML I/O, validate()
+│   └── logging.py             # setup_run_logging → output/run-<UTC>.log (header/metrics/
+│                              #   lifecycle/footer); cli_out/cli_err (the only sanctioned
+│                              #   stdout/stderr seam — no print() anywhere else in pymurmur/)
 │
 ├── simulation/
 │   └── engine.py              # SimulationEngine: step orchestration, command queue,
@@ -221,14 +228,22 @@ pymurmur/                          # pip-installable package
 │
 ├── viz/                       # optional; never imports simulation
 │   ├── renderer.py            # ModernGL: InstanceSchema, _build_vao discipline,
-│   │                          #   depth-FBO, layers, viewports, themes,
-│   │                          #   meshes(tetra|winged|impostor), gradient bg
-│   ├── shaders.py             # GLSL: LookAt+flap, impostor+depth cues, trail, grid, HUD
+│   │                          #   depth-FBO, layers, viewports, themes, draw_layer
+│   │                          #   (markers), meshes via mesh_registry, gradient bg
+│   ├── mesh_registry.py       # mesh vertex/index/format data (tetra, winged, impostor,
+│   │                          #   ellipsoid, cone, arrow, points); recommend_render_mode(n);
+│   │                          #   MATERIAL_REGISTRY (per-theme ambient/diffuse/specular,
+│   │                          #   incl. the "heading" debug theme)
+│   ├── shaders.py             # GLSL: LookAt+flap, impostor+depth cues+Fresnel rim,
+│   │                          #   mesh Fresnel rim, trail, grid, HUD
 │   ├── trails.py              # 4 trail modes: velocity / accumulation / ring / lines
-│   ├── camera.py              # OrbitCamera + ortho/projection presets + capture sweep
-│   ├── hud.py                 # slider panel + readout quads (ortho pass)
+│   ├── camera.py              # OrbitCamera + ortho/projection presets + capture sweep +
+│   │                          #   median-flock-depth spawn-ray intersection
+│   ├── hud.py                 # SliderHUD: sep/coh/align/avoid/noise sliders, ortho-pass
+│   │                          #   track+knob quads, drag-lock, TAB toggle
 │   ├── input_control.py       # keys/mouse/sliders → commands + cfg mutations
-│   └── visualizer.py          # loop owner: accumulator feed, render-only frames, governor
+│   └── visualizer.py          # loop owner: accumulator feed, render-only frames, governor,
+│                              #   threat/influencer marker draws
 │
 ├── capture/
 │   ├── recorder.py            # GL path: pre-warm, sweep, GIF(optimize,disposal)/CSV/JSON
@@ -267,11 +282,10 @@ git_mur/
 │                        #   dependency-gated: train_marl.py, rollout_marl.py,
 │                        #   run_evoflock_small.py
 ├── ci/                  # Docker + Compose (see test.md)
-├── .github/workflows/   # test.yml + guard-rails.yml (9 jobs, merge-blocking summary)
+├── .github/workflows/   # test.yml + guard-rails.yml (9 guard jobs + merge-blocking summary)
 ├── sci/                 # source papers (PDF provenance)
 ├── arch.md              # this file — single architecture reference
-└── TODO/                # roadmap0–5: audited contract/spec set with per-item status ·
-                         #   roadmap6: remaining delta (scaling S8, guard extensions T7)
+└── test.md              # test-tree layout, plan, Docker/CI usage
 ```
 
 ---
@@ -410,21 +424,25 @@ Version pins: [requirements.txt](requirements.txt),
 |------|------|:---:|------|
 | `murmuration.yaml` | projection | 150 | Pearce occlusion (true culling) — the default |
 | `murmuration_spatial.yaml` | spatial | 200 | Reynolds + threat |
+| `murmuration_starlings.yaml` | spatial | 150 | hybrid neighbour filter, dual radii, sphere boundary, parameter jitter |
+| `murmuration_boids.yaml` | spatial | 150 | unit separation kernel, velocity-domain noise, ceiling speed mode |
 | `murmuration_field.yaml` | field | 16K | full 13-term blob dynamics |
 | `field_quiet_roost / lava_lamp / ink_cloud / predator_ripple / vacuole / silk_sheet / storm_turn.yaml` | field | 3K–18K | the seven field character presets |
 | `murmuration_vicsek.yaml` | vicsek | 101 | predator–prey, phase transition |
+| `murmuration_angle.yaml` | angle | 200 | turn-rate-limited heading steering, margin boundary |
 | `murmuration_influencer.yaml` | influencer | 200 | Lissajous pursuit, alpha-density rendering |
+| `murmuration_marl.yaml` | marl | 200 | deferred-global-rules mode, dual-view, pairs with `MurmurationEnv` |
 | `murmuration_evo.yaml` | spatial (GA) | 200 | SSGA + SDF obstacle course (confined) |
 | `evo_open.yaml` | spatial (GA) | 200 | open-boundary GA evaluation variant |
 | `murmuration_300k.yaml` | spatial | 300K | cKDTree + numba benchmark config |
 | `conf/examples/murmuration_nested.yaml` | — | — | nested-schema reference example |
 
-Angle and marl modes run from any preset via `--set mode=angle` /
-`--set mode=marl`; dedicated source-parity presets for them (plus
-starlings/boids regime presets) are specified in
-[TODO/roadmap2.md](TODO/roadmap2.md) and not yet shipped. Presets load
-exactly as written (documented-intent policy); every preset's domain and
-per-section sentinels are asserted by `test/l4_system/test_config_files.py`.
+Presets load exactly as written (documented-intent policy) — a shipped
+preset's values may deliberately override a sub-config's raw dataclass
+defaults (e.g. `murmuration_marl.yaml` carries the source-verified MARL
+constants even though `MarlConfig`'s own field defaults differ); every
+preset's domain and per-section sentinels are asserted by
+`test/l4_system/test_config_files.py`.
 
 ---
 
@@ -485,7 +503,7 @@ flowchart LR
 | metric | field on `FlockMetrics` + fill in `collect()`; auto-exported via `to_dict()` |
 | reward term | named term in `analysis/rewards.py` + weight in `MarlConfig` |
 | spatial index | implement `SpatialIndex` Protocol; must pass the shared conformance suite |
-| bird mesh / render layer | mesh entry in `shaders.py` + viz config; `draw_layer` for overlays |
+| bird mesh / render layer | mesh entry in `mesh_registry.py` + viz config; `draw_layer` for overlays |
 | obstacle shape | SDF function in `physics/obstacles.py` (+ compose via min/max) |
 | boundary mode | branch in `physics/boid.py` boundary dispatch |
 | config preset | drop nested YAML in `conf/` (auto-discovered; validated by tests) |
@@ -525,7 +543,16 @@ simulation state.
 
 All five checkpoints, the full determinism matrix (threads × jitter × numba
 + subprocess leg), and the T6.3/S8.4 soak tiers are implemented and
-verified (2026-07-21).
+verified.
+
+**Per-mode step budgets** (`test/crosscutting/perf/test_budgets.py`,
+mean ms/step at N = 2 000, ×3 headroom on assertion): projection 130 ·
+spatial 20 · field 8 · vicsek **80** (numba `resolve_species_collisions`
+kernel — a ~95× win over the pure-Python O(N²) pairwise loop it
+replaced) · influencer 8 · angle 200 (per-bird Python loop; deliberately
+left unvectorised — read-after-write ordering + inline RNG draws don't
+port safely to numba/batched numpy, and it's already well inside
+budget) · marl 150.
 
 ---
 
