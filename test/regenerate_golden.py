@@ -24,10 +24,9 @@ Generated files:
     test/data/golden_vicsek_sphere.npz
     test/data/golden_influencer_sphere.npz
 
-Determinism contract (P0.4): Same seed + config → bit-identical after N frames.
-Currently projection, spatial, and field are deterministic; vicsek and influencer
-use module-level np.random.* calls and will become deterministic after P0.4
-(flock.rng replaces all np.random.* call sites).
+Determinism contract: same seed + config → bit-identical after N frames,
+for all five modes — every force mode draws randomness exclusively from
+the single seeded flock.rng, never module-level np.random.*.
 """
 
 import argparse
@@ -62,8 +61,6 @@ DEFAULT_FRAMES = 30
 OUTPUT_DIR = Path(__file__).resolve().parent / "data"
 DT = 1.0 / 60.0
 
-# Modes known to be non-deterministic until P0.4 (module-level np.random.*)
-NONDETERMINISTIC = {"vicsek", "influencer"}
 
 
 def generate_golden(
@@ -218,8 +215,7 @@ def main():
                 path = args.output_dir / f"golden_{mode}.npz"
             else:
                 path = args.output_dir / f"golden_{mode}_{args.boundary}.npz"
-            nd = " ⚠️  non-deterministic (P0.4)" if mode in NONDETERMINISTIC else ""
-            print(f"  {path}{nd}")
+            print(f"  {path}")
         return 0
 
     generated = []
@@ -237,8 +233,7 @@ def main():
             )
             verify_golden(path, (args.frames, args.birds, 3))
             size_kb = os.path.getsize(path) / 1024
-            nd = " ⚠️  non-deterministic — will be fixed in P0.4" if mode in NONDETERMINISTIC else ""
-            print(f"  ✓ {mode:15s} [{args.boundary:8s}] → {path.name:35s}  {size_kb:6.1f} KB{nd}")
+            print(f"  ✓ {mode:15s} [{args.boundary:8s}] → {path.name:35s}  {size_kb:6.1f} KB")
             generated.append(mode)
         except Exception as e:
             print(f"  ✗ {mode:15s} [{args.boundary:8s}] FAILED: {e}")
@@ -250,13 +245,6 @@ def main():
     if errors:
         print(f"✗ {len(errors)} modes failed: {', '.join(errors)}")
         return 1
-
-    if any(m in NONDETERMINISTIC for m in generated):
-        print()
-        print("⚠️  Note: vicsek and influencer modes use module-level np.random.*")
-        print("    calls and are currently NON-DETERMINISTIC (structural gap #5).")
-        print("    After P0.4 (flock.rng), re-run this script to re-pin them.")
-        print("    Until then, test_golden.py marks them as expected failures (xfail).")
 
     return 0
 
