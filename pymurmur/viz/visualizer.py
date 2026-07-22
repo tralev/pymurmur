@@ -138,6 +138,7 @@ class Visualizer:
             else:
                 self._draw_birds_with_lerp(rpos)
                 self._draw_threat_marker()
+                self._draw_influencer_marker()
                 self.renderer.draw_trails(self.sim.flock)
             self.renderer.end_frame()
             if self.renderer.headless:
@@ -331,10 +332,12 @@ class Visualizer:
         self.renderer.render_pass(self._dual_camera, 0, 0, hw, h)
         self._draw_birds_with_lerp(rpos)
         self._draw_threat_marker()
+        self._draw_influencer_marker()
         # Right: main camera at 45°/45°
         self.renderer.render_pass(self.camera, hw, 0, w - hw, h)
         self._draw_birds_with_lerp(rpos)
         self._draw_threat_marker()
+        self._draw_influencer_marker()
         # Trails drawn once in main viewport
         self.renderer.draw_trails(self.sim.flock)
 
@@ -354,6 +357,21 @@ class Visualizer:
         red glow, see shaders.py) so no new rendering path is needed.
         """
         pos = self.sim.extensions.predator_position
+        if pos is None:
+            return
+        self.renderer.draw_layer(tuple(pos), hue=0.0, scale=1.5)
+
+    def _draw_influencer_marker(self) -> None:
+        """S2.E5/D7: render the influencer's Lissajous/pilot target.
+
+        Same flag-channel mechanism as _draw_threat_marker (spec calls
+        for reusing it, not a distinct visual convention) — the target
+        is otherwise invisible, making the core-leads/tail-lags
+        emergent behaviour hard to debug visually.
+        """
+        if self.config.mode != "influencer":
+            return
+        pos = getattr(self.config, "_influencer_target_pos", None)
         if pos is None:
             return
         self.renderer.draw_layer(tuple(pos), hue=0.0, scale=1.5)

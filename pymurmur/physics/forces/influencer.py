@@ -352,6 +352,10 @@ class InfluencerMode(ForceMode):
         final_dists = np.linalg.norm(pos - target, axis=1)
         config._target_dist_min = float(final_dists.min())
         config._target_dist_max = float(final_dists.max())
+        # S2.E5/D7: stash the final substep's target for the marker
+        # renderer — an unrendered target is as undebuggable as an
+        # unrendered threat (see Visualizer._draw_threat_marker).
+        config._influencer_target_pos = target.copy()
 
         # Write back positions + velocities; accelerations zeroed (influencer
         # doesn't use the acceleration pipeline — it steers directly)

@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 
 from pymurmur.simulation.engine import SimulationEngine
@@ -445,3 +446,33 @@ class TestThreatMarker:
             "Marker must use scale > 1.0 to trigger the shader's "
             "predator_factor red-glow blend"
         )
+
+
+class TestInfluencerMarker:
+    """S2.E5/D7: Visualizer._draw_influencer_marker draws a marker at
+    the influencer target — otherwise invisible, making the
+    core-leads/tail-lags emergent behaviour hard to debug visually."""
+
+    def test_no_marker_outside_influencer_mode(self, default_config, monkeypatch):
+        default_config.mode = "spatial"
+        viz, mock_renderer, _ = _make_viz(monkeypatch, default_config)
+        viz._draw_influencer_marker()
+        mock_renderer.draw_layer.assert_not_called()
+
+    def test_no_marker_before_first_compute_call(self, default_config, monkeypatch):
+        """No _influencer_target_pos stash yet (mode set but never stepped)."""
+        default_config.mode = "influencer"
+        viz, mock_renderer, _ = _make_viz(monkeypatch, default_config)
+        viz._draw_influencer_marker()
+        mock_renderer.draw_layer.assert_not_called()
+
+    def test_marker_drawn_after_target_pos_stashed(self, default_config, monkeypatch):
+        default_config.mode = "influencer"
+        viz, mock_renderer, _ = _make_viz(monkeypatch, default_config)
+        viz.config._influencer_target_pos = np.array(
+            [1.0, 2.0, 3.0], dtype="float32"
+        )
+        viz._draw_influencer_marker()
+        mock_renderer.draw_layer.assert_called_once()
+        (pos,), _ = mock_renderer.draw_layer.call_args
+        assert tuple(pos) == (1.0, 2.0, 3.0)
