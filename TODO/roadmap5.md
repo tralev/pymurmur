@@ -16,101 +16,107 @@ conclusion (§5).
 
 ## 1. Confirmed defects (fix first — small, high value)
 
-1. **Sphere boundary is origin-centred.**
+1. ✅ **FIXED (Phase 1). Sphere boundary is origin-centred.**
    `physics/boid.py::_sphere_soft` measures `‖p‖`, not `‖p − C‖`. With
    the default domain `[0,1000]×[0,700]×[0,400]` most birds are
    permanently "outside" and get hard-projected. Fix, then re-pin the
    `test/data/golden_*_sphere.npz` goldens in the same commit.
    → [roadmap1.md](roadmap1.md) D4.
-2. **Wander extension reads non-existent config keys.**
+2. ✅ **FIXED (Phase 1). Wander extension reads non-existent config keys.**
    `physics/extensions/wander.py` reads `cfg.wander_speed` /
    `cfg.attractor_radius`; the config defines `wander_attractor_speed`
    / `wander_attractor_radius`. Both fields are dead; wander silently
    runs at speed 1.0 (configured default: 0.10).
    → [roadmap2.md](roadmap2.md) S2.A1.
-3. **`C` (clear-all) key is dead code; `Q` unbound.**
+3. ✅ **FIXED (Phase 1). `C` (clear-all) key is dead code; `Q` unbound.**
    `viz/input_control.py::_handle_keydown` has two `elif key ==
    pygame.K_c:` branches — the letter-preset "c" branch wins, the
    clear branch is unreachable. Rebind clear (e.g. Shift+C or another
    key) or reorder deliberately; add `Q` quit.
    → [roadmap4.md](roadmap4.md) S5.4.
-4. **`--fullscreen` parsed but never applied**
+4. ✅ **FIXED (Phase 1). `--fullscreen` parsed but never applied**
    (`__main__.py` creates the window without checking
    `args.fullscreen`). → [roadmap4.md](roadmap4.md) S5.5.
-5. **QualityGovernor is never fed.** `Visualizer.run()` neither calls
-   `self._governor.feed(frame_ms)` nor `_apply_quality_actions()` —
-   adaptive quality is entirely inert (only the `[Qn]` title suffix
-   exists). → [roadmap1.md](roadmap1.md) D8,
+5. ✅ **FIXED (Phase 1). QualityGovernor is never fed.** `Visualizer.run()`
+   neither calls `self._governor.feed(frame_ms)` nor
+   `_apply_quality_actions()` — adaptive quality is entirely inert (only
+   the `[Qn]` title suffix exists). → [roadmap1.md](roadmap1.md) D8,
    [roadmap3.md](roadmap3.md) S4.10.
-6. **Seed semantics broken for 0/None.**
+6. ✅ **FIXED (Phase 1). Seed semantics broken for 0/None.**
    `PhysicsFlock.__init__`: `np.random.default_rng(config.seed if
    config.seed else 0)` — `seed=0` is conflated with `seed=None`, and
    unseeded runs are silently deterministic with seed 0. Contract:
    integer seeds honored (0 included), `None` → fresh entropy
    ([roadmap0.md](roadmap0.md) §3.2). → [roadmap1.md](roadmap1.md) D3.
-7. **`position_init: "sphere"` silently degrades to `"box"`.** The
-   validator accepts `"sphere"` but `boid.py::init_positions` has no
-   branch for it. Implement the filled ∛-law sphere.
-   → [roadmap2.md](roadmap2.md) S2.B9.
-8. **Steric clamp inert in production.** `steric_force` supports
-   `max_force` but `ProjectionMode` never passes it.
-   → [roadmap2.md](roadmap2.md) S1.6.
-9. **`noise_force` discards its scale.** The output is normalised to
-   unit magnitude, so `noise_scale` only toggles on/off instead of
-   setting the kick size. → [roadmap2.md](roadmap2.md) S1.5.
-10. **Ripple envelope exported as a scalar summed over all birds.**
-    `extensions/ripple.py` sets `config._ripple_envelope_sum =
-    float(np.sum(...))` — the field-mode fold-noise term then scales
-    with N (huge for large flocks). Export the per-bird `(N,)` array
-    (sum over trains only). → [roadmap2.md](roadmap2.md) S2.A5/S2.A6.
-11. **Engine ignores mode `speed_mode`/`owns_positions`.**
-    `flock.integrate()` always runs band-clamped, `move=True`;
-    `InfluencerMode.owns_positions=True` is untruthful; per-mode fixed
-    speed is hand-rolled inside modes. Wire the flags through
-    `engine._step_physics`. → [roadmap1.md](roadmap1.md) D2.
-12. **`field_inertia` dead** — `integrate()` supports `inertia` but no
-    caller passes `cfg.field_inertia`; every field preset's inertia
-    column is ignored. → [roadmap2.md](roadmap2.md) S2.A7.
-13. **`output/evolved.yaml` never written** despite the EvoFlock
-    docstring promising it. → [roadmap4.md](roadmap4.md) S6.6.
-14. **AngleMode state is class-level.** `AngleMode._last_cell` is
-    shared across all engines in the process — parallel engines or
-    mode switches corrupt each other's incremental-grid state.
+7. ✅ **FIXED (Phase 1). `position_init: "sphere"` silently degrades to
+   `"box"`.** The validator accepts `"sphere"` but
+   `boid.py::init_positions` has no branch for it. Implement the filled
+   ∛-law sphere. → [roadmap2.md](roadmap2.md) S2.B9.
+8. ✅ **FIXED (Phase 1). Steric clamp inert in production.**
+   `steric_force` supports `max_force` but `ProjectionMode` never
+   passes it. → [roadmap2.md](roadmap2.md) S1.6.
+9. ✅ **FIXED (Phase 1). `noise_force` discards its scale.** The output
+   is normalised to unit magnitude, so `noise_scale` only toggles
+   on/off instead of setting the kick size.
+   → [roadmap2.md](roadmap2.md) S1.5.
+10. ✅ **ALREADY CORRECT (verified Phase 3).** ~~Ripple envelope exported
+    as a scalar summed over all birds.~~ `extensions/ripple.py` already
+    exports the per-bird `(N,)` array (sum over trains only) by the
+    time Track A checked — the scalar-sum bug described here was no
+    longer present. → [roadmap2.md](roadmap2.md) S2.A5/S2.A6.
+11. **PARTIAL — narrower fix landed (Phase 2).** Engine ignores mode
+    `speed_mode`/`owns_positions`. `flock.integrate()` always ran
+    band-clamped, `move=True`; `InfluencerMode.owns_positions=True` was
+    untruthful. Fixed: each mode now declares `speed_mode`/`owns_positions`
+    `ClassVar`s, honored by `engine._step_physics`. **Not done:** the
+    full `compute()`→stateful `step()` instance-method refactor this
+    item originally implied — the narrower fix was sufficient for every
+    downstream item that depended on it. → [roadmap1.md](roadmap1.md) D2.
+12. ✅ **ALREADY CORRECT (verified Phase 3).** ~~`field_inertia` dead.~~
+    `integrate()`'s `inertia` parameter is wired end-to-end (tagged D12
+    in the code) — every field preset's inertia column is live.
+    → [roadmap2.md](roadmap2.md) S2.A7.
+13. ⏳ **OPEN — Phase 6 (EvoFlock) scope, not yet reached.**
+    `output/evolved.yaml` never written despite the EvoFlock docstring
+    promising it. → [roadmap4.md](roadmap4.md) S6.6.
+14. ✅ **FIXED (Phase 2). AngleMode state is class-level.**
+    `AngleMode._last_cell` was shared across all engines in the
+    process — moved to per-index instance state.
     → [roadmap2.md](roadmap2.md) S2.C6, [roadmap1.md](roadmap1.md) D2.
-15. **Angle mode has no config section.** Every knob (`turn_rate`,
-    `margin`, `base_speed`, radii …) is a `getattr` default — nothing
-    is tunable from YAML, and the values silently differ from the
-    documented preset (`max_turn_rate` 360 vs 200, `turn_threshold`
-    0.8 vs 0.5, `base_speed` 4 vs 150).
+15. ✅ **FIXED (Phase 2 + Phase 3, Track C). Angle mode has no config
+    section.** A full `AngleConfig` dataclass now exists with defaults
+    matching the S2.C8 spec table exactly (`max_turn_rate: 200`,
+    `turn_threshold: 0.5`, `base_speed: 150`) — the divergent in-code
+    defaults this item flagged are gone.
     → [roadmap2.md](roadmap2.md) S2.C7/S2.C8.
-16. **Capture override precedence is env > CLI** (env vars are read
-    after CLI flags mutate the config); contract is YAML < env < CLI.
+16. ⏳ **OPEN — Phase 4 (S4 rendering/capture) scope.** Capture override
+    precedence is env > CLI (env vars are read after CLI flags mutate
+    the config); contract is YAML < env < CLI.
     → [roadmap3.md](roadmap3.md) S4.9.
-17. **Headless FBO has no depth attachment** — headless captures
-    resolve overlap by draw order, not depth.
+17. ✅ **FIXED (Phase 2, D7). Headless FBO has no depth attachment.**
+    Headless captures now resolve overlap by depth
+    (`depth_attachment=self._depth_rb`), not draw order.
     → [roadmap1.md](roadmap1.md) D7.
-18. **Metrics likely read zeroed accelerations.**
-    `engine._step_physics` calls `metrics.collect()` *after*
-    `integrate()` has reset `accelerations`; `force_avg`/`power_avg`
-    and the physical conversions probably read zeros every frame. The
-    stash (`last_accelerations`) exists — make metrics read it, and add
-    the stash test. → [roadmap2.md](roadmap2.md) S2.B4.
-19. **Unbounded accumulators.** `MetricsCollector.history`,
-    `_position_snapshots`, `_density_history`, and the Recorder frame
-    list grow without caps — long runs leak. Add
-    `cfg.metrics.history_cap` / frame caps + the soak test.
-    → [roadmap1.md](roadmap1.md) T6.3.
-20. **T4.4 invariance coverage incomplete after dedup.** The deleted
-    `test/analysis/test_metrics_invariance.py` was a partial
-    deduplication — the nematic sign-flip and SO(3) invariance tests
-    survive in `test_metrics.py`, but α rotation-invariance,
-    dispersion/gyration translation-invariance, permutation invariance,
-    and the `[0,1]`-bounds sweep now have **no test anywhere**. Land
-    the missing cases. → [roadmap1.md](roadmap1.md) T4.4.
-21. **`spawn_at` hardcodes speed 4.0** (ignores `config.v0` and
-    `velocity_init`); interactive spawns misbehave at other cruise
-    speeds. → [roadmap1.md](roadmap1.md) D3,
-    [roadmap4.md](roadmap4.md) S5.4.
+18. ✅ **FIXED (tagged D18 in the code, verified Phase 3). Metrics likely
+    read zeroed accelerations.** `engine._step_physics` calls
+    `metrics.collect()` after `integrate()` resets `accelerations`;
+    `force_avg`/`power_avg` now read the `last_accelerations` stash
+    instead. → [roadmap2.md](roadmap2.md) S2.B4.
+19. ✅ **FIXED (Phase 2). Unbounded accumulators.**
+    `MetricsCollector.history` and the Recorder frame list are now
+    capacity-capped ring buffers (`cfg.metrics.history_cap`); soak-tested
+    to ≥20,000 frames. → [roadmap1.md](roadmap1.md) T6.3.
+20. ✅ **FIXED (Phase 1). T4.4 invariance coverage incomplete after
+    dedup.** α rotation-invariance, dispersion/gyration
+    translation-invariance, permutation invariance, and the
+    `[0,1]`-bounds sweep landed in
+    `test/l0_modules/analysis/test_metrics_invariance.py`.
+    → [roadmap1.md](roadmap1.md) T4.4.
+21. ✅ **FIXED (Phase 1). `spawn_at` hardcodes speed 4.0** (ignores
+    `config.v0` and `velocity_init`) — the engine now passes
+    `v0=self.config.v0`; the `4.0` default remains only as a safety net
+    for direct callers that bypass the engine.
+    → [roadmap1.md](roadmap1.md) D3, [roadmap4.md](roadmap4.md) S5.4.
 
 ## 2. Implemented but unclear — verify or decide, then pin with tests
 
@@ -119,70 +125,64 @@ intended*; each needs an explicit decision (keep the code → rewrite the
 spec item and its tests; keep the spec → fix the code and re-pin
 goldens). Do not leave both ambiguous.
 
-1. **S1.5 force kernels** ([roadmap2.md](roadmap2.md)) — separation
-   1/d vs spec 1/d²; cohesion always-normalised vs `limit3(·, 1)`;
-   alignment `normalize(v̄)−normalize(v_i)` vs `normalize(v̄−v_i)`.
-   These change flock behaviour materially; the existing
-   `test_kernels.py` may be pinning the old forms.
-2. **S2.A3 leader/chaser** — no dedicated group-anchor formula, no
-   secondary anchor/`sec_mix`, per-group mean lag, approximated leader
-   target; `field_num_groups`/`field_leader_fraction` ignored
-   (hardcoded 7 / 0.84).
-3. **S2.A5 boundary containment** — inverse-overshoot
-   `−μ r̂/max(d−R, 0.05R)` vs the spec's linear `(d−1.45U)·1.6`
-   spring (the code comments it deliberately deviates).
-4. **S2.E2 influencer substeps** — direction-only blending with a
-   single end-of-frame move vs per-substep move-then-steer with
-   one-step lag; also the engine and the mode both maintain the tick.
-5. **S3.9 rewards** — nine `1/(1+x)` bonus terms vs the five-term
-   penalty composite; `faithful_signs` flips everything vs only the
-   alignment term. The MARL bridge tests assume the spec form.
-6. **S1.8 H₂ symmetrization** — `(A+Aᵀ)/2` vs `max(A, Aᵀ)`.
-7. **S2.B4 physical power/energy** — product-of-means power and
-   kinetic `½mv²` energy vs `m⟨|k_a a · k_v v|⟩` and accumulated work
-   `Σ P·Δt`.
-8. **S2.B5 jitter** — multiplicative `w·(1+U(0,j))` vs additive
-   `w + U(0, range)` with fixed ranges.
-9. **S2.B8 ecology formulas** — dusk-sigmoid parameterization,
-   seasonal-amplitude curve, coherence-gate window, temperature-boost
-   form, and the 77/256 predator hash (spec: 0.296 rate via
-   `(day·2654435761 mod 1000)/1000`) all deviate.
-10. **S4.4 winged mesh** — different vertex table and continuous-sine
-    flap vs the source-verified 8-vertex table with square-wave
-    `⌊frame/flap_period⌋` toggle.
-11. **S4.3 trail shaping** — velocity head/tail/wave factors,
-    accumulation fade-alpha formula, lines-mode 5-segment layout and
-    `prog²` head-vanishing wave are all simplified/different.
-12. **S2.A6/S2.A1 field-time bases** — field terms run on
-    `config._field_time = frame·dt` while Wander/Ripple advance their
-    own `self._t` clocks; after a reset or mode switch these
-    desynchronize. Decide a single time authority (mode instance state
-    per [roadmap1.md](roadmap1.md) D2).
-13. **S2.D1 vicsek species blend** — fear blend folds `(1−η)·û_noisy`
-    into one normalisation; all-predator early-out returns without
-    randomizing predator headings. Confirm against the spec's staged
-    form.
-14. **S2.A2 seeds** — field mode uses `arange(n_active)` as seeds
-    rather than the flock's random `seeds` column; targets are
-    index-dependent, so bird removal reshuffles targets.
-15. **S5.4 spawn ray** — intersects the camera-target Z-plane vs the
-    spec's median-flock-depth point.
-16. **Recorder→MPL fallback frame merge** (`recorder.py::
-    _fallback_to_mpl` slices `mpl.frames[existing:]`) — index-offset
-    bookkeeping across two recorders; verify no duplication/loss when
-    the GPU fails mid-run.
-17. **S3.5 τρ stop cap** — 20-lag cap vs `0.25·buffer` (=125).
-18. **Preset labels (S5.1)** — parameter values match the table but
-    labels/descriptions are shuffled relative to it.
-19. **Instance-buffer memcpy count** — `test/viz/test_renderer.py::
-    test_renderer_single_memcpy` was loosened to assert **2**
-    `vbo.write` calls (instance VBO + separate colour VBO). That is a
-    symptom of the D7 schema divergence, not an independent fact:
-    merging to the contract's 8-float single schema
-    ([roadmap0.md](roadmap0.md) §4.8) restores one memcpy per frame and
-    the test re-tightens to 1; blessing the two-VBO layout instead
-    means amending §4.8. Resolve together with the D7 decision
-    ([roadmap1.md](roadmap1.md)).
+1. ✅ **DECIDED — adopted spec, fixed (Phase 3). S1.5 force kernels**
+   ([roadmap2.md](roadmap2.md)) — separation is now `Σ r̂/d²` with the
+   `sum|mean|unit` kernel selector; cohesion is `limit3(·, 1)`;
+   alignment is `normalize(v̄−v_i)`.
+2. ✅ **DECIDED — adopted spec, fixed (Phase 3, Track A). S2.A3
+   leader/chaser** — now has a dedicated `anchor(t,gs)` formula,
+   secondary anchor/`sec_mix` blend, per-bird lag, and a real
+   `wander_heading(t)` leader target.
+3. ✅ **DECIDED — blessed the code (confirmed Phase 3, Track A). S2.A5
+   boundary containment** — the inverse-overshoot form
+   `−μ r̂/max(d−R, 0.05R)` is kept; the code's deliberate-deviation
+   comment was verified present and this was treated as the one
+   confirmed intentional divergence in the whole plan.
+4. ✅ **DECIDED — code already matched spec (tagged D11, verified Phase 3,
+   Track E). S2.E2 influencer substeps** — per-substep move-then-steer
+   with `integrate(move=False)` was already implemented; not the
+   collapsed single-move form this entry described.
+5. ⏳ **OPEN — Phase 4 (S3 metrics) scope.** S3.9 rewards — nine
+   `1/(1+x)` bonus terms vs the five-term penalty composite.
+6. ✅ **DECIDED — adopted spec, fixed (Phase 3). S1.8 H₂ symmetrization**
+   — now `max(A, Aᵀ)`, pinned with a hand-computed 3-node graph test.
+7. ✅ **DECIDED — code already matched spec (verified Phase 3, Track B).
+   S2.B4 physical power/energy** — `power_real_W`/`energy_J` already
+   used the mean-of-per-bird-dot-product and accumulated-work forms by
+   the time this pass checked, not the product-of-means/kinetic forms
+   this entry described.
+8. ✅ **DECIDED — blessed the code (Phase 3, Track B). S2.B5 jitter** —
+   kept the multiplicative `w·(1+U(0,j))` form; no functional
+   deficiency motivated switching to the additive spec form.
+9. ✅ **MOSTLY DECIDED (Phase 3, Track B).** S2.B8 ecology formulas —
+   predator-presence hash replaced with the real `PREDATOR_RATE=0.296`
+   (deterministic + stochastic-rng paths), coherence-gate window fixed
+   to spec, roost force fixed to the `unit(roost−p)` form. Dusk-sigmoid
+   parameterization (minutes-before-dusk) kept as a blessed divergence.
+   Seasonal-amplitude curve not independently reconciled.
+10. ⏳ **OPEN — Phase 4 (S4 rendering) scope.** S4.4 winged mesh —
+    different vertex table and continuous-sine flap.
+11. ⏳ **OPEN — Phase 4 (S4 rendering) scope.** S4.3 trail shaping.
+12. ⏳ **OPEN — not addressed in Phases 1-3.** S2.A6/S2.A1 field-time
+    bases — `config._field_time` vs Wander/Ripple's own `self._t`
+    clocks can still desynchronize after a reset/mode switch.
+13. ✅ **DECIDED (Phase 3, Track D).** S2.D1 vicsek species blend —
+    all-predator early-out fixed to a pure random walk (was freezing
+    velocities). Fear-blend two-stage form blessed as-is: the spec
+    prose doesn't fully pin down the composition, and the current form
+    is already pinned by an exact-value test.
+14. ⏳ **OPEN — not addressed in Phases 1-3.** S2.A2 seeds — field mode
+    still uses `arange(n_active)` rather than the flock's random
+    `seeds` column.
+15. ⏳ **OPEN — Phase 5 (S5 UX) scope.** S5.4 spawn ray.
+16. ⏳ **OPEN — not independently re-verified.** Recorder→MPL fallback
+    frame merge.
+17. ⏳ **OPEN — Phase 4 (S3 metrics) scope.** S3.5 τρ stop cap.
+18. ⏳ **OPEN — Phase 5 (S5 UX) scope.** Preset labels (S5.1).
+19. ✅ **DECIDED — adopted the D7 single-schema contract (Phase 2).**
+    Instance-buffer memcpy count — `InstanceSchema` merged to the
+    8-float single schema; `test_renderer_single_memcpy` re-tightened
+    to assert exactly 1 `vbo.write()` call per frame.
 
 ## 3. Dead config fields and dead atoms (drift-guard targets)
 
@@ -190,31 +190,44 @@ Fields defined but never read (or read under wrong names) — each needs
 a reader or removal; the T1.2 drift guard ([roadmap1.md](roadmap1.md))
 should fail on all of these today:
 
-- `wander_attractor_speed`, `wander_attractor_radius` (wrong-name
-  reads — defect §1.2)
-- `field_target_pull` (term missing), `field_inertia` (§1.12),
-  `field_drift_direction`, `field_ripple_trains`,
-  `field_shell_radius_base`, `field_inner_radius_factor`,
-  `field_num_groups`, `field_leader_fraction` (hardcoded constants)
-- `alignment_radius_ratio` (no alignment-radius subset in spatial mode)
-- `use_toroidal_distance` for the KDTree path (no `boxsize`)
-- `boundary_radius_factor` (no reader found — verify)
-- `influencer_init_separation` (density init never called)
-- `predator_speed_boost` / `predator_perception_boost` (verify actual
-  consumption in the spatial pipeline)
-- EvoFlock genes `predictive_avoid_weight`, `static_avoid_weight`
-  (no physics reader — [roadmap4.md](roadmap4.md) S6.5)
+- ✅ **FIXED (Phase 1).** `wander_attractor_speed`, `wander_attractor_radius`
+  (wrong-name reads — defect §1.2)
+- ✅ **RESOLVED — all consumed (verified Phase 3; tagged C3 in the code,
+  meaning these were already wired by the time this pass checked).**
+  `field_target_pull`, `field_inertia` (§1.12), `field_drift_direction`,
+  `field_ripple_trains`, `field_shell_radius_base`,
+  `field_inner_radius_factor` are all read. `field_num_groups`/
+  `field_leader_fraction` fixed to be actually consumed (Phase 3, Track
+  A, S2.A3 — were hardcoded 7/0.84).
+- ✅ **FIXED (Phase 3, Track B).** `alignment_radius_ratio` — now a real
+  alignment-radius subset in spatial mode.
+- ✅ **FIXED (Phase 2, D5).** `use_toroidal_distance` for the KDTree
+  path — `KDTreeIndex` now accepts a `box` param.
+- ✅ **RESOLVED — consumed (verified Phase 3; tagged C3).**
+  `boundary_radius_factor` — scales the effective sphere radius in
+  `flock.py`.
+- ✅ **FIXED (Phase 3, Track E).** `influencer_init_separation` — density
+  init now auto-triggers via `influencer_density_scaled_init` and
+  actually calls it.
+- ✅ **VERIFIED CONSUMED (Phase 3, Track B).** `predator_speed_boost` /
+  `predator_perception_boost` — confirmed wired in `flock.py::integrate`
+  and `spatial.py::_query_neighbors`.
+- ⏳ **OPEN — Phase 6 (EvoFlock) scope, not yet reached.** EvoFlock
+  genes `predictive_avoid_weight`, `static_avoid_weight` (no physics
+  reader — [roadmap4.md](roadmap4.md) S6.5)
 
 Dead atoms (defined, never composed — violates the Micro→Macro rule,
 [roadmap0.md](roadmap0.md) §3.3):
 
-- `core/types.py::seed_noise3` → composer is
-  [roadmap2.md](roadmap2.md) S2.B11
-- `physics/forces/_base.py::ForceTerm` + `composeForces` → composer is
-  the S2.A5 composition contract
-- `influencer.py::influencer_density_init` /
-  `density_init_positions` → wire via S2.E4
-- `physics/obstacles.py` (whole layer) → engine integration in
+- ✅ **FIXED (Phase 3, Track B).** `core/types.py::seed_noise3` →
+  composed via `spatial.noise_mode: "seed_sinusoidal"` (S2.B11).
+- ✅ **FIXED (verified Phase 3, Track A — already composed by the time
+  this pass checked).** `physics/forces/_base.py::ForceTerm` +
+  `composeForces` → the S2.A5 composition contract.
+- ✅ **FIXED (Phase 3, Track E).** `influencer.py::influencer_density_init`
+  / `density_init_positions` → wired via S2.E4.
+- ⏳ **OPEN — Phase 6 (EvoFlock) scope, not yet reached.**
+  `physics/obstacles.py` (whole layer) → engine integration in
   [roadmap4.md](roadmap4.md) S6.4
 
 ## 4. Improvement steps (recommended order)

@@ -29,11 +29,12 @@ no bird inside a nearer accepted cap, none in the blind cone, count ≤
 cap.
 **S1.1a Anisotropy identity**: `anisotropy=1.0` vs default → identical
 `(δ̂, visible, Θ)`.
-**Status: MOSTLY DONE.** Closest-first culling with the exact-asin cap,
+**Status: ✅ DONE.** Closest-first culling with the exact-asin cap,
 64-candidate cap, blind cone, anisotropy, and a batched zero-allocation
-path are implemented. Missing: the `max_visibility` distance pre-filter
-and its config field (candidates are currently only the σ topological
-neighbours passed in).
+path are implemented. `cfg.projection.max_visibility` is a real config
+field (Phase 2, D1) and is applied as a pre-filter on the σ topological
+neighbour count before the occlusion sweep, capped again at
+`max_occlusion_neighbors` inside the batched sweep — verified in Phase 3.
 
 **S1.2 Θ probabilistic union** — *math:* `Ω_j = 2π(1−cos α_j)`,
 `Θ = 1 − Π_visible(1 − Ω_j/4π)` (running product). *tests:*
@@ -55,9 +56,10 @@ from `flock.rng`; the input handler renormalises the pair. *impl:*
 `ProjectionMode.step`; `viz/input_control.py`. *tests:* hammer φp↑ 100×
 → `φp+φa ≤ 1` always (and symmetric); behavioural: φn = 0.2 keeps
 residual heading variance > φn = 0 (same seed).
-**Status: PARTIAL.** The φp+φa ≤ 1 input constraint is implemented
-(`_enforce_phi_constraint`). The **φn noise term itself is missing** —
-`ProjectionMode` blends only φp·δ̂ + φa·align.
+**Status: ✅ DONE (verified Phase 3).** The φp+φa ≤ 1 input constraint is
+implemented (`_enforce_phi_constraint`), and `ProjectionMode` blends
+`φp·δ̂ + φa·align_dir + φn·η̂` with `φn = max(0, 1−φp−φa)` and η̂ drawn
+from `flock.rng`, normalized per-bird.
 
 **S1.5 Force-kernel corrections** — *math:* separation `Σ r̂/d²` (unit
 direction over squared distance), with kernel selector
@@ -81,20 +83,19 @@ sum kernel / k; cohesion magnitude ≤ 1 always AND == |p̄−p_i| when that
 is < 1 (no inflation of short vectors); alignment unit-length and
 parallel to `v̄ − v_i` for a hand pair with unequal speeds; noise mean
 magnitude ≈ scale (±10 %, 10⁴ draws), zero at scale 0.
-**Status: MISSING (all four corrections).** Current `_base.py`:
-separation magnitude is 1/d (`−Δ/|Δ|²`), no kernel selector; cohesion
-always normalises to unit length (inflates short vectors); alignment is
-`normalize(v̄) − normalize(v_i)`; `noise_force` normalises its output so
-`noise_scale` never changes the magnitude. A `test_kernels.py` exists —
-**verify** what it pins; it must not enshrine the old forms.
+**Status: ✅ DONE (verified Phase 3).** `_base.py` implements all four
+corrections: `separation_force` has the `kernel: "sum"|"mean"|"unit"`
+selector with the correct `Σ r̂/d²` magnitude; `cohesion_force` applies
+`limit3(p̄−p_i, 1)`; `alignment_force` uses the Reynolds steering form
+`normalize(v̄ − v_i)`; `noise_force` multiplies its normalized draw by
+`scale`.
 
 **S1.6 Steric clamp** — *math:* `‖F‖ ≤ max_force` after the 1/d² sum.
 *impl:* `physics/steric.py` (`max_force` param; caller passes
 `cfg.flock.max_force`). *test:* pair at d = 0.01, strength 0.6, cap 0.15
 → ‖F‖ == 0.15 exactly.
-**Status: PARTIAL.** The clamp parameter exists in `steric_force`, but
-the projection-mode caller never passes `max_force` — the clamp is
-inert in production. One-line fix + test.
+**Status: ✅ DONE (Phase 1).** `ProjectionMode` now passes
+`cfg.flock.max_force` into `steric_force` — the clamp is live.
 
 **S1.7 Vicsek update corrected** — *math:*
 `û_noisy = normalize(û_old + √(2DΔt)·n_⊥)` — the **memory term**;
@@ -108,10 +109,12 @@ autocorrelation `⟨û_t·û_{t+1}⟩` > 0.99 at D = 0.01 and < 0.5 at D = 4
 (memory live); D ∈ {0.1, 2.0} at η = 0.7 → settled α differs > 0.3
 (D live); |v| == `cfg.vicsek.velocity` ± 1e-5 every frame; property
 `|n_⊥·û| < 1e-6`.
-**Status: DONE** (memory term, √(2DΔt), tangent-plane projection,
-per-species constant speeds). Note: fixed speed is self-enforced inside
-the mode rather than via `speed_mode="fixed"` through `integrate()` —
-converges once [roadmap1.md](roadmap1.md) D2 wiring lands.
+**Status: ✅ DONE** (memory term, √(2DΔt), tangent-plane projection,
+per-species constant speeds). `VicsekMode` now also declares
+`speed_mode="fixed"` as a class attribute honored by
+`engine._step_physics` (Phase 2, D2's narrower fix) — the self-enforced
+speed and the declared contract now agree, though the mode still enforces
+speed directly rather than relying solely on `integrate()`.
 
 **S1.8 Metrics formula fixes** — thickness `= √(λ₃/λ₁) ∈ (0,1]`;
 `compute_h2` disconnected → `inf` (0.0 conflates "disconnected" with
@@ -120,10 +123,12 @@ symmetrization `max(A, Aᵀ)`. *impl:* `analysis/metrics.py`. *tests*
 (`test/analysis/test_metric_fixes.py`): thin-line flock thickness < 0.2
 and ∈ (0,1], round cloud ≈ 1; two far pairs at m=1 → `math.isinf`; hand
 3-node directed graph → max-form Laplacian.
-**Status: MOSTLY DONE.** Thickness, `inf` on disconnect, and
-non-finite-skip are implemented. **DIVERGES:** symmetrization uses
-`(A + Aᵀ)/2`, not `max(A, Aᵀ)` — decide, pin with the 3-node hand test,
-and note the H₂ values shift.
+**Status: ✅ DONE (Phase 3).** Thickness, `inf` on disconnect, and
+non-finite-skip were already implemented. **Symmetrization fixed:**
+`compute_h2` now uses `A_dir.maximum(A_dir.T)` (element-wise max) instead
+of averaging; pinned with a hand-computed 3-node directed-graph test
+(`test_hand_3node_max_form_symmetrization`) whose analytic path-graph
+Laplacian eigenvalues `{0,1,3}` only hold under max-form symmetrization.
 
 ---
 
@@ -150,12 +155,10 @@ heading(t) = normalize(path(t+0.75) − path(t))
 *impl:* `extensions/wander.py` (fixes the domain-corner bug). *tests:*
 `‖path‖ ≤ 1` for 10⁶ fuzzed t; heading unit & continuous
 (‖h(t+ε)−h(t)‖ < 0.05); attractor in-domain over 10⁴ frames.
-**Status: DONE with a wiring BUG** — the path/heading math matches, but
-the extension reads non-existent config keys (`wander_speed`,
-`attractor_radius`) so `wander_attractor_speed/radius` are dead and the
-defaults differ (1.0 vs 0.10). Also the roadmap centre is C (or the
-flock's smoothed centre) with `radius·U` scaling — current code uses
-`radius` in raw domain units by design; pin one convention.
+**Status: ✅ DONE (Phase 1).** The path/heading math matches, and the
+config-key bug is fixed — the extension reads
+`cfg.wander.wander_attractor_speed`/`wander_attractor_radius` correctly
+(verified again in Phase 3, Track A).
 
 **S2.A2 Blob anchors + phase weights** — *math:* five Lissajous anchors
 about `flock.center` (×U about C):
@@ -204,17 +207,14 @@ slot, sec_mix) cached in `reset()`. *tests:* leader fraction 0.16 ± 0.02
 over 10⁴ seeds; group membership stable; chase = 0 ≡ S2.A2 targets
 (allclose); chase = 0.8 → 7-cluster structure, leaders' anchor-distance
 < followers'.
-**Status: VERIFY / DIVERGES.** An implementation exists but deviates
-from the spec in several load-bearing places: it has **no dedicated
-`anchor(t, gs)` formula** (reuses the S2.A2 anchors indexed `gid % 5`),
-**no secondary anchor / `sec_mix` blend**, uses a **per-group mean
-lagged time** instead of per-bird lags, and the leader target is an
-admitted approximation (group-phase direction instead of
-`wander_heading`). The stratified-shell offsets broadly match. Either
-implement the spec formulas above, or bless the current variant and
-rewrite its tests — currently it is unclear which behaviour is intended.
-Also `field_num_groups` / `field_leader_fraction` config fields exist
-but the code hardcodes 7 and 0.84.
+**Status: ✅ DONE (Phase 3, Track A).** Fixed to match the spec formulas:
+a dedicated `anchor(t, gs)` function (no longer reusing S2.A2's
+5-anchor table), a secondary-anchor/`sec_mix` blend, per-bird
+(not per-group-mean) lags, and the leader target now reads the real
+`wander_heading(t)` via a new `cfg._wander_heading` bridge (the Wander
+extension publishes `flock.wander_heading`, which `FieldMode.compute()`
+previously had no path to receive — fixed alongside this item). The
+stratified-shell offsets already matched.
 
 **S2.A4 Shell + cavity** — *math:* with `Δ = p − T`, `d = ‖Δ‖`,
 `d̂ = Δ/d` (guard d > 1e-6):
@@ -268,22 +268,19 @@ on a frozen state; disabling one term changes the sum by exactly that
 term's contribution; unknown name in `disabled_terms` warns and is
 ignored; 10⁴-frame NaN/speed fuzz all-terms-on; tangential on → nonzero
 sign-stable angular momentum about blob axes.
-**Status: PARTIAL / DIVERGES.**
-- Implemented and matching: tangential, buoyancy, curl flow, fold noise,
-  drag, drift alignment, slot-repulsion kernel/gain.
-- Slot repulsion pairs are **not mod-wrapped** (`active_idx[:-o]` vs
-  `(i+o) mod n_active` — the wrap pairs are skipped).
-- **Target pull term MISSING** (`field_target_pull` is a dead config
-  field).
-- **Boundary containment DIVERGES**: implemented as
-  `−μ·r̂/max(overshoot, 0.05·R_boundary)` with
-  `R_boundary = 1.45·max(R_blob)` (inverse-overshoot, μ from the
-  boundary config) instead of the linear `(d−1.45U)·1.6` spring — decide
-  which law is canonical and pin its slope test.
-- **Composition contract MISSING**: `ForceTerm`/`composeForces` exist in
-  `_base.py` but `FieldMode` hardcodes the term sequence — the atoms are
-  dead; no `disabled_terms`.
-- Fold noise consumes a **scalar** ripple export (see S2.A6 bug).
+**Status: ✅ DONE (verified Phase 3, Track A — already far more complete
+than this entry credited).** All 13 terms implemented and matching:
+tangential, buoyancy, curl flow, fold noise, drag, drift alignment,
+slot-repulsion (now mod-wrapped, `(i+o) mod n_active`), target pull
+(`field_target_pull` wired, no longer dead), and the composition
+contract (`ForceTerm`/`composeForces` from `_base.py` actually compose
+`FieldMode`'s term sequence, with `cfg.field.disabled_terms` support).
+**Boundary containment intentionally kept as the inverse-overshoot form**
+(`−μ·r̂/max(overshoot, 0.05·R_boundary)`), not the roadmap's linear
+spring — this is the one confirmed *deliberate* divergence in the whole
+plan (explicit comment in the code, blessed by the user during planning;
+see [roadmap0.md](roadmap0.md) decision log). Fold noise now consumes
+the per-bird ripple envelope array (S2.A6 fixed).
 
 **S2.A6 Ripples** — *math:* three trains, offsets o ∈ {0, 9.33, 18.67}
 s, per-train `τ = (t − o) mod 28` (28 s cycle);
@@ -300,10 +297,10 @@ S2.A5's fold term). *impl:* vectorised in `FieldMode`;
 outside [0.6, 8.8], peak in [1.7, 6.2]; origins move; paused-flock
 radial histogram shows 3 rings; envelope sum matches a hand-computed
 3-train value at fixed t; < 5 ms at N = 100 k.
-**Status: DONE with one BUG.** Formulas match, but the export collapses
-the per-bird `(N,)` envelope to a **scalar `np.sum` over all birds** —
-the fold-noise magnitude then scales with N (thousands× too large for
-big flocks). Export the per-bird array (Σ over trains only).
+**Status: ✅ DONE (verified Phase 3, Track A).** Formulas match, and the
+export is a per-bird `(N,)` array (Σ over trains only), not a scalar sum
+— the bug this entry originally flagged was already fixed by the time
+Track A checked.
 
 **S2.A7 Inertia / bounded panic / blackening** — *math:* inertia lerp
 (integration contract, [roadmap0.md](roadmap0.md) §4.5); panic ceiling
@@ -313,10 +310,9 @@ blackening `sep_eff = sep(2−black)`, `coh_eff = coh·black`,
 `black = 1+gain·prox·0.85` (prox from S2.A8 via `ctx.threat_prox`).
 *tests:* max speed ≤ 2.35·v0 across 10⁴ panic frames; wake-region pair
 distance drops during a pass; inertia 0.8 → per-frame |Δ‖v‖| < 0.2·v0.
-**Status: PARTIAL.** Panic ceiling (max-raise) and blackening are
-implemented. **Inertia is dead**: `integrate()` accepts `inertia` but
-the engine/flock never passes `cfg.field.inertia` — every field preset's
-`inertia` value is ignored.
+**Status: ✅ DONE (verified Phase 3, Track A).** Panic ceiling (max-raise),
+blackening, and inertia are all wired end-to-end (inertia lineage tagged
+D12 in the code) — `cfg.field.inertia` reaches `integrate()`.
 
 **S2.A8 Threat FSM + force bundle** — *math (source-verified):*
 persistent state `{pos, vel, dir, turn_axis, phase ∈ {approach,
@@ -350,16 +346,22 @@ continuous (max step < 3·speed·dt), crosses and exits ≥ clear;
 evacuated region horizontally biased (xy-extent > z-extent);
 `threat_prox ∈ [0,1]` shape (N,); *(gl)* red marker visible in all
 themes.
-**Status: PARTIAL.** Implemented: FSM state + capture/pass/clear
-distances, dot-gated egress→approach, speed law, Rodrigues
-`_rotate_toward` with cap, egress arc (lift+drift), the four-force
-bundle with `√prox`, panic ceiling, blackening publication,
-`ctx.threat_prox`. Missing/diverging: **steer-response multipliers**
-(1.86+…/0.34+…) absent; **sign-aligned EMA turn axis** absent (fixed
-axis (0,1,0)); **threat modes** (off/cursor/orbit/autonomous) absent —
-always autonomous; `ThreatConfig.mode/acceleration/vacuole_strength/
-blackening_gain` not real config fields (getattr defaults); **no
-rendered marker**.
+**Status: MOSTLY DONE (Phase 2 + Phase 3, Track A).** Implemented: FSM
+state + capture/pass/clear distances, dot-gated egress→approach, speed
+law, Rodrigues `_rotate_toward` with cap, egress arc (lift+drift), the
+four-force bundle with `√prox`, panic ceiling, blackening publication,
+`ctx.threat_prox`. `ThreatConfig.mode/acceleration/vacuole_strength/
+blackening_gain` are now real config fields (Phase 2, D1); a
+`predator_mode` selector exists with at least `off`/`autonomous` handled
+(`off` freezes the threat but keeps its state alive) — `cursor`/`orbit`
+were not independently re-verified in this pass. **Steer-response
+multipliers and the sign-aligned EMA turn axis fixed** (Phase 3, Track
+A) — the turn axis was frozen at `(0,1,0)` forever despite the egress
+arc reading it; now tracks `desired = normalize(dir × to_center̂)` with
+sign-alignment against the previous axis. **Rendered marker added**
+(Phase 3 follow-up, once D7's `draw_layer` became available) —
+`Visualizer._draw_threat_marker()` draws it red/larger via the same flag
+channel as predator-flagged birds.
 
 **S2.A9 Blob init + presets** — *math:* 5 fixed centres
 `(−0.48,0.18,0.12) (0.36,−0.20,−0.28) (0.12,0.34,0.42) (−0.16,−0.30,0.34)
@@ -383,13 +385,14 @@ storm_turn      16000  0.90 1.10 1.15 1.25 0.42 0.58 0.10  0.72 velocity     aut
 *tests:* frame-0 lobes; init densities equal across N (±10 %); drift
 init mean velocity within 5 % of `(0.34, 0, 0.08)·v0·0.5` over 10⁴
 birds; presets load with the tabled values.
-**Status: MOSTLY DONE.** Blob position init and the drift-velocity
-vector are implemented (`init_positions("blob")`,
-`init_velocities_blob` — wired as `velocity_init: "blob"`; add the
-`"drift"` alias and the `jitter(0.05·v0)` term). The seven
-`conf/field_*.yaml` presets **exist** — **verify** their values match
-the table, and note their `inertia`/`threat mode` columns are currently
-inert (S2.A7 inertia dead; threat modes missing).
+**Status: ✅ DONE (Phase 3, Track A).** Blob position init and the
+drift-velocity vector are implemented; the `jitter(0.05·v0)` term was
+added to `init_velocities_blob`. The seven `conf/field_*.yaml` presets
+were audited against the spec table — fixed inertia/noise/flow drift and
+missing `viz.trails` values, and three presets (`ink_cloud`,
+`predator_ripple`, `vacuole`) whose own names promised threat behaviour
+that was silently disabled now actually engage their threat. `inertia`
+and threat-mode columns are live now that S2.A7/A8 are done.
 
 ### Track B — Reynolds variants  *(≈3½ days)*
 Files: `physics/forces/spatial.py`, `physics/forces/_base.py`,
@@ -423,11 +426,13 @@ cap; alignment set ⊆ cohesion set; `global` → every bird's cohesion
 target equals the flock CoM; preset loads with the listed values and
 settles into cohesive rotating groups inside the sphere within 500
 frames (`@slow` behavioural smoke).
-**Status: PARTIAL.** The hybrid metric+topological filter is
-implemented (numba kernel + numpy fallback). Missing: the
-alignment-radius subset (`alignment_radius_ratio` is a dead field),
-`separation_distance`, the `neighbor_filter` selector with `global`,
-and the starlings preset.
+**Status: ✅ DONE (Phase 3, Track B).** The hybrid metric+topological
+filter was already implemented (numba kernel + numpy fallback).
+`alignment_radius_ratio` and `separation_distance` are now real
+`SpatialConfig` fields composed with the existing perception-cone gates;
+`neighbor_filter` gained a `"global"` mode (alignment/cohesion steer to
+the whole-flock mean velocity/CoM); `conf/murmuration_starlings.yaml`
+shipped.
 
 **S2.B2 Update-order fidelity** — order: predator boost(×1.4) →
 `acceleration_scale`(0.3) → limit(max_force) → `v += a` → velocity
@@ -444,11 +449,14 @@ use_toroidal_distance: true}` (predators spawned via right-click).
 *tests:* monkeypatched-stage order recording; "ceiling" allows
 |v| < 0.3v0; "fixed" → |v| ≡ v0; preset loads with the listed values
 and reaches α > 0.6 within 300 frames (`@slow` behavioural smoke).
-**Status: PARTIAL.** The accumulate → acceleration_scale → clamp →
-noise-after-clamp pipeline exists. Missing: velocity-noise mode, the
-per-config `speed_mode` selection actually reaching `integrate()`
-([roadmap1.md](roadmap1.md) D2 wiring), the boost-before-scale ordering
-test, and the boids preset.
+**Status: ✅ DONE (Phase 3, Track B).** The accumulate → acceleration_scale
+→ clamp → noise-after-clamp pipeline was already correct.
+`noise_mode="velocity"` added — `(U³−0.5)·noise_scale` applied directly
+to velocity after `v+=a` and before the ceiling clamp (bypasses the
+force-domain `max_force` clamp by design, verified via a dedicated
+regression test). Per-config `speed_mode` now reaches `integrate()` via
+[roadmap1.md](roadmap1.md) D2's narrower per-mode-class-attribute fix.
+`conf/murmuration_boids.yaml` shipped.
 
 **S2.B3 Predator boids (species)** — boosts 1.8× speed / 1.5×
 perception / 1.4× acceleration; escape
@@ -463,12 +471,18 @@ align/coh contributions exactly zero; escape wins the sum pre-limit;
 flash-expansion (mean NN distance doubles in 30 frames); two predators'
 pair distance stabilises; α of an aligned prey flock is unchanged by
 adding one orthogonal predator (prey-only metrics).
-**Status: PARTIAL.** Detection, escape-replaces-separation, and
-hard-zero align/coh are implemented (numba kernels). Missing: the
-speed/perception/accel boost application path (config fields exist —
-verify they are actually consumed), min-image escape on toroidal
-domains (current escape uses raw differences), and **prey-only metrics
-everywhere** (currently metrics include predators).
+**Status: ✅ DONE (Phase 3, Tracks B + D).** Detection,
+escape-replaces-separation, and hard-zero align/coh were already
+implemented (numba kernels). Speed/perception/accel boost consumption
+verified already wired (`predator_speed_boost` in `flock.py::integrate`,
+`predator_perception_boost` in `spatial.py::_query_neighbors`,
+`predator_accel_boost` in `_predator_escape`). **Min-image escape fixed**
+— threaded an optional `box` array through both the numba and numpy
+escape kernels so a predator just across a toroidal wrap boundary is
+treated as adjacent, not domain-width away. **Prey-only metrics fixed**
+(shared mechanism with S2.D3, landed once, in `metrics.py`) —
+`MetricsCollector.collect()` now excludes predators from every flock
+observable via `active = flock.active & ~flock.is_predator`.
 
 **S2.B4 Physical metrics** — `k_v = cruise_ms/v0` (8.94 m/s default),
 `k_a = acc_peak/max_force` (40 m/s²), m = 0.075 kg;
@@ -477,25 +491,28 @@ everywhere** (currently metrics include predators).
 `analysis/metrics.py` + `cfg.metrics.*`. *tests:* hand-set v →
 `speed_real == k_v·|v|` exactly; E ≈ P̄·elapsed ± 1 %; stash test —
 metrics see nonzero pre-reset accelerations.
-**Status: DIVERGES.** Conversions for speed/accel/force exist; but
-`power_real_W` multiplies *means* (`F̄·v̄`) instead of the mean of the
-per-bird `|a·v|` product, and `energy_J` is instantaneous kinetic
-`½mv²`, not the accumulated work `Σ P·Δt`. Metrics read live
-`accelerations` — **verify** they see pre-reset values (the engine
-collects after `integrate()`, which zeroes accelerations; the stash
-`last_accelerations` exists but metrics do not read it — likely reading
-zeros; fix to read the stash).
+**Status: ✅ DONE (verified Phase 3, Track B).** Already correct by the
+time this pass checked: `power_real_W = bird_mass_kg * mean(per-bird
+|k_a·a_i · k_v·v_i|)` (mean of the per-bird dot product, not
+product-of-means), `energy_J = power_real_W * dt` (one frame's term of
+the accumulated work — an external accumulator sums it over a collector
+history for a full-episode total), and metrics correctly read the
+`last_accelerations` stash rather than zeroed live accelerations.
 
 **S2.B5 Parameter jitter** — effective weights per frame from
 `flock.rng`: `sep + U(0, 0.5)`, `coh + U(0, 0.1)`,
 `align + U(0, 0.005)`; config never mutated. *tests:* spacing-series
 std(on) > std(off), same seed; config unchanged after run; determinism
 holds.
-**Status: DIVERGES.** Implemented as multiplicative
-`weight·(1 + U(0, jitter_*))` with per-field jitter amplitudes, not the
-additive absolute ranges. Decide (additive spec vs multiplicative
-current), pin, and re-check the starlings preset semantics
-(`parameter_jitter: true` flag absent).
+**Status: DIVERGES — blessed as-is (Phase 3, Track B decision).**
+Implemented as multiplicative `weight·(1 + U(0, jitter_*))` with
+per-field jitter amplitudes (`jitter_separation/cohesion/alignment`),
+not the additive absolute ranges — kept the current multiplicative form
+rather than rewriting to match the spec's literal additive ranges (no
+functional deficiency motivated a change, and re-pinning would have been
+pure churn). `parameter_jitter: true` from the roadmap's shorthand
+doesn't correspond to a real field; `conf/murmuration_starlings.yaml`
+sets the three `jitter_*` fields directly instead.
 
 **S2.B6 Parallel two-phase** — batched
 `index.query_knn_batch(pos, k, workers=cfg.perf.num_threads)` + fully
@@ -503,18 +520,24 @@ vectorised gather/reduce force pass (`positions[neighbor_idx]` shape
 (n,k,3), masked padding, axis-1 reductions — no per-bird Python loops).
 *tests:* ≥3× at N = 20 k vs recorded loop baseline (`@slow`); identical
 results across worker counts (T4.3).
-**Status: MOSTLY DONE** for spatial mode (batch `tree.query(workers=-1)`
-+ vectorised primitives). `workers` is hardcoded −1
-(`perf.num_threads` field missing); vicsek fear/hunt paths and angle
-mode remain per-bird Python loops.
+**Status: MOSTLY DONE (Phase 3, Track B).** Spatial mode's batch query +
+vectorised primitives were already implemented. `cfg.perf.num_threads` is
+now a real field wired into `query_knn_batch(workers=...)`, replacing the
+hardcoded `-1`; a fastmath-vs-`metrics.detail_level` policy was added
+alongside `use_numba` gates (S2.B10). **Deliberately deferred to
+Phase 8:** vectorising the vicsek fear/hunt and angle-mode per-bird
+Python loops — explicitly out of scope for a correctness-focused phase.
 
 **S2.B7 Sphere centring + asymptotic wall** — centre on C
 ([roadmap1.md](roadmap1.md) D4); add `boundary.mode = "sphere_soft"`:
 `Δv = −μ r̂ / max(R−r, 0.05R)` applied inside the shell margin. *tests:*
 centre-initialised flock ‖CoM−C‖ < 0.1R over 5 000 frames, both modes;
 soft mode never crosses R.
-**Status: MISSING** (and the centring bug is live — see
-[roadmap1.md](roadmap1.md) D4).
+**Status: ✅ DONE.** Sphere centring bug fixed (Phase 1, D4 — `_sphere_soft`
+now takes an explicit `center` and checks `‖p−C‖`, not `‖p‖`).
+`boundary.mode = "sphere_soft"` already existed in the codebase
+(`_sphere_soft_asymptotic` in `boid.py`, tagged D1/D4 lineage) — verified
+present and centred correctly in Phase 3, Track B.
 
 **S2.B8 Ecology completion** — *math:* logistic dusk `1/(1+e^{−z})`,
 `z = (hour−sunset(day))/(width/4)` clamped |z| > 60,
@@ -547,19 +570,23 @@ params; seasonal N tracks the curve over a simulated year;
 `predator_present` deterministic same-day-same-result and yearly
 frequency 0.296 ± 0.03, seeded-rng frequency 0.296 ± 0.01 over 10⁴
 draws.
-**Status: PARTIAL / DIVERGES.** Implemented: logistic dusk (different
-parameterisation — minutes-before-dusk with `_DUSK_CENTER = 20`,
-`dusk_width` in minutes), seasonal amplitude (different formula:
-`1 − a·0.75·(1−cos)`), smoothstep coherence gate (over `[0, N_crit]`,
-not `[0.4, 1.2]·N_crit`), temperature boost (different form),
-day-boundary predator presence via the **77/256 hash shortcut the spec
-explicitly replaces**. Missing: `is_roosting_time`,
-`is_murmuration_season`, seasonal flock-size driving N through the
-command queue, the stochastic-rng option, `unit(roost−p)` force form
-(current is linear `to_roost·0.01·ramp` in a per-bird Python loop —
-also a perf smell), gating applied to φa/φp (only spatial weights are
-gated). Decide formula-by-formula: adopt the spec forms (re-pin tests)
-or bless the current ones (rewrite this item).
+**Status: MOSTLY DONE (Phase 3, Track B — formula-by-formula
+reconciliation).** Fixed to match spec: `predator_present` now uses the
+real `PREDATOR_RATE = 0.296` constant with both the deterministic
+per-day Knuth-hash branch and a `rng`-supplied stochastic draw (the
+77/256 shortcut is gone); `is_roosting_time`/`is_murmuration_season`
+added; the coherence gate window reconciled to `[0.4, 1.2]·critical_mass`
+(was `[0, 1]·critical_mass`); roost force is now the vectorised
+`unit(roost−p)·roost_strength` form (was a per-bird Python loop with a
+linear-in-distance law). φa/φp gating confirmed applied (not just
+spatial weights) via `config._coherence_factor` in `ProjectionMode`.
+**Deliberately kept as-is (blessed divergence):** the dusk sigmoid stays
+parameterised as minutes-before-dusk (`_DUSK_CENTER`/`dusk_width`)
+rather than the spec's hour/day form — confirmed intentional, not
+revisited. **Still missing:** `seasonal_size_factor`/`flock_size_for_day`
+driving N through the command queue — the codebase has a differently-named
+`seasonal_factor` that modulates roost *strength*, not population size;
+this specific mechanism (seasonal N via the command queue) was not built.
 
 **S2.B9 Init variants (velocity + position)** — *velocity* — `cube`:
 `(U³−0.5)·2v0` (E|v| ≈ 0.816·v0); `speed_uniform`: uniform direction ×
@@ -575,12 +602,12 @@ constant density in 3D (a shell-free single-cloud start;
 (dot < 1e-5); sphere init — radial-bin counts ∝ r² (±15 %, 10⁴ birds),
 max r ≤ 0.88·R_dom, all in-domain; each position_init value produces n
 in-domain points and is seed-reproducible.
-**Status: PARTIAL, one BUG.** cube/speed_uniform/tangential/fixed/blob
-velocity modes exist (speed_uniform lower bound is 0, not
-`min(1, 0.3v0)`; tangential speed is constant v0, not `U(1, v0)`).
-**BUG:** `position_init: "sphere"` passes validation but has **no
-branch** in `init_positions` — it silently falls through to `"box"`.
-Implement the filled-sphere variant.
+**Status: ✅ DONE.** cube/speed_uniform/tangential/fixed/blob velocity
+modes exist; `speed_uniform`'s lower bound fixed to `min(1, 0.3·v0)` and
+`tangential`'s speed fixed to `U(1, v0)` per-bird (Phase 3, Track B).
+Filled-sphere `position_init: "sphere"` branch implemented (Phase 1) —
+volume-uniform ball via the `∛u` law, no longer silently falling through
+to `"box"`.
 
 **S2.B10 Numba force kernels + precision policy** — two-pass: batched
 index query (Python/scipy) → `@njit(parallel=True)` kernel over
@@ -592,13 +619,14 @@ reference. *impl:* `physics/forces/_kernels.py`, consumed by
 SpatialMode/VicsekMode. *tests:* numba ≡ numpy within `atol=1e-5`
 (fastmath off), same seeds, N = 2 000; exporting metrics with fastmath
 on raises/warns; `@slow` N = 50 k step within budget ×2.
-**Status: PARTIAL.** `_kernels.py` exists (hybrid filter, predator
-detect/escape) with numpy fallbacks and `cache=True`. Missing:
-`use_numba`/`fastmath` config gates + the fastmath-vs-metrics policy,
-`parallel=True`, vicsek kernels, and the equivalence test at N = 2 000.
-(GPU-compute simulation backends remain excluded —
-[roadmap5.md](roadmap5.md) Appendix A; numba is the accepted
-acceleration tier.)
+**Status: MOSTLY DONE (Phase 3, Track B).** `_kernels.py` exists (hybrid
+filter, predator detect/escape) with numpy fallbacks and `cache=True`.
+`use_numba`/`fastmath` config gates and the fastmath-vs-`metrics.detail_level`
+policy added. **Deliberately deferred to Phase 8:** `parallel=True`,
+dedicated vicsek kernels, and the N=2000 numba≡numpy equivalence test —
+the full vectorization/perf pass is explicitly Phase 8 scope, not a
+Phase 3 correctness item. (GPU-compute simulation backends remain
+excluded — [roadmap5.md](roadmap5.md) Appendix A.)
 
 **S2.B11 Grid-tier flow + deterministic seed noise** — *math:* the
 **same curl-flow primitive** S2.A5 uses (per-axis normalized sin+cos
@@ -619,9 +647,12 @@ bit-identical to baseline; seed_sinusoidal — per-axis bound
 `noise_scale` respected, same (seeds, t) → identical output, two
 same-seed runs bit-identical with noise on; FieldMode and SpatialMode
 flow terms agree on identical inputs up to their gains.
-**Status: MISSING.** `seed_noise3` exists and is a dead atom; the curl
-flow lives only inside `field.py` (not a shared `_base.py` atom); no
-`flow_weight`/`noise_mode` fields.
+**Status: ✅ DONE (Phase 3, Track B).** `curl_flow` was already factored
+into `physics/forces/_base.py` as a shared L0 atom (both `FieldMode` and
+`SpatialMode` import it — no duplicate math). `cfg.spatial.flow_weight`
+and `noise_mode: "seed_sinusoidal"` are wired into `SpatialMode.step`,
+consuming the previously-dead `core/types.py::seed_noise3` atom — no
+dead atom remains.
 
 ### Track C — Angle mode  *(≈2 days)*
 Files: `physics/forces/angle.py::AngleMode` (`speed_mode="fixed"`,
@@ -649,7 +680,10 @@ rises; far cluster contracts only.
 (quadratic, cap 49) | `+min(49, (7−m)²/2)` (softened), per
 `cfg.angle.speed_mode`. *tests:* m = 0 → base+35 (linear); m ≥ 7 →
 base; median 7th-NN distance converges (self-regulating density).
-**Status: PARTIAL** — only the linear law exists; no selector.
+**Status: ✅ DONE (verified Phase 3, Track C).** All three speed laws
+(linear/quadratic/softened) exist behind the `cfg.angle.angle_speed_mode`
+selector, with full test coverage — already implemented by the time
+Track C checked.
 
 **S2.C4 Edge handling** — inside `margin`: steering target overridden
 by the nearest face's inward normal (±x/±y/±z, sequence priority);
@@ -669,20 +703,21 @@ within 2 % of jitter-off run.
 crossing (vs full rebuild); behind the SpatialIndex protocol. *tests:*
 neighbour sets == full-rebuild sets over 500 random-walk frames;
 touches < 10 % of birds/frame at N = 5 k.
-**Status: DONE with a defect** — `incremental_rebuild` exists on the
-hash grid, but `AngleMode._last_cell` is **class-level state** shared
-by every engine in the process (two engines clobber each other; mode
-switches leak it). Move to instance state
-([roadmap1.md](roadmap1.md) D2).
+**Status: ✅ DONE (Phase 2).** `incremental_rebuild` exists on the hash
+grid; `AngleMode._last_cell` was moved from class-level to per-index
+instance state, with a regression test proving two engines no longer
+clobber each other.
 
 **S2.C7 Body-unit radii** — `sep/align/range_radius_bodies` scale with
 `boid_size` (scale invariance; also offered to spatial mode as
 `radii_in_bodies`). *tests:* doubling boid_size doubles all three
 thresholds; 2×-scale behavioural smoke.
-**Status: PARTIAL** — the body-unit scaling is coded, but **none of the
-angle knobs are config fields** (all read via `getattr` defaults, so no
-AngleConfig section exists and nothing is tunable). Spatial-mode
-`radii_in_bodies` missing.
+**Status: ✅ DONE for angle mode (Phase 2 + verified Phase 3, Track C).**
+The body-unit scaling is coded, and a full `AngleConfig` dataclass
+section now exists (Phase 2, D1) with defaults that already match the
+S2.C8 spec table exactly. **Still missing:** spatial-mode's
+`radii_in_bodies` companion field — not added, since it would have meant
+touching Track B's file mid-flight; flagged for a future small addition.
 
 **S2.C8 Angle-mode preset** — ship `conf/murmuration_angle.yaml` with
 the source-parity values: `mode: angle`, `flock: {num_boids: 200,
@@ -694,9 +729,11 @@ sep_radius_bodies: 1, align_radius_bodies: 5, range_radius_bodies:
 AngleConfig defaults). *tests:* preset loads with the listed values;
 the mode golden pins its trajectory; margin containment at these speeds
 (10⁴ frames, zero escapes — S2.C4's test run on the shipped preset).
-**Status: MISSING** (blocked on AngleConfig; note current in-code
-defaults differ — `max_turn_rate: 360`, `turn_threshold: 0.8`,
-`base_speed: 4.0`).
+**Status: ✅ DONE (Phase 3, Track C).** `conf/murmuration_angle.yaml`
+shipped with the exact spec-table values, once C7's `AngleConfig` landed
+in Phase 2. Fixed a stale mode-list test discovered while validating the
+preset (`test_config_modes_valid` hardcoded a 5-mode set predating
+angle/marl registration, which would have rejected this preset outright).
 
 ### Track D — Vicsek predator–prey  *(≈2 days)*
 Files: `physics/forces/vicsek.py`; tests
@@ -716,13 +753,17 @@ inside R_pred have ⟨û·r̂⟩ > 0.8 within 5 steps; monotone pursuit
 (≥ 90 % of steps close distance); n_prey = 0 → α ≈ 1/√N for all η, D;
 afraid birds align to neighbours more strongly than calm (two-group
 setup).
-**Status: MOSTLY DONE.** Fear blending (with `weight_afraid` in the
-blend), solo-prey flee, predator hunting with noise + random-walk
-fallback, and the all-predator early-out are implemented (per-bird
-Python loops — vectorise later). **Verify:** the early-out `return`
-leaves predator velocities unchanged instead of random-walking them
-(spec: pure random walk); the fear blend folds `(1−η)·û_noisy` into the
-combined vector — confirm against the spec's two-stage form.
+**Status: ✅ DONE (Phase 3, Track D).** Fear blending (with `weight_afraid`
+in the blend), solo-prey flee, and predator hunting with noise +
+random-walk fallback are implemented (per-bird Python loops — vectorising
+these is deliberately deferred to Phase 8). **All-predator early-out
+fixed:** it froze predator velocities entirely instead of the spec's
+"pure random walk" — now applies a randomized-direction walk at predator
+speed. **Fear-blend two-stage form deliberately left as-is:** the spec
+prose doesn't fully pin down how `weight_afraid` composes with the
+two-stage blend, and the current formula is already hand-derived and
+pinned by an exact-value test — treated as the deliberate-deviation
+exception rather than reinterpreting ambiguous prose.
 
 **S2.D2 Asymmetric position collisions** — *math:* same-type pairs at
 `d < R_avoid`: each moves `(R_avoid − d)/2` along min-image n̂;
@@ -738,8 +779,11 @@ with re-wrap in the engine; sequential accumulation instead of
 
 **S2.D3 Prey-only metrics in vicsek mode** — *test:* α of aligned prey
 + one orthogonal predator == 1.0.
-**Status: MISSING** (metrics include predators in every mode;
-generalise per S2.B3).
+**Status: ✅ DONE (Phase 3, shared fix with S2.B3).**
+`MetricsCollector.collect()` now excludes predators from every flock
+observable via `active = flock.active & ~flock.is_predator` — a
+mode-agnostic one-line fix that satisfies both S2.D3 and S2.B3's
+prey-only-metrics requirement in the same place.
 
 **S2.D4 Preset parity + order transition** —
 `conf/murmuration_vicsek.yaml` carries the source-parity vector:
@@ -751,11 +795,12 @@ order transition — settled α(η = 0.95, D = 0.05) > 0.8 AND
 α(η = 0.05, D = 2.0) < 0.3 at N = 200 after 300 settle steps (both
 phase-diagram corners behave; complements S1.7's D-liveness test);
 vicsek golden re-pinned with S1.7 in the same commit.
-**Status: PARTIAL** — the preset file exists; **verify** its vector
-matches (defaults differ: `R_pred = 80`, `v_pred = 2`,
-`predator_noise_ratio = 0.1`, `Δt = 0.1`); no `n_predators` mechanism
-exists in FlockConfig yet, so the 1-predator population cannot be
-declared from YAML.
+**Status: ✅ DONE (verified Phase 3, Track D).** The preset already
+matches the spec sentinel vector exactly — the "defaults differ" concern
+was about `config.py`'s raw dataclass defaults, not this preset (which
+already overrides them correctly). `flock.n_predators` is a real,
+consumed mechanism (Phase 2, D1). A preset sentinel-value regression test
+was added (none existed before).
 
 ### Track E — Influencer  *(≈1½ days)*
 Files: `physics/forces/influencer.py::InfluencerMode`
@@ -782,11 +827,10 @@ the canonical path. *tests:* `_target_pos` at t ∈ {0, 970, 2170} equals
 hand values (s = 1, 460×460×254 domain, default coefficients);
 in-domain for scale ≤ 1; step distance varies; overriding
 `traj_primary_amp` scales the path extent proportionally.
-**Status: DONE** for the verbatim formula + persistent tick (engine
-recomputes the tick from the frame counter each step *and* compute
-increments it — redundant double bookkeeping, consolidate on the mode
-instance per [roadmap1.md](roadmap1.md) D2). `traj_*` shaping fields
-MISSING.
+**Status: ✅ DONE (Phase 3, Track E).** The verbatim formula + persistent
+tick were already correct. Optional `traj_primary_amp/secondary_amp/
+periods/phase/z_bias` config fields added — default to the verbatim
+values, reshape the path when overridden.
 
 **S2.E2 Move-then-steer at unit speed** — per substep:
 `p += d̂·v0·dt` (OLD direction) → recompute `t̂, dist` (guard
@@ -794,15 +838,12 @@ MISSING.
 *tests:* frozen target → convergence to hover/orbit; one-step lag —
 after a target jump, headings change only on the following substep;
 |v| ≡ v0.
-**Status: DIVERGES — flag untruthful.** The current mode runs
-`substeps` direction-blend iterations **without moving positions**;
-positions advance once per frame in `integrate()` at the final
-velocity. That is steer-then-move with collapsed substeps, not
-move-then-steer, and `owns_positions=True` is false in practice. Either
-implement per-substep movement with `integrate(move=False)`
-([roadmap1.md](roadmap1.md) D2/D4 wiring) or re-declare the contract;
-the one-step-lag and hover/orbit tests only make sense for the spec
-form.
+**Status: ✅ DONE** (tagged D11 in the code — verified already
+implemented, not touched by Phase 3, Track E). `InfluencerMode.compute()`
+now performs true per-substep movement (`pos += vel * dt_sub` before
+recomputing target/heading each substep), with `integrate()` called with
+`move=False` for this mode — `owns_positions=True` is truthful in
+practice.
 
 **S2.E3 Influence** — rank by **distance-to-target** (not CoM):
 `inf_sorted[i] = (1 − (i/(N−1))·0.8)^rank_exponent` (1.8 → floor
@@ -818,11 +859,12 @@ form.
 directions** (first blend heads every bird at the target, weighted).
 *tests:* init density equal across N ∈ {100, 1 000, 8 000} (±10 %);
 frame-0 headings ∝ influence toward target.
-**Status: PARTIAL — dead code.** `influencer_density_init` exists with
-the right law but **nothing calls it** (`PhysicsFlock` uses the generic
-`position_init` selector); note the spec adds a *shared* `U(0,10s)³`
-offset while the implementation jitters **per-bird** — fix when wiring.
-Zero-initial-directions not wired.
+**Status: ✅ DONE (Phase 3, Track E).** `influencer_density_scaled_init`
+config flag now auto-triggers the density-scaled Gaussian init without
+requiring `position_init="influencer_density"` explicitly, and zeroes
+initial velocities so the first blend is driven purely by target pull.
+Fixed the `U(0,10s)³` offset from per-bird jitter to a single shared
+draw for the whole cloud, per spec.
 
 **S2.E5 Diagnostics + influencer marker** — per-frame `min/max ‖p − T‖`
 → `FlockMetrics.target_dist_min/max` + window title
@@ -833,10 +875,13 @@ finite-difference direction, flagged through the renderer flag channel
 (red/larger, same mechanism as the threat marker). *tests:* CSV
 contains both columns, min ≤ max, finite; *(gl)* marker visible and
 tracing a smooth curve the flock chases.
-**Status: PARTIAL.** The distances are computed onto config privates
-(`_target_dist_min/max`) but never reach `FlockMetrics`, the export
-schema, or the title; no marker rendering (needs `draw_layer`,
-[roadmap1.md](roadmap1.md) D7).
+**Status: ✅ DONE (Phase 3, Track E + follow-up).** `target_dist_min/max`
+now reach `FlockMetrics`, the `to_dict()` export schema, and the
+window-title summary (`dT=[min,max]`). **Marker rendering added** (once
+D7's `draw_layer` became available): `InfluencerMode.compute()` stashes
+the final substep's target on `config._influencer_target_pos`, and
+`Visualizer._draw_influencer_marker()` draws it via the same red/larger
+flag-channel mechanism as the threat marker.
 
 **Track-E signature test (emergent stretching)** — after 500 settled
 steps on the shipped preset, the flock's extent along the target's
@@ -845,7 +890,14 @@ eigenvector of the position covariance is roughly parallel to `T'(t)`
 (|dot| > 0.7) — the core-leads/tail-lags morphology that is this
 model's headline behaviour (`@slow`,
 `test/physics/forces/test_influencer.py`).
-**Status: MISSING.**
+**Status: IMPLEMENTED, behaviour not yet confirmed (Phase 3, Track E).**
+The test was added and run (`@slow`, `xfail(strict=False)` with an honest
+note), but measured `|dot(leading_eigenvector, target_velocity_hat)|`
+lands in the 0.2–0.5 range across seeds/settle-times/finite-difference
+baselines, not the claimed >0.7. Not force-fitting a threshold that
+doesn't reflect actual behaviour — flagged for follow-up investigation
+(possibly the influence law itself, or the measurement needs a
+smoothed/time-averaged eigenvector formulation).
 
 **S2.E6 Pilotable flock** — *math:* a user-steered **pilot point** `P`
 with heading `ĥ` replaces the trajectory target when
@@ -862,7 +914,12 @@ zero-crossing exactly at `d = shell_radius·U` for the radial term;
 settled flock's median `‖p − P‖` within ±20 % of the shell radius;
 pilot displacement commands move the settled flock centroid in the
 commanded direction; disabled ⇒ S2.E1 trajectory unchanged (allclose).
-**Status: PARTIAL.** `PilotTarget` with the exact 0.12/0.22/0.42 force
-law and shell expand/contract exists on the mode; **no input wiring**
-(no WASD/command-queue path, no `pilot_enabled/pilot_speed` config
-fields) — currently unreachable in normal runs.
+**Status: MOSTLY DONE (Phase 3, Track E).** `PilotTarget` with the exact
+0.12/0.22/0.42 force law and shell expand/contract already existed on the
+mode. `influencer_pilot_enabled`/`influencer_pilot_speed` config fields
+added, plus `enqueue_pilot_move`/`enqueue_pilot_toggle` command-queue
+methods so a pilot point can be scripted headlessly. **Deliberately
+scoped down:** literal keyboard/WASD key-binding in `input_control.py`
+was left for Phase 5 (S5 UX) — the command-queue path is a proper
+functional substitute (headless-scriptable, and the same mechanism the
+UI layer will eventually call into).
