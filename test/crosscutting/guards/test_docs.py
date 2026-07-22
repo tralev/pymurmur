@@ -57,14 +57,26 @@ def test_arch_md_links_resolve():
         )
 
 
-def test_arch_md_no_stale_scheme_references():
-    """arch.md does not contain stale references to the retired
-    D0-D9/S1-S7/T0-T6 scheme (superseded by the P0-P14 scheme, whose
-    tracking roadmap is now completed and removed from the tree)."""
+def test_arch_md_no_stale_todo_path_references():
+    """arch.md does not link to TODO/roadmap*.md — that tracking set
+    (D0-D9/T0-T6 foundations, S1-S7 science/UX/EvoFlock/MARL) has been
+    fully absorbed and the directory removed from the tree; arch.md and
+    test.md are the two docs that survive it and must stand alone.
+
+    (An earlier version of this test banned the D0-D9/S1-S7/T0-T6
+    *terminology* outright, on the assumption it named a retired scheme
+    superseded by the older P0-P14 tags already in the codebase. That
+    assumption inverted: TODO/roadmap0-6.md's D/S/T numbering was in
+    fact a later, separate, real effort that has itself now been fully
+    completed and absorbed — so mentioning it as history is correct;
+    only a dangling file-path link back into the deleted directory would
+    be stale.)"""
     content = Path("arch.md").read_text()
-    assert "D0–D9" not in content, "arch.md still references retired D0-D9"
-    assert "S1–S7" not in content, "arch.md still references retired S1-S7"
-    assert "T0–T6" not in content, "arch.md still references retired T0-T6"
+    assert "](TODO/roadmap" not in content, (
+        "arch.md still contains a markdown LINK into TODO/roadmap*.md — "
+        "that directory has been removed; a plain-text historical "
+        "mention (no brackets) is fine, a dangling link is not"
+    )
 
 
 # ── G2: All markdown file links resolve ──────────────────────────
