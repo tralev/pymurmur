@@ -364,11 +364,13 @@ class TestInstanceSchemaPacking:
     buffer allocation and vbo.write() calls."""
 
     def test_schema_floats_matches_packed_array(self):
-        """P2.7→P2.8: InstanceSchema.floats must match the packed numpy
-        array column count used in update_instances.
+        """P2.7→P2.8/D7: InstanceSchema.floats must match the packed
+        numpy array column count used in update_instances.
 
-        The renderer packs positions (3) + velocities (3) = 6 floats.
-        If schema.floats ≠ packed.shape[1], GPU buffer is misaligned.
+        D7: the renderer packs positions (3) + velocities (3) + hue (1)
+        + scale (1) = 8 floats into one merged buffer (was 6, with hue
+        + scale in a separate colour buffer). If schema.floats ≠
+        packed.shape[1], GPU buffer is misaligned.
         """
         from pymurmur.viz.renderer import InstanceSchema
 
@@ -379,12 +381,17 @@ class TestInstanceSchemaPacking:
         max_instances = 100
         packed = np.zeros((max_instances, schema.floats), dtype=np.float32)
 
-        # Pack positions (first 3 columns) and velocities (next 3)
+        # Pack positions, velocities, hue, scale (D7: matches
+        # Renderer3D.update_instances's column layout exactly)
         n = 10
         pos = np.random.randn(n, 3).astype(np.float32)
         vel = np.random.randn(n, 3).astype(np.float32)
-        packed[:n, :3] = pos
-        packed[:n, 3:] = vel
+        hue = np.random.rand(n).astype(np.float32)
+        scale = np.ones(n, dtype=np.float32)
+        packed[:n, 0:3] = pos
+        packed[:n, 3:6] = vel
+        packed[:n, 6] = hue
+        packed[:n, 7] = scale
 
         # Verify shape matches schema
         assert packed.shape[1] == schema.floats, (
@@ -399,10 +406,11 @@ class TestInstanceSchemaPacking:
         )
 
     def test_schema_layout_components_count_matches_attrs(self):
-        """P2.7: layout string components count must equal len(attrs).
+        """P2.7/D7: layout string components count must equal len(attrs).
 
-        '3f 3f/i' has 2 components → ('in_bird_pos', 'in_bird_vel')
-        has 2 entries. Mismatch causes ModernGL VAO creation error.
+        '3f 3f 1f 1f/i' has 4 components → ('in_bird_pos', 'in_bird_vel',
+        'in_bird_hue', 'in_bird_scale') has 4 entries. Mismatch causes
+        ModernGL VAO creation error.
         """
         from pymurmur.viz.renderer import InstanceSchema
 
@@ -410,10 +418,27 @@ class TestInstanceSchemaPacking:
 
         # Parse layout: space-separated format components
         components = schema.layout.split()
-        assert len(components) == 2, f"Layout '{schema.layout}' has {len(components)} components"
+        assert len(components) == 4, f"Layout '{schema.layout}' has {len(components)} components"
         assert len(schema.attrs) == len(components), (
             f"Layout has {len(components)} components but attrs has {len(schema.attrs)} entries"
         )
+
+    def test_pos_vel_view_components_count_matches_attrs(self):
+        """D7: the pos+vel-only padded view (used by the impostor VAO,
+        whose shader has no in_bird_hue/in_bird_scale inputs) has its
+        own component count matching its own 2-entry attrs tuple —
+        independent of the main 4-component layout above."""
+        from pymurmur.viz.renderer import InstanceSchema
+
+        schema = InstanceSchema()
+        components = schema.pos_vel_layout.split()
+        assert len(components) == 3, (
+            f"pos_vel_layout '{schema.pos_vel_layout}' has {len(components)} "
+            f"components (3f, 3f, 8x — padding doesn't get its own attr name)"
+        )
+        # The trailing "8x" padding component has no attribute name —
+        # only the first 2 components (3f, 3f) bind to pos_vel_attrs.
+        assert len(schema.pos_vel_attrs) == 2
 
     def test_schema_buffer_allocation_formula(self):
         """P2.7: Buffer allocation = max_instances * schema.floats * 4 bytes.

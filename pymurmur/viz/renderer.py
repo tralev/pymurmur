@@ -78,16 +78,31 @@ class InstanceSchema:
 
     Changing *floats* or *layout* here propagates to every buffer
     allocation and VAO binding site in Renderer3D.
+
+    D7: single 8-float schema (was 6 floats here + 2 in a separate
+    colour VBO) — one packed array, one instance buffer, one
+    ``vbo.write()`` per frame instead of two. The impostor VAO doesn't
+    consume hue/scale (its shader has no such inputs — impostors aren't
+    per-bird coloured), so it binds this same buffer with a padded
+    format string (POS_VEL_LAYOUT below) that skips the trailing two
+    floats instead of needing its own separate buffer.
     """
 
-    floats: int = 6
-    """Per-bird float count: pos.xyz (3) + vel.xyz (3)."""
+    floats: int = 8
+    """Per-bird float count: pos.xyz (3) + vel.xyz (3) + hue (1) + scale (1)."""
 
-    layout: str = "3f 3f/i"
+    layout: str = "3f 3f 1f 1f/i"
     """ModernGL vertex-array format string."""
 
-    attrs: tuple[str, str] = ("in_bird_pos", "in_bird_vel")
+    attrs: tuple[str, str, str, str] = (
+        "in_bird_pos", "in_bird_vel", "in_bird_hue", "in_bird_scale",
+    )
     """Shader attribute names matching the layout components."""
+
+    # D7: pos+vel-only view of the same buffer (8 bytes = 2 trailing
+    # floats padded/skipped) for shaders that don't declare hue/scale.
+    pos_vel_layout: str = "3f 3f 8x/i"
+    pos_vel_attrs: tuple[str, str] = ("in_bird_pos", "in_bird_vel")
 
 
 def _mat4_bytes(m) -> bytes:
@@ -106,8 +121,8 @@ class Renderer3D:
     Mesh: 4-vertex tetrahedron instanced per bird (default).
     P8.1: Sphere impostor mode — camera-facing quads with disc fragments,
     toggled via ``point_sprites=True``.
-    Instance buffer layout defined by InstanceSchema (P2.7):
-    6 floats/bird (pos.xyz + vel.xyz).
+    Instance buffer layout defined by InstanceSchema (P2.7/D7):
+    8 floats/bird (pos.xyz + vel.xyz + hue + scale), one shared buffer.
     Theme: ink | inverse | paper | graphite.
     """
 
@@ -222,18 +237,13 @@ class Renderer3D:
             IMPOSTOR_QUAD_INDICES.astype(np.uint32).tobytes()
         )
 
-        # Instance VBO: size from schema (P2.7)
+        # Instance VBO: size from schema (P2.7/D7 — single 8-float buffer,
+        # pos+vel+hue+scale all interleaved; one write()/frame).
         nf = self._schema.floats
         self._instance_vbo = self.ctx.buffer(
             reserve=self._max_instances * nf * 4  # 4 bytes per float32
         )
         self._packed = np.zeros((self._max_instances, nf), dtype=np.float32)
-
-        # P8.5: Colour instance VBO — 2 floats/bird (hue + scale)
-        self._colour_vbo = self.ctx.buffer(
-            reserve=self._max_instances * 2 * 4
-        )
-        self._colour_packed = np.zeros((self._max_instances, 2), dtype=np.float32)
 
         self._vao = self._build_vao()
         self._winged_vao = self._build_winged_vao()  # P8.4
@@ -408,9 +418,10 @@ class Renderer3D:
     # ── Instance buffer ────────────────────────────────────────
 
     def update_instances(self, flock: PhysicsFlock, positions_override=None) -> int:
-        """Pack SoA arrays into GPU buffers — one write per VBO
-        (instance pos+vel, per-bird colour).
+        """Pack SoA arrays into the GPU instance buffer — one write/frame.
 
+        D7: pos+vel+hue+scale all interleave into one InstanceSchema-sized
+        buffer (was two separate VBOs / two writes).
         Rebuilds the VAO when the instance buffer is reallocated (I6.4).
         P8.10: Accepts optional *positions_override* for lerped render positions.
         """
@@ -433,11 +444,6 @@ class Renderer3D:
                 reserve=self._max_instances * nf * 4
             )
             self._packed = np.zeros((self._max_instances, nf), dtype=np.float32)
-            # P8.5: Grow colour VBO too
-            self._colour_vbo = self.ctx.buffer(
-                reserve=self._max_instances * 2 * 4
-            )
-            self._colour_packed = np.zeros((self._max_instances, 2), dtype=np.float32)
             # Rebuild VAO against the new instance buffer (I6.4)
             self._vao = self._build_vao()
             self._winged_vao = self._build_winged_vao()  # P8.4
@@ -446,18 +452,17 @@ class Renderer3D:
 
         active_pos = pos_source[flock.active]
         active_vel = flock.velocities[flock.active]
-        self._packed[:n, :3] = active_pos[:n]
-        self._packed[:n, 3:] = active_vel[:n]
-        self._instance_vbo.write(self._packed[:n].tobytes())
-
-        # P8.5: Pack per-bird hue + predator scale into colour VBO
         active_seeds = flock.seeds[flock.active]
         active_pred = flock.is_predator[flock.active]
-        self._colour_packed[:n, 0] = (
+
+        self._packed[:n, 0:3] = active_pos[:n]
+        self._packed[:n, 3:6] = active_vel[:n]
+        # P8.5: per-bird hue (seed, if enabled) or flat gold
+        self._packed[:n, 6] = (
             active_seeds[:n] if self._per_bird_color else np.full(n, 0.33)
-        )  # hue from seed (per-bird) or flat gold
-        self._colour_packed[:n, 1] = np.where(active_pred[:n], 1.35, 1.0)  # scale
-        self._colour_vbo.write(self._colour_packed[:n].tobytes())
+        )
+        self._packed[:n, 7] = np.where(active_pred[:n], 1.35, 1.0)  # predator scale
+        self._instance_vbo.write(self._packed[:n].tobytes())
         return n
 
     def _build_vao(self):  # returns moderngl.VertexArray
@@ -472,8 +477,7 @@ class Renderer3D:
             self._prog,
             [
                 (self._mesh_vbo, "3f", "in_position"),
-                (self._instance_vbo, s.layout, *s.attrs),
-                (self._colour_vbo, "1f 1f/i", "in_bird_hue", "in_bird_scale"),  # P8.5
+                (self._instance_vbo, s.layout, *s.attrs),  # D7: pos+vel+hue+scale
             ],
             self._mesh_ibo,
         )
@@ -489,8 +493,7 @@ class Renderer3D:
             self._winged_prog,
             [
                 (self._winged_mesh_vbo, "3f 1f", "in_position", "in_flap_weight"),
-                (self._instance_vbo, s.layout, *s.attrs),
-                (self._colour_vbo, "1f 1f/i", "in_bird_hue", "in_bird_scale"),  # P8.5
+                (self._instance_vbo, s.layout, *s.attrs),  # D7: pos+vel+hue+scale
             ],
             self._winged_mesh_ibo,
         )
@@ -500,14 +503,18 @@ class Renderer3D:
 
         The impostor vertex shader expects ``in_quad_pos`` (vec2) from
         the mesh buffer instead of ``in_position`` (vec3) used by the
-        tetrahedron path.
+        tetrahedron path. It has no in_bird_hue/in_bird_scale inputs
+        (impostors aren't per-bird coloured) — D7: reads the same shared
+        instance buffer as every other VAO, but with the pos+vel-only
+        padded format that skips the trailing hue+scale floats instead
+        of needing its own separate buffer.
         """
         s = self._schema
         return self.ctx.vertex_array(
             self._impostor_prog,
             [
                 (self._impostor_mesh_vbo, "2f", "in_quad_pos"),
-                (self._instance_vbo, s.layout, *s.attrs),
+                (self._instance_vbo, s.pos_vel_layout, *s.pos_vel_attrs),
             ],
             self._impostor_mesh_ibo,
         )
@@ -525,8 +532,7 @@ class Renderer3D:
             self._prog,
             [
                 (vbo, entry["vertex_format"], *entry["attributes"]),
-                (self._instance_vbo, s.layout, *s.attrs),
-                (self._colour_vbo, "1f 1f/i", "in_bird_hue", "in_bird_scale"),
+                (self._instance_vbo, s.layout, *s.attrs),  # D7: pos+vel+hue+scale
             ],
             ibo,
         )
@@ -744,6 +750,71 @@ class Renderer3D:
         self._prog["in_bird_scale"] = 1.0  # P8.5: default scale
         import moderngl
         self._grid_vao.render(moderngl.LINES)
+
+    def draw_layer(
+        self,
+        position: tuple[float, float, float],
+        hue: float = 0.0,
+        scale: float = 1.0,
+        mesh: str = "ellipsoid",
+    ) -> None:
+        """D7: Draw a single non-instanced marker at a world position.
+
+        Feeds S2.A8 (threat marker) and S2.E5 (influencer target
+        marker) — both currently invisible because no seam existed to
+        render a one-off overlay outside the per-bird instanced draw
+        call. Reuses the tetra shader program (self._prog) with default
+        (non-instanced) attribute values — the same pattern draw_grid()
+        already uses for the reference grid.
+
+        Deliberately does NOT reuse self._mesh_vaos[mesh] (the S4.4a
+        per-bird VAOs) — those bind in_bird_pos/vel/hue/scale to
+        self._instance_vbo with a per-instance divisor, so a plain
+        render() on them would draw at whatever bird #0's data
+        currently is, silently ignoring the position/hue/scale
+        arguments here. Instead builds (and caches) a dedicated VAO
+        binding only the mesh's own static vertex/index buffers, so
+        in_bird_pos/vel/hue/scale fall back to the per-draw-call default
+        values set below, exactly like draw_grid()'s in_position VAO.
+        These marker VAOs never need rebuilding on instance-buffer
+        growth since they don't reference self._instance_vbo at all.
+
+        Args:
+            position: world-space (x, y, z) marker centre.
+            hue: 0..1, matches the per-bird hue convention (P8.5).
+            scale: NOT a geometric size multiplier — FRAGMENT_SHADER
+                only reads in_bird_scale for the predator-highlight
+                colour blend (>1.0 tints toward red and brightens,
+                shaders.py's `predator_factor`); mesh vertex positions
+                use a fixed size constant regardless of this value. Kept
+                named "scale" for consistency with the per-bird
+                attribute it sets, not because it resizes the marker.
+            mesh: one of the S4.4a mesh-registry names sharing self._prog
+                ("ellipsoid", "cone", "arrow"); falls back to "ellipsoid"
+                if given an unknown name (e.g. "tetra"/"winged"/"impostor",
+                which use a different shader program or aren't in this
+                registry).
+        """
+        if mesh not in self._mesh_vbos:
+            mesh = "ellipsoid"
+
+        cache_attr = f"_marker_vao_{mesh}"
+        vao = getattr(self, cache_attr, None)
+        if vao is None:
+            entry = MESH_REGISTRY[mesh]
+            vao = self.ctx.vertex_array(
+                self._prog,
+                [(self._mesh_vbos[mesh], entry["vertex_format"], *entry["attributes"])],
+                self._mesh_ibos[mesh],
+            )
+            setattr(self, cache_attr, vao)
+
+        self._prog["in_bird_pos"] = tuple(position)
+        self._prog["in_bird_vel"] = (0.0, 0.0, 1.0)  # arbitrary facing
+        self._prog["in_bird_hue"] = hue
+        self._prog["in_bird_scale"] = scale
+        import moderngl
+        vao.render(moderngl.TRIANGLES)  # type: ignore[attr-defined]
 
     def draw_hud_rect(
         self,

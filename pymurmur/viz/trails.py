@@ -233,7 +233,11 @@ class TrailRenderer:
 
         Args:
             flock: PhysicsFlock with position/velocity data.
-            instance_vbo: Shared instance VBO (pos + vel per bird).
+            instance_vbo: Renderer3D's shared 8-float InstanceSchema VBO
+                (pos.xyz vel.xyz hue scale per bird, D7) — velocity mode
+                reads pos+vel from it with a padded format string;
+                accumulation mode doesn't touch it (reads flock.positions
+                directly instead).
             instance_count: Number of active instances.
         """
         if self._mode == "off" or instance_count == 0:
@@ -287,7 +291,14 @@ class TrailRenderer:
                 self._prog,
                 [
                     (self._velocity_vbo, "3f", "in_position"),
-                    (instance_vbo, "3f 3f/i", "in_bird_pos", "in_bird_vel"),
+                    # D7: instance_vbo is Renderer3D's shared 8-float
+                    # InstanceSchema buffer (pos.xyz vel.xyz hue scale),
+                    # not a dedicated 6-float pos+vel buffer — "3f 3f/i"
+                    # alone would compute a 24-byte stride against a
+                    # true 32-byte one, misaligning every instance after
+                    # the first. "8x" pads/skips the trailing hue+scale
+                    # floats this shader doesn't use.
+                    (instance_vbo, "3f 3f 8x/i", "in_bird_pos", "in_bird_vel"),
                 ],
             )
 
