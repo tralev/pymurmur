@@ -441,7 +441,12 @@ def _query_neighbors(
         tree = cKDTree(positions[active_idx])
 
     active_pos = positions[active_idx]
-    _, compacted_idx = tree.query(active_pos, k=k + 1, workers=-1)
+    # S2.B6: cfg.perf.num_threads (0 = auto/all cores, matching scipy's
+    # workers=-1 convention; N>0 pins the worker count) instead of a
+    # hardcoded workers=-1.
+    num_threads = getattr(getattr(config, 'perf', None), 'num_threads', 0)
+    workers = -1 if num_threads == 0 else num_threads
+    _, compacted_idx = tree.query(active_pos, k=k + 1, workers=workers)
     neighbor_idx[active_idx] = active_idx[compacted_idx[:, 1:k + 1]]
 
     # ── Apply filter based on mode ──

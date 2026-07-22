@@ -1350,6 +1350,17 @@ class SimConfig:
             issues.append(
                 f"parallel_workers must be >= -1, got {cfg.parallel_workers}"
             )
+        # S2.B10: fastmath relaxes IEEE float semantics — only safe when
+        # metrics aren't being exported for scientific analysis (detail
+        # level 0 = visual-only runs). detail_level >= 1 requires
+        # IEEE-precise kernels so IEEE-precise observables stay meaningful.
+        if cfg.fastmath and cfg.metrics_detail_level > 0:
+            issues.append(
+                "perf.fastmath=True requires perf.metrics_detail_level == 0 "
+                f"(visual-only runs) -- got metrics_detail_level={cfg.metrics_detail_level}. "
+                "fastmath relaxes IEEE float semantics, which would make exported "
+                "metrics non-reproducible."
+            )
 
         # ── Visualization ─────────────────────────────────────
         if _ok("fps") and cfg.fps <= 0:

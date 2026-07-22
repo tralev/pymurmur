@@ -388,3 +388,32 @@ def test_engine_creation_validates_config():
 
     with pytest.raises(ValueError):
         SimulationEngine(SimConfig(width=-1))
+
+
+# ── S2.B10: fastmath-vs-metrics-detail-level policy ─────────────────
+
+def test_fastmath_with_metrics_detail_raises():
+    """S2.B10: fastmath=True with metrics_detail_level>0 fails validation
+    -- fastmath breaks IEEE reproducibility, so it must not be combined
+    with scientific metric export."""
+    cfg = SimConfig()
+    cfg.fastmath = True
+    cfg.metrics_detail_level = 1
+    with pytest.raises(ValueError, match="fastmath"):
+        cfg.validate()
+
+
+def test_fastmath_with_metrics_off_is_valid():
+    """S2.B10: fastmath=True is fine when metrics_detail_level==0 (visual-only)."""
+    cfg = SimConfig()
+    cfg.fastmath = True
+    cfg.metrics_detail_level = 0
+    cfg.validate()  # must not raise
+
+
+def test_fastmath_default_off_is_valid_at_any_detail_level():
+    """S2.B10: default fastmath=False never triggers the policy check."""
+    cfg = SimConfig()
+    assert cfg.fastmath is False
+    cfg.metrics_detail_level = 2
+    cfg.validate()  # must not raise
