@@ -255,6 +255,8 @@ class EcologyConfig:
     ecology_dusk_width: float = 6.0          # logistic transition width (minutes)
     ecology_seasonal_amplitude: float = 0.5  # 0=no season, 1=full seasonal modulation
     ecology_temperature_boost: float = 0.3   # temperature influence on roost pull
+    # S2.B8: predator-presence draw mode
+    ecology_predator_presence: str = "deterministic"  # deterministic | stochastic
 
 
 @dataclass
@@ -476,6 +478,7 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "ecology_dusk_width": ("_ecology", "ecology_dusk_width"),
     "ecology_seasonal_amplitude": ("_ecology", "ecology_seasonal_amplitude"),
     "ecology_temperature_boost": ("_ecology", "ecology_temperature_boost"),
+    "ecology_predator_presence": ("_ecology", "ecology_predator_presence"),
     # RoostConfig
     "roost_z_target": ("_roost", "z_target"),
     # PerfConfig
@@ -900,7 +903,8 @@ class SimConfig:
                         "ecology_critical_mass": self.ecology_critical_mass,
                         "ecology_dusk_width": self.ecology_dusk_width,
                         "ecology_seasonal_amplitude": self.ecology_seasonal_amplitude,
-                        "ecology_temperature_boost": self.ecology_temperature_boost},
+                        "ecology_temperature_boost": self.ecology_temperature_boost,
+                        "ecology_predator_presence": self.ecology_predator_presence},
             "roost": {"roost_z_target": self.roost.z_target},
             "vicsek": {"vicsek_couplage": self.vicsek_couplage,
                        "vicsek_diffusion": self.vicsek_diffusion,
