@@ -138,6 +138,26 @@ def _hash01(x: np.ndarray) -> np.ndarray:
     return (np.sin(x * 12.9898) * 43758.5453) % 1.0
 
 
+# ── S2.A3: dedicated per-group anchor(t, gs) formula ───────────────
+
+def _group_anchor(t: np.ndarray, gs: np.ndarray, C: np.ndarray, U: float) -> np.ndarray:
+    """anchor(t, gs) — S2.A3's dedicated leader/chaser anchor, distinct
+    from S2.A2's 5 fixed Lissajous blob anchors (_compute_anchors).
+
+    t and gs may be per-bird (n,) arrays (vectorised — every bird can
+    evaluate this at its own lagged time and its own/a neighbouring
+    group's phase without a Python loop).
+
+    Returns (n, 3) float32.
+    """
+    phase = gs * 2.0 * np.pi
+    return C + np.column_stack([
+        np.cos(phase + t * 0.21) * 0.50 + np.sin(t * 0.13 + phase * 2.3) * 0.16,
+        np.sin(phase * 1.7 + t * 0.19) * 0.34 + np.cos(t * 0.11 + phase) * 0.12,
+        np.sin(phase + t * 0.16) * 0.46 + np.cos(t * 0.23 + phase * 1.4) * 0.14,
+    ]).astype(np.float32) * U
+
+
 # ── P3.3: Leader/chaser groups ─────────────────────────────────────
 
 def _compute_leader_chaser(
@@ -150,13 +170,22 @@ def _compute_leader_chaser(
     sep: float,
     num_groups: int = 7,
     leader_fraction: float = 0.16,
+    C: np.ndarray | None = None,
+    wander_heading: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Compute blended targets T with leader/chaser dynamics (P3.3).
+    """Compute blended targets T with leader/chaser dynamics (P3.3/S2.A3).
 
     Returns (n_active, 3) float32 — the final targets after
     leader/chaser blending: T = lerp(T_legacy, chase_target, chase_strength).
 
     chase_strength=0 returns T_legacy unchanged (backward compat with P3.2).
+
+    S2.A3: uses the dedicated anchor(t, gs) formula (_group_anchor),
+    not S2.A2's 5 fixed blob anchors; blends a primary anchor at the
+    bird's own group with a secondary anchor at the next group over
+    (sec_mix); every bird evaluates its own per-bird lagged time
+    (no per-group averaging); leaders steer toward wander_heading
+    rather than an approximated group-phase direction.
     """
     n = len(seeds)
     if chase_strength <= 0.0 or n < 2:
@@ -164,6 +193,8 @@ def _compute_leader_chaser(
 
     cs = chase_strength  # shorthand
     ng = max(1, int(num_groups))
+    if C is None:
+        C = np.zeros(3, dtype=np.float32)
 
     # ── seed groups (C3: field_num_groups) ──
     group_seed = np.floor(seeds * ng) / ng       # shape (n,) ∈ {0, 1/ng, …, (ng-1)/ng}
@@ -204,37 +235,27 @@ def _compute_leader_chaser(
         np.sin(theta) * ring,
     ]).astype(np.float32) * (radius * breath)[:, np.newaxis]
 
-    # ── Per-bird lagged anchor: compute per-bird, not per-group average ──
-    lagged_t = t - lag
-    # Clamp lagged time to valid range
-    lagged_t = np.clip(lagged_t, 0.0, None)
-    # Compute per-bird anchor: each bird sees anchor at its own lagged time
-    anchor_primary = np.zeros((n, 3), dtype=np.float32)
-    for gid in range(ng):
-        mask = group_ids == gid
-        if mask.sum() == 0:
-            continue
-        group_anchors = _compute_anchors(
-            float(lagged_t[mask].mean()),
-            np.zeros(3, dtype=np.float32),
-            U,
-        )
-        anchor_primary[mask] = group_anchors[gid % 5]
+    # ── S2.A3: per-bird lagged primary + secondary anchors ──
+    lagged_t = np.clip(t - lag, 0.0, None)
+    primary = _group_anchor(lagged_t, gs, C, U)
+    secondary_gs = (gs + 1.0 / ng) % 1.0
+    secondary = _group_anchor(lagged_t, secondary_gs, C, U)
+    sec_mix = (_hash01(seeds + 3.33) * 0.5)[:, np.newaxis]
+    anchor_primary = primary * (1.0 - sec_mix) + secondary * sec_mix
 
-    # ── Chase target: primary anchor + stratified shell offset ──
+    # ── Chase target: blended anchor + stratified shell offset ──
     chase_target = anchor_primary + offset
 
-    # ── Leaders: override target with forward-steering point ──
+    # ── Leaders: override target with a wander-heading steering point ──
     if is_leader.any():
-        # Leader target: a point further along the group's heading
-        # (approximation — full spec uses wander_heading but that's
-        # consumed in P3.6 drift alignment instead)
-        leader_dir = np.column_stack([
-            np.cos(group_phase[is_leader]),
-            np.zeros(is_leader.sum(), dtype=np.float32),
-            np.sin(group_phase[is_leader]),
-        ]).astype(np.float32)
-        chase_target[is_leader] += leader_dir * 0.18 * U
+        lead_dist = (0.18 + _hash01(seeds[is_leader] + 7.1) * 0.18) * U
+        if wander_heading is not None:
+            heading = wander_heading.reshape(1, 3).astype(np.float32)
+        else:
+            # No Wander extension active — degenerate to the blend
+            # centre C (no directional bias to steer toward).
+            heading = np.zeros((1, 3), dtype=np.float32)
+        chase_target[is_leader] = C + heading * lead_dist[:, np.newaxis]
 
     # ── Blend: T = lerp(T_legacy, chase_target, chase_strength) ──
     return (T_legacy * (1.0 - cs) + chase_target * cs).astype(np.float32)
@@ -895,11 +916,13 @@ class FieldMode(ForceMode):
         anchors = _compute_anchors(t, C, U)
         T_legacy = _compute_targets(seeds, t, anchors)
 
-        # ── P3.3: Leader/chaser → blended targets ──
+        # ── P3.3/S2.A3: Leader/chaser → blended targets ──
+        wander_heading = getattr(config, '_wander_heading', None)
         targets = _compute_leader_chaser(
             seeds, t, T_legacy, anchors, U, chase, sep,
             num_groups=config.field.field_num_groups,
             leader_fraction=config.field.field_leader_fraction,
+            C=C, wander_heading=wander_heading,
         )
 
         # Active-sliced views

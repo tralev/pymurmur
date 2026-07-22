@@ -24,11 +24,11 @@ field:
   field_cohesion: 1.85
   field_chase_strength: 0.72
   # Slow, cohesive — low noise, low flow, gentle wander
-  noise: 0.02
-  field_flow: 0.15
+  noise: 0.03
+  field_flow: 0.18
   target_pull: 0.30
   drift_pull: 0.06
-  inertia: 0.88
+  inertia: 0.82
 
 # ── Extensions ──────────────────────────────────────────────────────
 extensions:
@@ -39,6 +39,10 @@ extensions:
 wander:
   attractor_speed: 0.08
   attractor_radius: 200.0
+
+# ── Visualization (S2.A9 preset table: trail=velocity) ───────────────
+viz:
+  trails: velocity
 
 # ── Seed ────────────────────────────────────────────────────────────
 seed: 42

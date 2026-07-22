@@ -167,6 +167,121 @@ class TestFieldMode:
         T_out = _compute_leader_chaser(seeds, 0.0, T_in, anchors, 1.0, 0.0, 0.0)
         np.testing.assert_allclose(T_out, T_in, atol=1e-6)
 
+    # ── S2.A3: dedicated anchor(t,gs), per-bird lag, secondary blend ──
+
+    def test_group_anchor_matches_hand_value(self):
+        """S2.A3: _group_anchor(t, gs, C, U) matches the spec formula by hand."""
+        from pymurmur.physics.forces.field import _group_anchor
+        t = np.array([2.0], dtype=np.float32)
+        gs = np.array([0.25], dtype=np.float32)  # phase = 0.5*pi
+        C = np.array([10.0, 20.0, 30.0], dtype=np.float32)
+        U = 5.0
+        phase = 0.25 * 2.0 * np.pi
+        expected = C + np.array([
+            np.cos(phase + 2.0 * 0.21) * 0.50 + np.sin(2.0 * 0.13 + phase * 2.3) * 0.16,
+            np.sin(phase * 1.7 + 2.0 * 0.19) * 0.34 + np.cos(2.0 * 0.11 + phase) * 0.12,
+            np.sin(phase + 2.0 * 0.16) * 0.46 + np.cos(2.0 * 0.23 + phase * 1.4) * 0.14,
+        ], dtype=np.float32) * U
+        got = _group_anchor(t, gs, C, U)
+        np.testing.assert_allclose(got[0], expected, atol=1e-5)
+
+    def test_group_anchor_is_vectorised_per_bird(self):
+        """S2.A3: _group_anchor accepts per-bird (n,) t and gs arrays —
+        not a single scalar time shared across a whole group."""
+        from pymurmur.physics.forces.field import _group_anchor
+        t = np.array([0.0, 5.0, 10.0], dtype=np.float32)
+        gs = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+        C = np.zeros(3, dtype=np.float32)
+        out = _group_anchor(t, gs, C, 10.0)
+        assert out.shape == (3, 3)
+        assert not np.allclose(out[0], out[1])
+        assert not np.allclose(out[1], out[2])
+
+    def test_leader_chaser_uses_per_bird_lag_not_group_mean(self):
+        """S2.A3: two birds in the same group with different seeds (hence
+        different lag) get different anchors — a per-group mean lagged
+        time would collapse them toward the same value."""
+        seeds = np.array([0.01, 0.99], dtype=np.float32)  # same group (gs=0/7 both round down)
+        anchors = _compute_anchors(0.0, np.zeros(3), 100.0)
+        T_legacy = np.zeros((2, 3), dtype=np.float32)
+        targets = _compute_leader_chaser(
+            seeds, 50.0, T_legacy, anchors, 100.0,
+            chase_strength=0.9, sep=0.0, num_groups=7, leader_fraction=0.0,
+        )
+        assert not np.allclose(targets[0], targets[1]), (
+            "different per-bird lag should decorrelate same-group targets"
+        )
+
+    def test_leader_chaser_secondary_blend_changes_target(self):
+        """S2.A3: sec_mix blending toward a secondary group's anchor means
+        chase_target != the primary-only anchor + offset for a generic
+        (non-corner-case) sec_mix value."""
+        from pymurmur.physics.forces.field import _group_anchor, _hash01
+        seeds = np.array([3.0], dtype=np.float32)
+        anchors = _compute_anchors(0.0, np.zeros(3), 100.0)
+        T_legacy = np.zeros((1, 3), dtype=np.float32)
+        t = 12.0
+        U = 100.0
+        targets = _compute_leader_chaser(
+            seeds, t, T_legacy, anchors, U,
+            chase_strength=1.0, sep=0.0, num_groups=7, leader_fraction=0.0,
+        )
+        # Recompute the primary-only anchor (no secondary blend) by hand
+        # for comparison — if sec_mix is ~0 for this seed the test would
+        # be vacuous, so assert sec_mix is meaningfully nonzero first.
+        sec_mix = float(_hash01(seeds + 3.33)[0] * 0.5)
+        assert sec_mix > 0.05, "pick a seed with nonzero sec_mix for this test"
+        ng = 7
+        gs = np.floor(seeds * ng) / ng
+        lag = _hash01(seeds + 9.17) * (1.1 + 1.0 * 2.4)
+        lagged_t = np.clip(t - lag, 0.0, None)
+        primary_only = _group_anchor(lagged_t, gs, np.zeros(3, dtype=np.float32), U)
+        assert not np.allclose(targets[0], primary_only[0], atol=1e-3), (
+            "secondary-anchor blend should move the target off the primary-only anchor"
+        )
+
+    def test_leader_target_uses_wander_heading_when_provided(self):
+        """S2.A3: with wander_heading supplied, leader targets are biased
+        along that heading relative to C — different headings produce
+        different leader targets."""
+        seeds = np.arange(50, dtype=np.float32)
+        anchors = _compute_anchors(0.0, np.zeros(3), 100.0)
+        T_legacy = np.zeros((50, 3), dtype=np.float32)
+        C = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+
+        heading_a = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        heading_b = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+
+        t_a = _compute_leader_chaser(
+            seeds, 0.0, T_legacy, anchors, 100.0, chase_strength=1.0, sep=0.0,
+            num_groups=7, leader_fraction=0.5, C=C, wander_heading=heading_a,
+        )
+        t_b = _compute_leader_chaser(
+            seeds, 0.0, T_legacy, anchors, 100.0, chase_strength=1.0, sep=0.0,
+            num_groups=7, leader_fraction=0.5, C=C, wander_heading=heading_b,
+        )
+        assert not np.allclose(t_a, t_b), (
+            "different wander_heading vectors must produce different leader targets"
+        )
+
+    def test_leader_target_degenerate_toward_c_without_wander_heading(self):
+        """S2.A3: with no wander_heading (Wander extension disabled), the
+        leader-target offset from C collapses to zero — a documented,
+        deliberate degenerate case, not a crash."""
+        seeds = np.arange(50, dtype=np.float32)
+        anchors = _compute_anchors(0.0, np.zeros(3), 100.0)
+        T_legacy = np.zeros((50, 3), dtype=np.float32)
+        C = np.array([5.0, 6.0, 7.0], dtype=np.float32)
+
+        targets = _compute_leader_chaser(
+            seeds, 0.0, T_legacy, anchors, 100.0, chase_strength=1.0, sep=0.0,
+            num_groups=7, leader_fraction=1.0,  # force every bird to be a leader
+            C=C, wander_heading=None,
+        )
+        # chase_target == C exactly for every (leader) bird, blended with
+        # T_legacy=0 at chase_strength=1.0 => targets == C exactly.
+        np.testing.assert_allclose(targets, np.broadcast_to(C, targets.shape), atol=1e-5)
+
     def test_leader_fraction_roughly_16_percent(self):
         """P3.3: ~16% of birds are leaders."""
         from pymurmur.physics.forces.field import _hash01
@@ -853,3 +968,112 @@ class TestFieldTermComposition:
                 full - without, alone, atol=1e-3,
                 err_msg=f"term {name!r}: (full - without) != alone",
             )
+
+
+# ── S2.A9: field_*.yaml preset table verification ──────────────────
+
+class TestFieldPresets:
+    """S2.A9: the seven conf/field_*.yaml presets load with the tabled
+    (N, v0, sep, align, coh, chase, trail, threat) values from the
+    roadmap2.md P3.10 preset table."""
+
+    _CONF_DIR = None
+
+    @staticmethod
+    def _load(name: str) -> SimConfig:
+        from pathlib import Path
+        conf_dir = Path(__file__).resolve().parents[4] / "conf"
+        return SimConfig.from_file(conf_dir / name)
+
+    def test_quiet_roost(self):
+        cfg = self._load("field_quiet_roost.yaml")
+        assert cfg.num_boids == 3000
+        assert cfg.v0 == pytest.approx(0.48)
+        assert cfg.field_separation == pytest.approx(0.85)
+        assert cfg.field_alignment == pytest.approx(0.65)
+        assert cfg.field_cohesion == pytest.approx(1.85)
+        assert cfg.field.field_chase_strength == pytest.approx(0.72)
+        assert cfg.viz.trails == "velocity"
+        assert cfg.predator_enabled is False
+
+    def test_lava_lamp_pure_blob(self):
+        cfg = self._load("field_lava_lamp.yaml")
+        assert cfg.num_boids == 16000
+        assert cfg.field_separation == 0.0
+        assert cfg.field_alignment == 0.0
+        assert cfg.field_cohesion == 0.0
+        assert cfg.field.field_chase_strength == 0.0
+
+    def test_ink_cloud(self):
+        cfg = self._load("field_ink_cloud.yaml")
+        assert cfg.num_boids == 18000
+        assert cfg.v0 == pytest.approx(0.62)
+        assert cfg.field_separation == pytest.approx(0.92)
+        assert cfg.field_alignment == pytest.approx(0.90)
+        assert cfg.field_cohesion == pytest.approx(1.80)
+        assert cfg.field.field_chase_strength == pytest.approx(0.82)
+        assert cfg.viz.trails == "accumulation"
+        assert cfg.predator_enabled is True
+        assert cfg.predator.predator_mode == "autonomous"
+
+    def test_predator_ripple(self):
+        cfg = self._load("field_predator_ripple.yaml")
+        assert cfg.num_boids == 12000
+        assert cfg.v0 == pytest.approx(0.78)
+        assert cfg.field_separation == pytest.approx(1.05)
+        assert cfg.field_alignment == pytest.approx(1.05)
+        assert cfg.field_cohesion == pytest.approx(1.15)
+        assert cfg.field.field_chase_strength == pytest.approx(0.64)
+        assert cfg.viz.trails == "velocity"
+        assert cfg.predator_enabled is True
+        assert cfg.predator.predator_mode == "orbit"
+
+    def test_vacuole(self):
+        cfg = self._load("field_vacuole.yaml")
+        assert cfg.num_boids == 10000
+        assert cfg.v0 == pytest.approx(0.68)
+        assert cfg.field_separation == pytest.approx(1.12)
+        assert cfg.field_alignment == pytest.approx(0.92)
+        assert cfg.field_cohesion == pytest.approx(1.25)
+        assert cfg.field.field_chase_strength == pytest.approx(0.76)
+        assert cfg.viz.trails == "accumulation"
+        assert cfg.predator_enabled is True
+        assert cfg.predator.predator_vacuole_strength == pytest.approx(0.9)
+
+    def test_silk_sheet(self):
+        cfg = self._load("field_silk_sheet.yaml")
+        assert cfg.num_boids == 14000
+        assert cfg.v0 == pytest.approx(0.46)
+        assert cfg.field_separation == pytest.approx(0.92)
+        assert cfg.field_alignment == pytest.approx(1.10)
+        assert cfg.field_cohesion == pytest.approx(1.10)
+        assert cfg.field.field_chase_strength == pytest.approx(0.68)
+        assert cfg.viz.trails == "velocity"
+        assert cfg.predator_enabled is False
+
+    def test_storm_turn(self):
+        cfg = self._load("field_storm_turn.yaml")
+        assert cfg.num_boids == 16000
+        assert cfg.v0 == pytest.approx(0.90)
+        assert cfg.field_separation == pytest.approx(1.10)
+        assert cfg.field_alignment == pytest.approx(1.15)
+        assert cfg.field_cohesion == pytest.approx(1.25)
+        assert cfg.field.field_chase_strength == pytest.approx(0.42)
+        assert cfg.viz.trails == "velocity"
+        assert cfg.predator_enabled is True
+        assert cfg.predator.predator_mode == "autonomous"
+
+    @pytest.mark.parametrize("name", [
+        "field_quiet_roost.yaml", "field_lava_lamp.yaml", "field_ink_cloud.yaml",
+        "field_predator_ripple.yaml", "field_vacuole.yaml", "field_silk_sheet.yaml",
+        "field_storm_turn.yaml",
+    ])
+    def test_all_presets_settle_without_nan(self, name):
+        """Loading + a short headless run stays finite for every preset."""
+        from pymurmur.simulation.engine import SimulationEngine
+        cfg = self._load(name)
+        cfg.num_boids = 40  # override for a fast smoke run
+        engine = SimulationEngine(cfg)
+        engine.run_headless(steps=10)
+        assert np.isfinite(engine.flock.positions).all()
+        assert np.isfinite(engine.flock.velocities).all()

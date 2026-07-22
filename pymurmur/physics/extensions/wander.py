@@ -129,9 +129,18 @@ class Wander(Extension):
         # ── Compute heading ──
         heading = wander_heading(self._t * speed)
 
-        # ── Publish to flock for field mode drift alignment (P3.6) ──
+        # ── Publish to flock for external inspection/tests ──
         flock.wander_center = wander_center.astype(np.float32)
         flock.wander_heading = heading.astype(np.float32)
+
+        # S2.A3/P3.6: also publish onto cfg — FieldMode.compute() is a
+        # stateless module function that only ever receives (arrays,
+        # config), never `flock`, so this is the only bridge that
+        # actually reaches field.py's drift-alignment and leader-target
+        # terms (both previously always saw None here despite this
+        # method's flock.wander_heading assignment above — that attribute
+        # was published but never consumed by anything).
+        cfg._wander_heading = heading.astype(np.float32)
 
         # ── Backward-compat: apply pull for non-field modes ──
         if n_active > 0 and cfg.mode != "field":

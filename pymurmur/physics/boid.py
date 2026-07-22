@@ -397,9 +397,12 @@ def init_velocities_blob(
 ) -> np.ndarray:
     """P3.10: Drift-biased tangential velocities for blob mode.
 
-    v = ((0.34 ± 0.08), ±0.16, (0.08 ± 0.08)) · v0 · 0.5
+    v = ((0.34 ± 0.08), ±0.16, (0.08 ± 0.08)) · v0 · 0.5 + jitter(0.05·v0)
 
     Creates a gentle forward drift (positive x) with modest y/z spread.
+    S2.A9: an independent per-axis jitter term (magnitude 0.05·v0) is
+    added on top of the drift vector so per-bird velocities aren't
+    perfectly correlated across axes at the v0·0.5 scale.
 
     Returns (n, 3) float32 velocity array.
     """
@@ -411,7 +414,10 @@ def init_velocities_blob(
     v[:, 1] = rng.uniform(-0.16, 0.16, n).astype(np.float32)
     # z: 0.08 ± 0.08 → uniform(0.0, 0.16)
     v[:, 2] = 0.08 + rng.uniform(-0.08, 0.08, n).astype(np.float32)
-    return (v * v0 * 0.5).astype(np.float32)
+    v = v * v0 * 0.5
+    # S2.A9: jitter(0.05·v0) — independent per-axis noise
+    jitter = rng.uniform(-0.05, 0.05, (n, 3)).astype(np.float32) * v0
+    return (v + jitter).astype(np.float32)
 
 
 # ── P4.9: Velocity-init variants ─────────────────────────
