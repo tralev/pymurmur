@@ -73,6 +73,7 @@ class FlockMetrics:
     optimal_m: float | None = None         # cost-optimal neighbour count m*
     suggested_m: float | None = None       # P9.5: shape→m* from aspect ratio
     eta_m: float | None = None             # P9.6: marginal efficiency η(m)
+    convergence_speed: float | None = None  # A10: algebraic connectivity λ₂(L) — contrasts with h2's robustness
 
     def to_dict(self) -> dict:
         """Serialize to a JSON-safe dict (I6.5).
@@ -427,6 +428,7 @@ class MetricsCollector:
             m.gyration_radius = async_m.gyration_radius
             m.suggested_m = async_m.suggested_m
             m.eta_m = async_m.eta_m
+            m.convergence_speed = async_m.convergence_speed
         self._async_result = None
 
     def snapshot(self) -> FlockMetrics:
@@ -497,7 +499,7 @@ class MetricsCollector:
             "h2", "tau_rho", "hull_volume", "density_rho",
             "msd", "msd_slope", "msd_crossover", "msd_curve",
             "gyration_radius", "aspect_ratio", "thickness_ratio",
-            "optimal_m", "suggested_m", "eta_m",
+            "optimal_m", "suggested_m", "eta_m", "convergence_speed",
         ):
             raw_val = getattr(raw, field_name)
             if raw_val is not None:
@@ -551,33 +553,35 @@ def compute_nematic_order(dirs: np.ndarray) -> float:
 
 # ── Expensive metrics (Phase 9) ──────────────────────────────────
 
-def compute_h2(positions: np.ndarray, m: int, tree=None) -> tuple[float, float]:
-    """Compute H₂ consensus robustness for a given neighbour count m.
+def _knn_laplacian_eigenvalues(
+    positions: np.ndarray, m: int, tree=None,
+) -> np.ndarray | None:
+    """Shared k-NN graph Laplacian eigensystem for H₂ and convergence speed.
 
-    Builds k-NN graph (k=m+1), symmetrizes adjacency, computes
-    graph Laplacian eigenvalues, and returns H₂².
+    Builds the m-nearest-neighbour graph, weights edges aᵢⱼ = 1/m (A8,
+    Young et al. 2013's linear-consensus averaging — see compute_h2),
+    symmetrizes via max(A, Aᵀ) (S1.8 — an edge exists at full weight if
+    either endpoint's k-NN includes the other), and returns the
+    ascending eigenvalues of the graph Laplacian L = D − A.
 
-    A8 (Young et al. 2013): edges are weighted aᵢⱼ = 1/m, matching the
-    paper's linear-consensus model dxᵢ/dt = Σ_{j∈Nᵢ} aᵢⱼ(xⱼ−xᵢ) + ξᵢ,
-    where each bird averages over its m neighbours rather than summing
-    them unweighted. The paper shows uniform 1/m weighting gives the
-    best robustness — distance-proportional and order-based weights
-    are strictly worse (Fig. S1).
+    Returns None for the trivial N<2 or m<1 cases (nothing to build).
+    λ₀ = 0 always; λ₁ (algebraic connectivity) is 0 iff the graph is
+    disconnected — callers interpret that as needed (H₂ treats it as
+    +∞ disagreement; convergence speed treats it as literally 0, the
+    mathematically correct value).
 
-    Args:
-        positions: (N, 3) float32 array.
-        m: number of neighbours per node.
-        tree: optional pre-built cKDTree to avoid rebuild.
-
-    Returns:
-        (h2_squared, h2) — H₂² and H₂.
+    Does not catch eigh() failures — callers each wrap their own call
+    with the fallback appropriate to their own contract (H₂ and
+    convergence speed disagree on what a computation failure should
+    return, so a single shared fallback here would be wrong for one
+    of them).
     """
     from scipy.linalg import eigh
     from scipy.spatial import cKDTree
 
     N = len(positions)
     if N < 2 or m < 1:
-        return 0.0, 0.0
+        return None
 
     k = min(m + 1, N)
     if tree is None:
@@ -599,14 +603,11 @@ def compute_h2(positions: np.ndarray, m: int, tree=None) -> tuple[float, float]:
                 data.append(edge_weight)
 
     if not rows:
-        return float('inf'), float('inf')
+        return np.zeros(N)
 
     # Build directed adjacency, then symmetrize
     from scipy.sparse import coo_matrix
     A_dir = coo_matrix((data, (rows, cols)), shape=(N, N)).tocsr()
-    # S1.8: max-form symmetrization — an edge exists at full weight if
-    # either endpoint's k-NN includes the other (was averaging, which
-    # halved the weight of one-directional k-NN edges).
     A = A_dir.maximum(A_dir.T)
 
     # Laplacian L = D - A
@@ -616,9 +617,41 @@ def compute_h2(positions: np.ndarray, m: int, tree=None) -> tuple[float, float]:
     ).tocsr()
     L = D_diag - A
 
-    # Eigenvalues of Laplacian (need dense for eigh)
+    return eigh(L.toarray(), eigvals_only=True)
+
+
+def compute_h2(positions: np.ndarray, m: int, tree=None) -> tuple[float, float]:
+    """Compute H₂ consensus robustness for a given neighbour count m.
+
+    Builds k-NN graph (k=m+1), symmetrizes adjacency, computes
+    graph Laplacian eigenvalues, and returns H₂².
+
+    A8 (Young et al. 2013): edges are weighted aᵢⱼ = 1/m, matching the
+    paper's linear-consensus model dxᵢ/dt = Σ_{j∈Nᵢ} aᵢⱼ(xⱼ−xᵢ) + ξᵢ,
+    where each bird averages over its m neighbours rather than summing
+    them unweighted. The paper shows uniform 1/m weighting gives the
+    best robustness — distance-proportional and order-based weights
+    are strictly worse (Fig. S1).
+
+    Args:
+        positions: (N, 3) float32 array.
+        m: number of neighbours per node.
+        tree: optional pre-built cKDTree to avoid rebuild.
+
+    Returns:
+        (h2_squared, h2) — H₂² and H₂.
+    """
+    N = len(positions)
+    if N < 2 or m < 1:
+        return 0.0, 0.0
+
     try:
-        eigenvals = eigh(L.toarray(), eigvals_only=True)
+        eigenvals = _knn_laplacian_eigenvalues(positions, m, tree)
+        if eigenvals is None:
+            # "not rows" degenerate case from the helper (shouldn't
+            # occur for N>=2, m>=1, kept for parity with the pre-refactor
+            # early return).
+            return float('inf'), float('inf')
         # Check if graph is disconnected: algebraic connectivity λ₁ ≈ 0
         # (more than one zero eigenvalue means >1 connected component)
         if eigenvals[1] < 1e-10:
@@ -630,6 +663,47 @@ def compute_h2(positions: np.ndarray, m: int, tree=None) -> tuple[float, float]:
         return h2_sq, h2
     except Exception:
         return 0.0, 0.0
+
+
+def compute_convergence_speed(positions: np.ndarray, m: int, tree=None) -> float:
+    """A10 (Young et al. 2013): consensus convergence speed λ₂(L).
+
+    The algebraic connectivity (Fiedler value) of the same m-nearest-
+    neighbour graph Laplacian H₂ is built from — the second-smallest
+    eigenvalue, λ₂. Since L is always real and symmetric here (S1.8's
+    max-form symmetrization), this is exactly Re(λ₂(L)) with no
+    complex-number handling needed.
+
+    This is deliberately a *different* quantity from H₂: the paper's
+    headline result is that speed and robustness trade off oppositely
+    as m grows — λ₂ increases monotonically with m (faster consensus,
+    no interior optimum), while H₂ decreases (this file's compute_h2).
+    Real flocks are shaped by robustness, not raw convergence speed —
+    this metric exists to make that contrast observable, not to change
+    which m* gets selected (find_optimal_m is unaffected).
+
+    λ₂ = 0 exactly when the graph is disconnected — the mathematically
+    correct value (no special-casing needed, unlike H₂'s +∞).
+
+    Args:
+        positions: (N, 3) float32 array.
+        m: number of neighbours per node.
+        tree: optional pre-built cKDTree to avoid rebuild.
+
+    Returns:
+        λ₂(L) — 0.0 for N<2, m<1, a disconnected graph, or on any
+        eigendecomposition failure (matches compute_h2's own
+        degrade-to-a-safe-scalar policy for that case, though its
+        failure value there is 0.0 too — the two happen to agree here
+        even though their disconnected-graph values differ).
+    """
+    try:
+        eigenvals = _knn_laplacian_eigenvalues(positions, m, tree)
+        if eigenvals is None or len(eigenvals) < 2:
+            return 0.0
+        return float(max(0.0, eigenvals[1]))
+    except Exception:
+        return 0.0
 
 
 def find_optimal_m(positions: np.ndarray, tree=None) -> tuple[int, float]:
@@ -685,6 +759,11 @@ def _compute_expensive_metrics(m: FlockMetrics, positions: np.ndarray, n: int) -
 
     # P9.6: Marginal efficiency η(m)
     m.eta_m = _compute_eta_m(positions, tree, optimal_m)
+
+    # A10: convergence speed λ₂(L) at the same m* found for H₂ above —
+    # computed at the robustness-optimal neighbour count so the two
+    # numbers are directly comparable (robustness vs speed distinction).
+    m.convergence_speed = compute_convergence_speed(positions, optimal_m, tree)
 
     # Gyration radius (P9.7: robust — median CoM, top-15% trim)
     m.gyration_radius = compute_gyration(positions)

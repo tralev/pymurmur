@@ -260,6 +260,26 @@ def test_eta_m_small_flock_returns_none():
     assert eta is None, f"Small flock → None, got {eta}"
 
 
+def test_metrics_collector_computes_convergence_speed():
+    """A10: MetricsCollector populates convergence_speed alongside h2
+    at the same gated expensive-metrics interval."""
+    from pymurmur.core.config import SimConfig
+    from pymurmur.physics.flock import PhysicsFlock
+
+    cfg = SimConfig()
+    cfg.num_boids = 30
+    cfg.metrics_detail_level = 2
+    flock = PhysicsFlock(cfg)
+    flock.active[:] = True
+    collector = MetricsCollector(cfg)
+    collector.collect(flock, 0)
+    snap = collector.snapshot()
+
+    assert snap.convergence_speed is not None, "convergence_speed was never computed"
+    assert np.isfinite(snap.convergence_speed)
+    assert snap.convergence_speed >= 0.0
+
+
 def test_eta_m_in_flock_metrics():
     """P9.6: eta_m field exists on FlockMetrics."""
     m = FlockMetrics()

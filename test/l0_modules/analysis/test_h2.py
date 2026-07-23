@@ -6,7 +6,7 @@ k-NN graph, Laplacian eigenvalues, cost-optimal m*.
 import numpy as np
 import pytest
 
-from pymurmur.analysis.metrics import compute_h2, find_optimal_m
+from pymurmur.analysis.metrics import compute_convergence_speed, compute_h2, find_optimal_m
 from pymurmur.core.config import SimConfig
 from pymurmur.simulation.engine import SimulationEngine
 
@@ -171,3 +171,98 @@ class TestH2Robustness:
         h2_values = [snap.h2 for snap in sim.metrics.history if snap.h2 is not None]
         assert len(h2_values) >= 1, "H₂ was never computed"
         assert all(np.isfinite(h) and h >= 0 for h in h2_values)
+
+
+class TestConvergenceSpeed:
+    """A10: consensus convergence speed λ₂(L) — the algebraic
+    connectivity / Fiedler value of the same k-NN Laplacian H₂ is
+    built from. Distinct from H₂: increases monotonically with m
+    (no interior optimum), where H₂ decreases."""
+
+    def test_n_less_than_2_returns_zero(self):
+        positions = np.array([[0, 0, 0]], dtype=np.float32)
+        assert compute_convergence_speed(positions, m=5) == 0.0
+
+    def test_m_zero_returns_zero(self):
+        positions = np.random.uniform(0, 10, (10, 3)).astype(np.float32)
+        assert compute_convergence_speed(positions, m=0) == 0.0
+
+    def test_negative_m_returns_zero(self):
+        positions = np.random.uniform(0, 10, (10, 3)).astype(np.float32)
+        assert compute_convergence_speed(positions, m=-1) == 0.0
+
+    def test_disconnected_graph_returns_exactly_zero(self):
+        """Unlike H₂ (which returns +inf on disconnection — infinite
+        disagreement), λ₂ = 0 exactly is the mathematically correct
+        value for a disconnected graph — no special-casing needed.
+        Reuses the same two-cluster fixture as
+        TestH2Robustness.test_h2_inf_when_disconnected, so both
+        metrics are shown disagreeing about the *same* graph.
+        """
+        pts = np.array(
+            [[0, 0, 0], [1, 0, 0], [1000, 0, 0], [1001, 0, 0]], dtype=np.float32
+        )
+        _, h2 = compute_h2(pts, m=1)
+        speed = compute_convergence_speed(pts, m=1)
+        assert not np.isfinite(h2), "sanity check: this graph must be disconnected"
+        assert speed == 0.0
+
+    def test_hand_3node_k3_lambda2(self):
+        """Same 3-node m=2 complete-graph K3 setup as
+        test_uniform_1m_weighting_scales_h2: weighted (aᵢⱼ=0.5)
+        eigenvalues are exactly {0, 1.5, 1.5}, so λ₂ = 1.5 exactly.
+        """
+        positions = np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0]], dtype=np.float32)
+        speed = compute_convergence_speed(positions, m=2)
+        assert speed == pytest.approx(1.5, abs=1e-6)
+
+    def test_a10_robustness_vs_speed_contrast(self):
+        """The headline A10 claim: as m grows, H₂ (robustness) falls
+        while λ₂ (convergence speed) rises — opposite trends on the
+        exact same graph sequence, which is why a finite m* exists at
+        all (nature trades some speed for robustness, not the other
+        way around).
+        """
+        rng = np.random.default_rng(7)
+        positions = rng.uniform(0, 100, (60, 3)).astype(np.float32)
+        ms = [2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 20]
+
+        h2_values = []
+        speed_values = []
+        for m in ms:
+            _, h2 = compute_h2(positions, m)
+            h2_values.append(h2)
+            speed_values.append(compute_convergence_speed(positions, m))
+
+        # H2: monotonically non-increasing (skip the disconnected m=2
+        # inf, which trivially "decreases" to the next finite value).
+        finite_h2 = [h for h in h2_values if np.isfinite(h)]
+        assert all(
+            finite_h2[i] >= finite_h2[i + 1] - 1e-9
+            for i in range(len(finite_h2) - 1)
+        ), f"H2 should be non-increasing in m: {finite_h2}"
+
+        # Convergence speed: monotonically non-decreasing, no interior
+        # optimum, over the identical m range and positions.
+        assert all(
+            speed_values[i] <= speed_values[i + 1] + 1e-9
+            for i in range(len(speed_values) - 1)
+        ), f"convergence speed should be non-decreasing in m: {speed_values}"
+
+        # The contrast itself: speed's last value is well above its
+        # first (finite) value, while H2's last value is well below
+        # its first — genuinely opposite trends, not just "both flat".
+        assert speed_values[-1] > speed_values[2] * 2, (
+            "convergence speed should rise substantially over the m range"
+        )
+        assert finite_h2[-1] < finite_h2[0] * 0.5, (
+            "H2 should fall substantially over the m range"
+        )
+
+    def test_prebuilt_tree_same_result(self):
+        from scipy.spatial import cKDTree
+        positions = np.random.uniform(0, 50, (15, 3)).astype(np.float32)
+        tree = cKDTree(positions)
+        speed_no_tree = compute_convergence_speed(positions, m=4)
+        speed_with_tree = compute_convergence_speed(positions, m=4, tree=tree)
+        assert speed_no_tree == pytest.approx(speed_with_tree, rel=0.01)

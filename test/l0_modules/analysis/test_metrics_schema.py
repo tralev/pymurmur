@@ -97,6 +97,8 @@ class TestFlockMetricsToDict:
             "h2", "tau_rho", "msd",
             "gyration_radius", "aspect_ratio", "thickness_ratio",
             "optimal_m", "suggested_m", "eta_m",
+            # A10: convergence speed λ₂(L)
+            "convergence_speed",
             # P9.2: MSD curve fields
             "msd_slope", "msd_crossover", "msd_curve",
             # P9.3: Hull-volume density
