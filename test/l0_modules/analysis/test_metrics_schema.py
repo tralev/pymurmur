@@ -99,6 +99,8 @@ class TestFlockMetricsToDict:
             "optimal_m", "suggested_m", "eta_m",
             # A10: convergence speed λ₂(L)
             "convergence_speed",
+            # B3: max pairwise 3D distance (fragmentation)
+            "r_max",
             # P9.2: MSD curve fields
             "msd_slope", "msd_crossover", "msd_curve",
             # P9.3: Hull-volume density

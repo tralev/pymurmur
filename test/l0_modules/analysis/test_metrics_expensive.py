@@ -9,6 +9,7 @@ from pymurmur.analysis.metrics import (
     _density_histogram,
     compute_gyration,
     compute_msd,
+    compute_r_max,
     compute_shape,
     compute_tau_rho,
     compute_theta_prime,
@@ -117,6 +118,91 @@ class TestGyration:
         rg = compute_gyration(positions)
         assert rg > 0
         assert np.isfinite(rg)
+
+
+class TestRMax:
+    """B3 (Pearce et al. 2014): R_max — max pairwise 3D distance
+    (flock diameter / fragmentation tracking)."""
+
+    def test_n_less_than_2_returns_zero(self):
+        """N < 2 -> no pairs to compare -> 0.0."""
+        positions = np.array([[0, 0, 0]], dtype=np.float32)
+        assert compute_r_max(positions) == 0.0
+
+    def test_hand_computed_3_4_5_triangle(self):
+        """3 points forming a 3-4-5 right triangle: pairwise distances
+        are exactly {3, 4, 5}, so R_max == 5."""
+        positions = np.array(
+            [[0, 0, 0], [3, 0, 0], [0, 4, 0]], dtype=np.float32
+        )
+        assert compute_r_max(positions) == pytest.approx(5.0, abs=1e-6)
+
+    def test_larger_spread_gives_larger_r_max(self):
+        """A wider point cloud has a larger diameter than a tighter one."""
+        rng = np.random.default_rng(3)
+        tight = rng.uniform(-1, 1, (50, 3)).astype(np.float32)
+        wide = rng.uniform(-100, 100, (50, 3)).astype(np.float32)
+        assert compute_r_max(wide) > compute_r_max(tight)
+
+    def test_metrics_collector_computes_r_max(self):
+        """MetricsCollector populates r_max at the gated expensive-metrics
+        interval, alongside the other shape/extent metrics."""
+        cfg = SimConfig()
+        cfg.mode = "spatial"
+        cfg.num_boids = 30
+        cfg.metrics_detail_level = 2
+        cfg.metrics_interval = 4
+
+        sim = SimulationEngine(cfg)
+        sim.run_headless(steps=12)
+
+        computed = [s for s in sim.metrics.history if s.r_max is not None]
+        assert len(computed) >= 2, f"Only {len(computed)} frames had r_max"
+        for snap in computed:
+            assert snap.r_max > 0
+            assert np.isfinite(snap.r_max)
+
+    @pytest.mark.slow
+    @pytest.mark.xfail(
+        reason=(
+            "B3's headline claim (Pearce et al. 2014): the swarm does not "
+            "fragment unless phi_p=0, even tiny projection coupling "
+            "maintains 3D cohesion. Measured directly: with an open "
+            "boundary (required -- toroidal wrap would cap R_max at the "
+            "domain diagonal regardless of phi_p), N=100, seed=7, over "
+            "300-3000 frames and phi_a in {0.0, 0.3, 0.8}, R_max at "
+            "phi_p=0 vs phi_p=0.03 differs by ~1% -- noise-level, not the "
+            "dramatic divergence the paper describes. Either pymurmur's "
+            "noise/steering calibration differs enough from the source "
+            "paper's exact setup that the effect doesn't reproduce at "
+            "these settings, or a much longer horizon / different N is "
+            "needed. Flagged for follow-up rather than asserting a "
+            "threshold the current implementation doesn't actually clear."
+        ),
+        strict=False,
+    )
+    def test_swarm_cohesion_requires_projection_coupling(self):
+        """B3: swarm should not fragment when phi_p > 0, but should
+        fragment more freely at phi_p = 0 (Pearce et al. 2014)."""
+        def _final_r_max(phi_p, steps=1000, seed=7):
+            cfg = SimConfig()
+            cfg.mode = "projection"
+            cfg.num_boids = 100
+            cfg.seed = seed
+            cfg.boundary_mode = "open"  # toroidal wrap would mask fragmentation
+            cfg.projection.phi_p = phi_p
+            sim = SimulationEngine(cfg)
+            sim.run_headless(steps=steps)
+            return compute_r_max(sim.flock.positions[sim.flock.active])
+
+        r_max_uncoupled = _final_r_max(phi_p=0.0)
+        r_max_coupled = _final_r_max(phi_p=0.03)  # default phi_p
+
+        assert r_max_coupled < r_max_uncoupled * 0.9, (
+            f"phi_p=0 (uncoupled) R_max={r_max_uncoupled:.1f} should "
+            f"substantially exceed phi_p=0.03 (coupled) "
+            f"R_max={r_max_coupled:.1f}"
+        )
 
 
 class TestMSD:

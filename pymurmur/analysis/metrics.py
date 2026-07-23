@@ -68,6 +68,7 @@ class FlockMetrics:
     msd_crossover: int | None = None # P9.2: lag where slope drops below 1.5
     msd_curve: list[float] | None = None  # P9.2: MSD values per log-spaced lag
     gyration_radius: float | None = None   # P9.7: robust gyration (median CoM, top-15% trim)
+    r_max: float | None = None             # B3: max pairwise 3D distance — swarm fragmentation
     aspect_ratio: float | None = None      # flock elongation (PCA)
     thickness_ratio: float | None = None   # flock flatness (PCA)
     optimal_m: float | None = None         # cost-optimal neighbour count m*
@@ -429,6 +430,7 @@ class MetricsCollector:
             m.suggested_m = async_m.suggested_m
             m.eta_m = async_m.eta_m
             m.convergence_speed = async_m.convergence_speed
+            m.r_max = async_m.r_max
         self._async_result = None
 
     def snapshot(self) -> FlockMetrics:
@@ -499,7 +501,7 @@ class MetricsCollector:
             "h2", "tau_rho", "hull_volume", "density_rho",
             "msd", "msd_slope", "msd_crossover", "msd_curve",
             "gyration_radius", "aspect_ratio", "thickness_ratio",
-            "optimal_m", "suggested_m", "eta_m", "convergence_speed",
+            "optimal_m", "suggested_m", "eta_m", "convergence_speed", "r_max",
         ):
             raw_val = getattr(raw, field_name)
             if raw_val is not None:
@@ -768,6 +770,9 @@ def _compute_expensive_metrics(m: FlockMetrics, positions: np.ndarray, n: int) -
     # Gyration radius (P9.7: robust — median CoM, top-15% trim)
     m.gyration_radius = compute_gyration(positions)
 
+    # B3: max pairwise 3D distance — swarm fragmentation tracking
+    m.r_max = compute_r_max(positions)
+
     # MSD (from collector's snapshots — computed by the collector)
 
 
@@ -831,6 +836,35 @@ def compute_gyration(positions: np.ndarray) -> float:
         return 0.0
     kept = dists[:keep]
     return float(np.sqrt(np.mean(kept ** 2)))
+
+
+def compute_r_max(positions: np.ndarray) -> float:
+    """B3 (Pearce et al. 2014): R_max(t) = max_{i,j} |rᵢ(t) − rⱼ(t)|.
+
+    The flock's 3D diameter — the largest pairwise Euclidean distance
+    between any two birds. Tracks whether the swarm fragments. Key
+    empirical result: the swarm does NOT fragment unless φp = 0 — even
+    tiny projection coupling (φp > 0) maintains 3D cohesion, stronger
+    than local Reynolds models achieve. This metric exists to make
+    that fragmentation (or lack of it) directly observable.
+
+    O(N²) time and memory (scipy's condensed pairwise-distance matrix)
+    — the same "expensive metrics" tier as this module's other O(N²)/
+    O(N log N) gated observables. Cheaper than h2's O(N³) dense
+    eigendecomposition at the same gate, so this introduces no new
+    scaling bottleneck at the sizes already accepted there.
+
+    Args:
+        positions: (N, 3) float32 array.
+
+    Returns:
+        R_max ≥ 0. Returns 0.0 for N < 2 (no pairs to compare).
+    """
+    N = len(positions)
+    if N < 2:
+        return 0.0
+    from scipy.spatial.distance import pdist
+    return float(np.max(pdist(positions)))
 
 
 # P4.4: Convert simulation units to real-world physical units
