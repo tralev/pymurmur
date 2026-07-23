@@ -12,6 +12,7 @@ from pymurmur.analysis.metrics import (
     compute_r_max,
     compute_shape,
     compute_tau_rho,
+    compute_theta_accel_correlation,
     compute_theta_prime,
     find_optimal_m,
 )
@@ -382,6 +383,115 @@ class TestTauRho:
 
         computed_tau = [s for s in sim.metrics.history if s.tau_rho is not None and s.tau_rho > 0]
         assert len(computed_tau) >= 1, f"tau_rho never computed: {len(computed_tau)} frames"
+
+
+class TestThetaAccelCorrelation:
+    """B9 (Pearce et al. 2014): cross-correlation between horizontal
+    COM acceleration and internal opacity Theta."""
+
+    def test_insufficient_samples_returns_none(self):
+        curve, peak = compute_theta_accel_correlation(
+            [np.zeros(3)] * 3, [0.1, 0.2, 0.3]
+        )
+        assert curve is None
+        assert peak is None
+
+    def test_length_mismatch_returns_none(self):
+        curve, peak = compute_theta_accel_correlation(
+            [np.zeros(3)] * 8, [0.1] * 6
+        )
+        assert curve is None
+        assert peak is None
+
+    def test_constant_theta_returns_none(self):
+        """Zero-variance theta -> degenerate, can't correlate."""
+        rng = np.random.default_rng(2)
+        vel = list(rng.normal(0, 1, (10, 3)).astype(np.float64))
+        theta = [0.3] * 10
+        curve, peak = compute_theta_accel_correlation(vel, theta)
+        assert curve is None
+        assert peak is None
+
+    def test_constant_velocity_returns_none(self):
+        """Zero-variance acceleration (constant velocity) -> degenerate."""
+        vel = [np.array([1.0, 2.0, 0.0])] * 10
+        theta = list(np.linspace(0.1, 0.9, 10))
+        curve, peak = compute_theta_accel_correlation(vel, theta)
+        assert curve is None
+        assert peak is None
+
+    def test_engineered_lag_is_recovered(self):
+        """theta is built to track accel_mag exactly at a lag of 2
+        sample-steps -- the recovered peak_lag must land there
+        (verified against the function's own output while designing
+        this test, not hand-derived on paper -- cross-correlation of
+        two constructed signals is easy to get subtly wrong by hand)."""
+        rng = np.random.default_rng(1)
+        n = 20
+        vel = rng.normal(0, 1, (n, 3)).astype(np.float64)
+        vel[:, 2] = 0.0
+        accel_mag = np.linalg.norm(np.diff(vel[:, :2], axis=0), axis=1)  # (n-1,)
+
+        lag_samples = 2
+        theta = np.full(n, 0.3)
+        for i in range(len(accel_mag)):
+            idx = i + 1 + lag_samples
+            if idx < n:
+                theta[idx] = 0.3 + 0.1 * accel_mag[i]
+
+        curve, peak_lag = compute_theta_accel_correlation(
+            list(vel), list(theta), interval=10, buffer_size=500
+        )
+        assert curve is not None
+        assert peak_lag == lag_samples * 10, (
+            f"expected peak at {lag_samples} sample-steps "
+            f"({lag_samples * 10} frames), got {peak_lag} frames"
+        )
+        assert curve[lag_samples] == pytest.approx(max(curve, key=abs), abs=1e-9)
+
+    def test_metrics_collector_computes_theta_accel_correlation(self):
+        """Projection mode, enough frames to fill the buffer past the
+        >=6-sample threshold (10-frame cadence -> need >=60 frames)."""
+        cfg = SimConfig()
+        cfg.mode = "projection"
+        cfg.num_boids = 40
+        cfg.seed = 5
+        cfg.metrics_detail_level = 2
+        cfg.metrics_interval = 5
+
+        sim = SimulationEngine(cfg)
+        sim.run_headless(steps=200)
+
+        computed = [
+            s for s in sim.metrics.history if s.theta_accel_correlation is not None
+        ]
+        assert len(computed) >= 1, "theta_accel_correlation was never computed"
+        for snap in computed:
+            assert isinstance(snap.theta_accel_correlation, list)
+            assert len(snap.theta_accel_correlation) > 0
+            assert all(np.isfinite(c) for c in snap.theta_accel_correlation)
+            assert snap.theta_accel_peak_lag is not None
+            assert snap.theta_accel_peak_lag >= 0
+
+    def test_non_projection_mode_stays_none(self):
+        """theta is NaN outside projection mode, so the buffers never
+        populate and the fields stay None even at detail_level=2 with
+        plenty of frames."""
+        cfg = SimConfig()
+        cfg.mode = "spatial"
+        cfg.num_boids = 40
+        cfg.metrics_detail_level = 2
+        cfg.metrics_interval = 5
+
+        sim = SimulationEngine(cfg)
+        sim.run_headless(steps=200)
+
+        assert all(
+            s.theta_accel_correlation is None for s in sim.metrics.history
+        )
+        assert all(
+            s.theta_accel_peak_lag is None for s in sim.metrics.history
+        )
 
 
 class TestFindOptimalM:

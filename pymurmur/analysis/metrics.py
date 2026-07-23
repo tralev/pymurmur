@@ -61,6 +61,8 @@ class FlockMetrics:
     # ── Expensive (O(N²) or O(N log N), gated) ───────────────────
     h2: float | None = None       # H₂ consensus robustness
     tau_rho: float | None = None  # density autocorrelation time (frames)
+    theta_accel_correlation: list[float] | None = None  # B9: C(δt), accel vs opacity
+    theta_accel_peak_lag: int | None = None  # B9: δt (frames) where |C(δt)| peaks
     hull_volume: float | None = None  # P9.3: convex hull volume
     density_rho: float | None = None  # P9.3: N / hull_volume
     msd: float | None = None      # P9.2: mean squared displacement (longest lag)
@@ -157,6 +159,11 @@ class MetricsCollector:
         self._hull_density_ring: list[float] = []        # P9.3: hull density ring buffer
         self._hull_density_maxlen: int = 500             # P9.3: max ring buffer slots
         self._hull_density_interval: int = 10            # P9.3: sample every N frames
+        # B9: COM velocity + theta ring buffers for the accel/opacity
+        # cross-correlation — same cadence/cap as the hull-density ring
+        # (projection-mode only, since theta is NaN elsewhere).
+        self._accel_com_vel_ring: list[np.ndarray] = []
+        self._accel_theta_ring: list[float] = []
         self._detail_level = config.metrics_detail_level if config else 1
         self._interval = config.metrics_interval if config else 60
         # D19: History cap — ring-buffer truncation prevents unbounded growth
@@ -372,6 +379,26 @@ class MetricsCollector:
                 if rho_latest > 0:
                     m.hull_volume = n / rho_latest
 
+        # B9: COM velocity + theta ring buffers, same cadence as the hull
+        # density ring — projection-mode only, since theta is NaN elsewhere.
+        if (self._detail_level >= 2 and frame % self._hull_density_interval == 0
+                and self._mode == 'projection' and np.isfinite(m.theta)):
+            self._accel_com_vel_ring.append(velocities.mean(axis=0))
+            self._accel_theta_ring.append(m.theta)
+            if len(self._accel_com_vel_ring) > self._hull_density_maxlen:
+                self._accel_com_vel_ring.pop(0)
+                self._accel_theta_ring.pop(0)
+
+        if self._detail_level >= 2 and len(self._accel_theta_ring) >= 6:
+            curve, peak_lag = compute_theta_accel_correlation(
+                self._accel_com_vel_ring,
+                self._accel_theta_ring,
+                interval=self._hull_density_interval,
+                buffer_size=self._hull_density_maxlen,
+            )
+            m.theta_accel_correlation = curve
+            m.theta_accel_peak_lag = peak_lag
+
         self._history.append(m)
         # S3.11: EMA readout smoothing (display-only, raw history untouched).
         # Uses an EMA factor α = readout_smooth; 0 = passthrough.
@@ -502,6 +529,7 @@ class MetricsCollector:
             "msd", "msd_slope", "msd_crossover", "msd_curve",
             "gyration_radius", "aspect_ratio", "thickness_ratio",
             "optimal_m", "suggested_m", "eta_m", "convergence_speed", "r_max",
+            "theta_accel_correlation", "theta_accel_peak_lag",
         ):
             raw_val = getattr(raw, field_name)
             if raw_val is not None:
@@ -1226,6 +1254,81 @@ def compute_tau_rho_hull(
         tau_sum += r
 
     return float(tau_sum * interval)
+
+
+def compute_theta_accel_correlation(
+    com_vel_ring: list[np.ndarray],
+    theta_ring: list[float],
+    interval: int = 10,
+    buffer_size: int = 500,
+) -> tuple[list[float] | None, int | None]:
+    """B9 (Pearce et al. 2014): cross-correlation between horizontal
+    COM acceleration and internal opacity, C(δt) = corr(a_horiz_COM(t),
+    Θ(t+δt)).
+
+    Real starling murmurations show opacity changing significantly
+    within seconds of rapid horizontal acceleration — suggesting
+    opacity mediates long-range 3D information transfer, faster than
+    nearest-neighbour propagation. This computes that correlation curve
+    from ring-buffer samples of COM velocity and Θ, sampled at the same
+    cadence (mirrors compute_tau_rho_hull's ring-buffer/lag-cap
+    convention, but as a cross-correlation between two series instead
+    of an autocorrelation of one).
+
+    com_vel_ring holds full 3D COM velocity samples (only the
+    horizontal x,y components are used — z is "up" in this codebase).
+    Acceleration is derived as the per-sample-step difference of
+    horizontal velocity; this is proportional to true acceleration but
+    not divided by interval·dt_phys, since Pearson correlation is
+    invariant to a positive linear rescaling of one series — the
+    lag-δt curve and its peak are identical either way, so the division
+    is skipped.
+
+    Args:
+        com_vel_ring: list of (3,) COM velocity samples, oldest first.
+        theta_ring: list of Θ samples, same length, same instants.
+        interval: frames between consecutive samples (default 10).
+        buffer_size: capacity of the ring buffer the samples were drawn
+            from (default 500) — the 0.25·buffer_size max-lag cap is
+            relative to this capacity, matching compute_tau_rho_hull.
+
+    Returns:
+        (curve, peak_lag) — C(δt) for δt = 0..max_lag, indexed by
+        sample-step (curve[i] is the correlation at a lag of i sample
+        steps), and peak_lag = the δt (converted to **frame** units via
+        `interval`, matching compute_tau_rho_hull's frame-unit
+        convention) at which |C(δt)| is largest.
+        (None, None) if there are too few samples or either series is
+        degenerate (zero variance — e.g. a perfectly steady flock).
+    """
+    n = len(theta_ring)
+    if n < 6 or len(com_vel_ring) != n:
+        return None, None
+
+    vel_arr = np.array(com_vel_ring, dtype=np.float64)  # (n, 3)
+    accel_xy = np.diff(vel_arr[:, :2], axis=0)  # (n-1, 2)
+    accel_mag = np.linalg.norm(accel_xy, axis=1)  # (n-1,)
+    theta_arr = np.array(theta_ring[1:], dtype=np.float64)  # (n-1,), aligned
+
+    m = len(accel_mag)
+    if m < 4:
+        return None, None
+
+    accel_mean, accel_std = accel_mag.mean(), accel_mag.std()
+    theta_mean, theta_std = theta_arr.mean(), theta_arr.std()
+    if accel_std < 1e-12 or theta_std < 1e-12:
+        return None, None
+
+    max_lag = min(m - 1, max(1, int(0.25 * buffer_size)))
+    curve: list[float] = []
+    for lag in range(0, max_lag + 1):
+        a = accel_mag[: m - lag]
+        t = theta_arr[lag:]
+        c = float(np.mean((a - accel_mean) * (t - theta_mean)) / (accel_std * theta_std))
+        curve.append(c)
+
+    peak_lag = int(np.argmax(np.abs(curve))) * interval
+    return curve, peak_lag
 
 
 # ── P9.4: 2D silhouette Θ' ────────────────────────────────────

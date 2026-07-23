@@ -101,6 +101,8 @@ class TestFlockMetricsToDict:
             "convergence_speed",
             # B3: max pairwise 3D distance (fragmentation)
             "r_max",
+            # B9: accel-vs-opacity cross-correlation
+            "theta_accel_correlation", "theta_accel_peak_lag",
             # P9.2: MSD curve fields
             "msd_slope", "msd_crossover", "msd_curve",
             # P9.3: Hull-volume density
