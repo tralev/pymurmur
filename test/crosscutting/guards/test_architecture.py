@@ -71,6 +71,14 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.core.types",
         "pymurmur.core.config",
         "pymurmur.physics.boid",
+        "pymurmur.physics.spatial_index",
+    },
+
+    # ── Tier 1: physics/spatial_index (L1 atom, extracted from flock.py
+    # for file-size — SpatialHashGrid/KDTreeIndex) — core only ──
+    "pymurmur.physics.spatial_index": {
+        "pymurmur.core.types",
+        "pymurmur.core.config",  # TYPE_CHECKING only
     },
 
     # ── Tier 2: physics/forces (L1, L0) ──
@@ -95,10 +103,21 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.forces._mode",
         "pymurmur.physics.forces._base",
         "pymurmur.physics.forces._kernels",
+        "pymurmur.physics.forces.spatial_helpers",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
         "pymurmur.physics.flock",
         "pymurmur.core.config",
+    },
+    # File-size split from spatial.py: neighbour-query/filter helpers
+    # (_query_neighbors, _apply_hybrid_filter, _maybe_perception_filter,
+    # _predator_escape). Imports .spatial locally (inside function
+    # bodies, not at module level) for _dispatch_kernels — breaks what
+    # would otherwise be a module-level circular import.
+    "pymurmur.physics.forces.spatial_helpers": {
+        "pymurmur.core.types",
+        "pymurmur.core.config",
+        "pymurmur.physics.forces.spatial",
     },
     "pymurmur.physics.forces.projection": {
         "pymurmur.core.types",
@@ -244,6 +263,15 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.flock",
         "pymurmur.physics.boid",
         "pymurmur.physics.obstacles",  # P11.4: ObstacleScene evaluation
+        "pymurmur.analysis.evoflock_objectives",
+    },
+    # File-size split from evoflock.py: per-step objective collector +
+    # objective-function helpers (_ObjectiveCollector, load_obstacle_scene,
+    # _trapezoid, _linear_ramp, _pareto_front).
+    "pymurmur.analysis.evoflock_objectives": {
+        "pymurmur.core.types",
+        "pymurmur.physics.obstacles",
+        "pymurmur.analysis.evoflock",  # TYPE_CHECKING only (Genome)
     },
     "pymurmur.analysis.phase_diagram": {
         "pymurmur.core.types",
@@ -826,6 +854,7 @@ def test_no_cKDTree_in_forces():
     """No cKDTree construction in physics/forces/."""
     known = {
         "pymurmur/physics/forces/spatial.py",
+        "pymurmur/physics/forces/spatial_helpers.py",  # extracted from spatial.py
         "pymurmur/physics/forces/vicsek.py",
         "pymurmur/physics/forces/angle.py",
     }
