@@ -103,6 +103,8 @@ class TestFlockMetricsToDict:
             "r_max",
             # B9: accel-vs-opacity cross-correlation
             "theta_accel_correlation", "theta_accel_peak_lag",
+            # B14: steering-saturation "jammed" states diagnostic
+            "jamming_index",
             # P9.2: MSD curve fields
             "msd_slope", "msd_crossover", "msd_curve",
             # P9.3: Hull-volume density

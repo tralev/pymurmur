@@ -8,6 +8,7 @@ from pymurmur.analysis.metrics import (
     MetricsCollector,
     _density_histogram,
     compute_gyration,
+    compute_jamming_index,
     compute_msd,
     compute_r_max,
     compute_shape,
@@ -203,6 +204,74 @@ class TestRMax:
             f"phi_p=0 (uncoupled) R_max={r_max_uncoupled:.1f} should "
             f"substantially exceed phi_p=0.03 (coupled) "
             f"R_max={r_max_coupled:.1f}"
+        )
+
+
+class TestJammingIndex:
+    """B14 (Pearce et al. 2014): steering-saturation proxy for the
+    {phi_p, phi_a} "jammed" corner. No formula is given in the source
+    paper -- this is an engineered diagnostic, verified empirically
+    against this codebase's own dynamics rather than transcribed from
+    the paper."""
+
+    def test_zero_max_force_returns_zero(self):
+        assert compute_jamming_index(0.05, 0.0) == 0.0
+
+    def test_hand_computed_ratio(self):
+        assert compute_jamming_index(0.15, 0.15) == pytest.approx(0.0, abs=1e-9)
+        assert compute_jamming_index(0.075, 0.15) == pytest.approx(0.5, abs=1e-9)
+        assert compute_jamming_index(0.0, 0.15) == pytest.approx(1.0, abs=1e-9)
+
+    def test_clips_negative(self):
+        """force_avg > max_force shouldn't happen (steering is clamped
+        upstream), but the function must not return a negative index."""
+        assert compute_jamming_index(0.30, 0.15) == 0.0
+
+    def test_metrics_collector_computes_jamming_index(self):
+        """jamming_index is a fast field -- always finite, always in
+        [0, 1], populated every frame regardless of detail level."""
+        cfg = SimConfig()
+        cfg.mode = "projection"
+        cfg.num_boids = 30
+        cfg.metrics_detail_level = 1
+
+        sim = SimulationEngine(cfg)
+        sim.run_headless(steps=10)
+
+        for snap in sim.metrics.history:
+            assert np.isfinite(snap.jamming_index)
+            assert 0.0 <= snap.jamming_index <= 1.0
+
+    def test_normal_regime_near_zero_vs_corner_regime_elevated(self):
+        """Behavioral regression test for the B14 claim: the shipped
+        defaults (phi_p=0.03, phi_a=0.80) saturate steering at
+        max_force every frame (jamming_index~0), while the paper's
+        high-phi_p/high-phi_a corner desaturates steering substantially
+        (measured empirically at ~45-65% of max_force -> index ~0.35-0.55).
+        """
+        def _tail_avg_jamming(phi_p, phi_a, steps=400, seed=7):
+            cfg = SimConfig()
+            cfg.mode = "projection"
+            cfg.num_boids = 100
+            cfg.seed = seed
+            cfg.projection.phi_p = phi_p
+            cfg.phi_a = phi_a
+            cfg.metrics_detail_level = 1
+
+            sim = SimulationEngine(cfg)
+            sim.run_headless(steps=steps)
+
+            tail = sim.metrics.history[-100:]
+            return float(np.mean([s.jamming_index for s in tail]))
+
+        normal = _tail_avg_jamming(phi_p=0.03, phi_a=0.80)
+        corner = _tail_avg_jamming(phi_p=0.5, phi_a=0.99)
+
+        assert normal < 0.05, f"normal regime jamming_index={normal:.3f}, expected ~0"
+        assert corner > 0.2, f"corner regime jamming_index={corner:.3f}, expected >0.2"
+        assert corner > normal * 2, (
+            f"corner ({corner:.3f}) should be clearly elevated vs "
+            f"normal ({normal:.3f})"
         )
 
 

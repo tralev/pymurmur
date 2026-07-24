@@ -37,6 +37,7 @@ class FlockMetrics:
     dispersion: float = 0.0       # ⟨|r − r_com|⟩
     speed_avg: float = 0.0        # ⟨|v|⟩
     force_avg: float = 0.0        # ⟨|a|⟩
+    jamming_index: float = 0.0    # B14: steering-saturation proxy — 0=saturated, 1=locked
     power_avg: float = 0.0        # ⟨|a·v|⟩
     local_spacing: float = 0.0    # median k=7 neighbour distance
     # P9.8: Motion metrics
@@ -276,6 +277,7 @@ class MetricsCollector:
         accs = flock.last_accelerations[active]
         acc_mags = np.linalg.norm(accs, axis=1)
         m.force_avg = float(np.mean(acc_mags))
+        m.jamming_index = compute_jamming_index(m.force_avg, self._max_force)
         m.power_avg = float(np.mean(np.abs(np.sum(accs * velocities, axis=1))))
 
         # Angular momentum about the centre of mass: ⟨(r-CoM) × v⟩ = Σ(r-CoM)×v / N.
@@ -483,9 +485,9 @@ class MetricsCollector:
 
         Only applies to scalar fast-metrics (alpha, nematic_S, theta,
         theta_prime, silhouette_2d, normalized_angular_momentum,
-        dispersion, speed_avg, force_avg, power_avg, local_spacing,
-        speed_real_ms, accel_real_ms2, force_real_N, power_real_W,
-        energy_J, velocity_deviation, boundary_overshoot,
+        dispersion, speed_avg, force_avg, jamming_index, power_avg,
+        local_spacing, speed_real_ms, accel_real_ms2, force_real_N,
+        power_real_W, energy_J, velocity_deviation, boundary_overshoot,
         altitude_deviation).
 
         Expensive fields (h2, tau_rho, msd, shape, gyration) are
@@ -504,7 +506,7 @@ class MetricsCollector:
         for field_name in (
             "alpha", "nematic_S", "theta", "theta_prime", "silhouette_2d",
             "normalized_angular_momentum", "dispersion", "speed_avg",
-            "force_avg", "power_avg", "local_spacing",
+            "force_avg", "jamming_index", "power_avg", "local_spacing",
             "speed_real_ms", "accel_real_ms2", "force_real_N",
             "power_real_W", "energy_J",
             "velocity_deviation", "boundary_overshoot", "altitude_deviation",
@@ -984,6 +986,23 @@ def compute_theta_prime(positions: np.ndarray, grid_res: int = 30) -> float:
     )
     occupied = len(np.unique(linear))
     return occupied / (grid_res ** 3)
+
+
+def compute_jamming_index(force_avg: float, max_force: float) -> float:
+    """B14 (Pearce et al. 2014): steering-saturation proxy for the
+    {φp, φa} "jammed" corner. 0 = steering fully saturated at
+    max_force (turbulent, unconstrained maneuvering). 1 = steering
+    has converged near zero (v_desired ≈ v — locked, rigid
+    configuration). No formula is given in the source paper (B14
+    describes a phenomenon, not a metric) — this is an engineered
+    proxy, empirically verified in this codebase: the shipped defaults
+    (φp=0.03, φa=0.80) saturate steering at exactly max_force every
+    frame (index≈0), while the paper's high-φp/high-φa corner
+    desaturates steering to 45-65% of max_force (index≈0.35-0.55).
+    """
+    if max_force <= 0.0:
+        return 0.0
+    return float(np.clip(1.0 - force_avg / max_force, 0.0, 1.0))
 
 
 def _density_histogram(
