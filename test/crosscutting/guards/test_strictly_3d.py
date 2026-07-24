@@ -101,17 +101,25 @@ def test_2d_array_pattern_is_actually_detected(tmp_path):
 
 
 def test_domain_config_validates_positive_depth():
-    """P14.3: `core/config.py`'s DomainConfig validates depth > 0
-    wherever it mentions `depth` at all."""
-    config_py = Path("pymurmur/core/config.py")
-    if not config_py.exists():
-        pytest.skip("core/config.py not found")
+    """P14.3: DomainConfig validates depth > 0 wherever it's mentioned,
+    somewhere in the core/config*.py module family.
 
-    text = config_py.read_text()
-    if "depth" not in text:
-        pytest.skip("config.py does not mention 'depth'")
+    File-size split: config.py's cross-field validation logic
+    (including the depth check) now lives in config_validation.py, not
+    config.py itself -- scan every core/config*.py file, not just the
+    one named config.py, so this check survives future splits too.
+    """
+    config_files = sorted(Path("pymurmur/core").glob("config*.py"))
+    if not config_files:
+        pytest.skip("no core/config*.py files found")
 
-    has_validation = any(phrase in text for phrase in DEPTH_VALIDATION_PHRASES)
+    combined_text = "\n".join(f.read_text() for f in config_files)
+    if "depth" not in combined_text:
+        pytest.skip("no config*.py file mentions 'depth'")
+
+    has_validation = any(
+        phrase in combined_text for phrase in DEPTH_VALIDATION_PHRASES
+    )
     assert has_validation, (
-        "core/config.py: depth field has no positivity validation"
+        "core/config*.py: depth field has no positivity validation"
     )

@@ -56,7 +56,18 @@ THIRD_PARTY = {
 ALLOWED_EDGES: dict[str, set[str]] = {
     # ── Tier 0: core/ — numpy/stdlib only, zero pymurmur imports ──
     "pymurmur.core.types": set(),
-    "pymurmur.core.config": {"pymurmur.core.types"},
+    # File-size split: config.py is now a slim SimConfig class that
+    # composes/re-exports the modules below.
+    "pymurmur.core.config": {
+        "pymurmur.core.config_field_map",
+        "pymurmur.core.config_io",
+        "pymurmur.core.config_sections",
+        "pymurmur.core.config_validation",
+    },
+    "pymurmur.core.config_sections": set(),
+    "pymurmur.core.config_field_map": set(),
+    "pymurmur.core.config_validation": set(),
+    "pymurmur.core.config_io": {"pymurmur.core.config_field_map"},
 
     # ── Tier 0: physics/obstacles (L0 atom, P0.14) — core only ──
     "pymurmur.physics.obstacles": {"pymurmur.core.types"},
