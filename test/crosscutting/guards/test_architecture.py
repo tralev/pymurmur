@@ -348,6 +348,16 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.viz.camera",
         "pymurmur.viz.trails",
         "pymurmur.viz.mesh_registry",  # S4.4a
+        "pymurmur.viz.renderer_vao",
+        "pymurmur.viz.renderer_draw",
+    },
+    # File-size split from renderer.py: VAO-building mixin.
+    "pymurmur.viz.renderer_vao": {"pymurmur.viz.mesh_registry"},
+    # File-size split from renderer.py: drawing mixin.
+    "pymurmur.viz.renderer_draw": {
+        "pymurmur.core.types",
+        "pymurmur.viz.mesh_registry",
+        "pymurmur.physics.flock",  # TYPE_CHECKING only
     },
     "pymurmur.viz.shaders": {
         "pymurmur.core.types",
@@ -1031,10 +1041,15 @@ MAX_FILE_LINES = 600
 # (not yet split) -- update the reason when a file is added or removed.
 KNOWN_OVERSIZED_FILES: dict[str, str] = {
     "pymurmur/viz/renderer.py": (
-        "one large stateful OpenGL class (Renderer3D) -- splitting it "
-        "needs a mixin/delegation redesign plus hands-on visual "
-        "verification (launch the visualizer) that the guard suite "
-        "can't do on its own. Deferred pending explicit sign-off."
+        "VAO-building and drawing methods were already extracted to "
+        "renderer_vao.py/renderer_draw.py mixins (880 -> 634 lines), "
+        "the largest reduction available without splitting Renderer3D's "
+        "own __init__/frame-lifecycle GL-context setup -- a single "
+        "cohesive block of tightly-coupled state (buffers, programs, "
+        "FBOs) that isn't naturally divisible without fragmenting "
+        "small, related pieces just to hit the line count. Verified "
+        "with a real headless GL context + visualizer launch after "
+        "the mixin split."
     ),
 }
 
