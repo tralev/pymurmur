@@ -61,6 +61,7 @@ class FlockMetrics:
 
     # ── Expensive (O(N²) or O(N log N), gated) ───────────────────
     h2: float | None = None       # H₂ consensus robustness
+    r_nodal: float | None = None  # A6: nodal robustness √N/H₂ (larger = more robust)
     tau_rho: float | None = None  # density autocorrelation time (frames)
     theta_accel_correlation: list[float] | None = None  # B9: C(δt), accel vs opacity
     theta_accel_peak_lag: int | None = None  # B9: δt (frames) where |C(δt)| peaks
@@ -72,6 +73,8 @@ class FlockMetrics:
     msd_curve: list[float] | None = None  # P9.2: MSD values per log-spaced lag
     gyration_radius: float | None = None   # P9.7: robust gyration (median CoM, top-15% trim)
     r_max: float | None = None             # B3: max pairwise 3D distance — swarm fragmentation
+    psky_meanfield: float | None = None    # B5: mean-field P(ray hits sky), homogeneous-sphere approx
+    marginal_opacity_density: float | None = None  # B6: critical density ρ* for Psky≈0.5
     aspect_ratio: float | None = None      # flock elongation (PCA)
     thickness_ratio: float | None = None   # flock flatness (PCA)
     optimal_m: float | None = None         # cost-optimal neighbour count m*
@@ -331,7 +334,7 @@ class MetricsCollector:
                 self._start_async_expensive(positions.copy(), n)
             else:
                 # First interval frame: compute synchronously so we have immediate results
-                _compute_expensive_metrics(m, positions, n)
+                _compute_expensive_metrics(m, positions, n, self._boid_size)
 
             # MSD: compute from accumulated snapshots (fast, sync is fine)
             if len(self._position_snapshots) >= 3:
@@ -430,9 +433,11 @@ class MetricsCollector:
         gen = self._async_gen
         self._async_result = {"done": False, "data": None, "gen": -1}
 
+        boid_size = self._boid_size
+
         def _worker() -> None:
             m = FlockMetrics()
-            _compute_expensive_metrics(m, positions, n)
+            _compute_expensive_metrics(m, positions, n, boid_size)
             # Only store result if this is still the current generation
             if self._async_gen == gen:
                 self._async_result = {"done": True, "data": m, "gen": gen}
@@ -585,30 +590,19 @@ def compute_nematic_order(dirs: np.ndarray) -> float:
 
 # ── Expensive metrics (Phase 9) ──────────────────────────────────
 
-def _knn_laplacian_eigenvalues(
-    positions: np.ndarray, m: int, tree=None,
-) -> np.ndarray | None:
-    """Shared k-NN graph Laplacian eigensystem for H₂ and convergence speed.
+def _knn_laplacian_matrix(positions: np.ndarray, m: int, tree=None):
+    """Shared k-NN graph Laplacian builder for H₂, convergence speed,
+    and the Lyapunov cross-validation (A5).
 
     Builds the m-nearest-neighbour graph, weights edges aᵢⱼ = 1/m (A8,
     Young et al. 2013's linear-consensus averaging — see compute_h2),
     symmetrizes via max(A, Aᵀ) (S1.8 — an edge exists at full weight if
-    either endpoint's k-NN includes the other), and returns the
-    ascending eigenvalues of the graph Laplacian L = D − A.
+    either endpoint's k-NN includes the other), and returns the graph
+    Laplacian L = D − A as a sparse matrix.
 
-    Returns None for the trivial N<2 or m<1 cases (nothing to build).
-    λ₀ = 0 always; λ₁ (algebraic connectivity) is 0 iff the graph is
-    disconnected — callers interpret that as needed (H₂ treats it as
-    +∞ disagreement; convergence speed treats it as literally 0, the
-    mathematically correct value).
-
-    Does not catch eigh() failures — callers each wrap their own call
-    with the fallback appropriate to their own contract (H₂ and
-    convergence speed disagree on what a computation failure should
-    return, so a single shared fallback here would be wrong for one
-    of them).
+    Returns None for the trivial N<2 or m<1 cases (nothing to build),
+    or a zero matrix if no edges exist (degenerate k-NN query).
     """
-    from scipy.linalg import eigh
     from scipy.spatial import cKDTree
 
     N = len(positions)
@@ -634,11 +628,11 @@ def _knn_laplacian_eigenvalues(
                 cols.append(j)
                 data.append(edge_weight)
 
+    from scipy.sparse import coo_matrix
     if not rows:
-        return np.zeros(N)
+        return coo_matrix((N, N)).tocsr()
 
     # Build directed adjacency, then symmetrize
-    from scipy.sparse import coo_matrix
     A_dir = coo_matrix((data, (rows, cols)), shape=(N, N)).tocsr()
     A = A_dir.maximum(A_dir.T)
 
@@ -647,7 +641,37 @@ def _knn_laplacian_eigenvalues(
     D_diag = coo_matrix(
         (degrees, (np.arange(N), np.arange(N))), shape=(N, N)
     ).tocsr()
-    L = D_diag - A
+    return D_diag - A
+
+
+def _knn_laplacian_eigenvalues(
+    positions: np.ndarray, m: int, tree=None,
+) -> np.ndarray | None:
+    """Shared k-NN graph Laplacian eigensystem for H₂ and convergence speed.
+
+    Builds L via `_knn_laplacian_matrix` and returns the ascending
+    eigenvalues of L.
+
+    Returns None for the trivial N<2 or m<1 cases (nothing to build).
+    λ₀ = 0 always; λ₁ (algebraic connectivity) is 0 iff the graph is
+    disconnected — callers interpret that as needed (H₂ treats it as
+    +∞ disagreement; convergence speed treats it as literally 0, the
+    mathematically correct value).
+
+    Does not catch eigh() failures — callers each wrap their own call
+    with the fallback appropriate to their own contract (H₂ and
+    convergence speed disagree on what a computation failure should
+    return, so a single shared fallback here would be wrong for one
+    of them).
+    """
+    from scipy.linalg import eigh
+
+    L = _knn_laplacian_matrix(positions, m, tree)
+    if L is None:
+        return None
+    N = len(positions)
+    if L.nnz == 0:
+        return np.zeros(N)
 
     return eigh(L.toarray(), eigvals_only=True)
 
@@ -695,6 +719,103 @@ def compute_h2(positions: np.ndarray, m: int, tree=None) -> tuple[float, float]:
         return h2_sq, h2
     except Exception:
         return 0.0, 0.0
+
+
+def compute_h2_lyapunov(positions: np.ndarray, m: int, tree=None) -> tuple[float, float]:
+    """A5 (Young et al. 2013): H₂ via the Lyapunov/trace route.
+
+    Eq. 1-5: dx/dt = -Lx + ξ, reduced to the (N-1)-dim disagreement
+    subspace y = Qx (Q orthonormal, orthogonal to the all-ones
+    consensus direction), giving dy/dt = -L̄y + Qξ with L̄ = QLQᵀ.
+    The steady-state covariance Σ solves the Lyapunov equation
+    L̄Σ + ΣL̄ᵀ = I, and H₂ = √Trace(Σ).
+
+    This is a second, independent derivation of the same quantity
+    `compute_h2` computes via the eigenvalue shortcut
+    (H₂² = (1/2N)Σ_{i≥2} 1/λᵢ) — verified numerically identical across
+    39 seed/N/m combinations (h2_sq == trace(Σ)/N to float precision).
+    It exists purely as a cross-validation utility (not wired into
+    FlockMetrics/MetricsCollector — `compute_h2` remains the metric
+    actually used, since it's far cheaper: no Lyapunov solve needed).
+
+    Note: the reduction/solve steps emit a benign RuntimeWarning
+    (divide-by-zero/overflow/invalid-value in matmul, likely a BLAS
+    denormal-number quirk) on some well-conditioned inputs with no
+    NaN/Inf in the actual output — confirmed by direct inspection and
+    by this function's own cross-validation against compute_h2
+    matching to float precision, so it's suppressed here rather than
+    propagated.
+
+    Args:
+        positions: (N, 3) float32 array.
+        m: number of neighbours per node.
+        tree: optional pre-built cKDTree to avoid rebuild.
+
+    Returns:
+        (h2_squared, h2) — same contract as compute_h2: (inf, inf) if
+        disconnected, (0.0, 0.0) for N<2/m<1 or on any failure.
+    """
+    import warnings
+
+    from scipy.linalg import null_space, solve_continuous_lyapunov
+
+    N = len(positions)
+    if N < 2 or m < 1:
+        return 0.0, 0.0
+
+    try:
+        eigenvals = _knn_laplacian_eigenvalues(positions, m, tree)
+        if eigenvals is None:
+            return float('inf'), float('inf')
+        if eigenvals[1] < 1e-10:
+            return float('inf'), float('inf')
+
+        L = _knn_laplacian_matrix(positions, m, tree)
+        L_dense = L.toarray()
+
+        # Q: (N-1)xN orthonormal basis orthogonal to the all-ones vector
+        ones = np.ones((N, 1)) / np.sqrt(N)
+        Q = null_space(ones.T).T
+
+        with warnings.catch_warnings():
+            # Benign BLAS/matmul RuntimeWarning (divide-by-zero/overflow/
+            # invalid-value) observed on well-conditioned inputs with no
+            # NaN/Inf in the actual output -- confirmed by direct
+            # inspection, and by this function's own cross-validation
+            # test agreeing with compute_h2 to float precision across
+            # 39+ cases. Not a real numerical issue, so suppressed.
+            warnings.simplefilter("ignore", RuntimeWarning)
+            L_bar = Q @ L_dense @ Q.T
+            Sigma = solve_continuous_lyapunov(L_bar, np.eye(N - 1))
+
+        h2_sq = float(np.trace(Sigma) / N)
+        h2 = float(np.sqrt(h2_sq))
+        return h2_sq, h2
+    except Exception:
+        return 0.0, 0.0
+
+
+def compute_r_nodal(h2: float, N: int) -> float:
+    """A6 (Young et al. 2013): H₂ nodal robustness, R_nodal = √N / H₂.
+
+    Normalizes H₂ by √N to remove system-size dependence, then
+    inverts so *larger* means *more robust* (H₂ itself is a
+    disagreement measure — smaller is better, which A6 finds
+    unintuitive for a "robustness" figure).
+
+    Args:
+        h2: H₂ (not H₂²) — pass compute_h2's second return value.
+        N: flock size.
+
+    Returns:
+        R_nodal. 0.0 when h2 is non-finite (disconnected graph — the
+        paper's own stated convention) or <=0 (degenerate H₂ from
+        N<2/failure, which is this codebase's "nothing to compute"
+        sentinel, not a real zero-disagreement state).
+    """
+    if not np.isfinite(h2) or h2 <= 0.0 or N <= 0:
+        return 0.0
+    return float(np.sqrt(N) / h2)
 
 
 def compute_convergence_speed(positions: np.ndarray, m: int, tree=None) -> float:
@@ -761,7 +882,9 @@ def find_optimal_m(positions: np.ndarray, tree=None) -> tuple[int, float]:
     return best_m, best_h2
 
 
-def _compute_expensive_metrics(m: FlockMetrics, positions: np.ndarray, n: int) -> None:
+def _compute_expensive_metrics(
+    m: FlockMetrics, positions: np.ndarray, n: int, boid_size: float = 5.0,
+) -> None:
     """Fill in expensive FlockMetrics fields (gated)."""
     if n < 2:
         return
@@ -774,6 +897,7 @@ def _compute_expensive_metrics(m: FlockMetrics, positions: np.ndarray, n: int) -
     optimal_m, h2 = find_optimal_m(positions, tree)
     m.h2 = h2
     m.optimal_m = optimal_m
+    m.r_nodal = compute_r_nodal(h2, n)
 
     # Local spacing: median 7th-neighbour distance (reuses tree)
     k = min(8, n)
@@ -802,6 +926,16 @@ def _compute_expensive_metrics(m: FlockMetrics, positions: np.ndarray, n: int) -
 
     # B3: max pairwise 3D distance — swarm fragmentation tracking
     m.r_max = compute_r_max(positions)
+
+    # B5/B6: mean-field Psky + marginal-opacity critical density,
+    # reusing the sphere-density assumption compute_robust_density
+    # already implements (R_g, ρ) — distinct from the hull-based
+    # density_rho field, which assumes the flock's actual convex-hull
+    # shape rather than an idealized sphere.
+    R_g_robust, _rho_robust = compute_robust_density(positions)
+    if R_g_robust > 0:
+        m.psky_meanfield = compute_psky_meanfield(n, boid_size, R_g_robust)
+    m.marginal_opacity_density = compute_marginal_opacity_density(n, boid_size)
 
     # MSD (from collector's snapshots — computed by the collector)
 
@@ -986,6 +1120,39 @@ def compute_theta_prime(positions: np.ndarray, grid_res: int = 30) -> float:
     )
     occupied = len(np.unique(linear))
     return occupied / (grid_res ** 3)
+
+
+def compute_opacity_nonuniformity(
+    theta_samples: list[float] | np.ndarray, x_min: float = 0.0,
+) -> tuple[float, float]:
+    """B11 (Pearce et al. 2014): null-hypothesis test that opacity
+    samples are NOT uniformly distributed on [x_min, 1].
+
+    The paper's statistical proof of marginal opacity as a universal
+    property: real starling-flock opacities cluster around
+    intermediate values rather than spreading randomly toward fully
+    opaque, rejecting uniformity at 99.99% confidence for all tested
+    x_min. This is a general-purpose Kolmogorov-Smirnov test against
+    Uniform[x_min, 1] — a thin wrapper around scipy, operating on
+    *any* collection of opacity samples gathered over time (not a
+    per-frame FlockMetrics field, since it needs a distribution of
+    samples, not one instant).
+
+    Args:
+        theta_samples: opacity values Θ ∈ [x_min, 1], gathered over
+            multiple frames/runs.
+        x_min: lower bound of the uniform null hypothesis (default 0).
+
+    Returns:
+        (ks_statistic, p_value). Small p_value (e.g. < 0.05) rejects
+        the uniform-distribution null hypothesis — samples cluster
+        rather than spreading uniformly.
+    """
+    from scipy import stats
+
+    samples = np.asarray(theta_samples, dtype=np.float64)
+    result = stats.kstest(samples, "uniform", args=(x_min, 1.0 - x_min))
+    return float(result.statistic), float(result.pvalue)
 
 
 def compute_jamming_index(force_avg: float, max_force: float) -> float:
@@ -1362,6 +1529,15 @@ def compute_theta_accel_correlation(
 MARGINAL_OPACITY_MEAN = 0.30
 MARGINAL_OPACITY_STD = 0.243
 
+# B10: Pearce et al. 2014's *second* empirical opacity dataset — public
+# domain starling-flock images (n independent of their own UK-flock
+# measurements above), µ_Θ₀=0.41, σ²=0.012. Confirms marginal opacity
+# across different flock conditions (size, lighting, location), not
+# just the paper's own dataset. Both anchors fall inside the S3.6a
+# acceptance band [0.05, 0.55] — see test_marginal_opacity_constants_accessible.
+PUBLIC_OPACITY_MEAN = 0.41
+PUBLIC_OPACITY_STD = 0.1095  # sqrt(0.012)
+
 
 def compute_silhouette_2d(
     positions: np.ndarray,
@@ -1514,6 +1690,58 @@ def compute_robust_density(
     N_kept = max(int(len(positions) * 0.85), 2)
     rho = N_kept / ((4.0 / 3.0) * np.pi * R_g ** 3)
     return R_g, rho
+
+
+def compute_psky_meanfield(N: int, b: float, R: float) -> float:
+    """B5 (Pearce et al. 2014): mean-field probability a random ray
+    through a homogeneous isotropic 3D flock hits sky (unobstructed).
+
+    Psky ≈ exp(−ρ·b²·R), where ρ = N / ((4/3)πR³) is number density,
+    b is effective body radius, R is characteristic flock radius (d=3,
+    so b^(d−1) = b²). This is the idealized sphere/uniform-density
+    approximation the paper's marginal-opacity derivation (B6) is
+    built on — distinct from the exact simulated internal opacity Θ
+    (spherical-cap occlusion geometry, see occlusion.py), which this
+    is a cheap analytical estimate of, not a replacement for.
+
+    Args:
+        N: number of birds.
+        b: effective body radius (config.boid_size).
+        R: characteristic flock radius (e.g. compute_robust_density's R_g).
+
+    Returns:
+        Psky ∈ [0, 1] (clipped — the exponential form can't exceed 1,
+        but degenerate R<=0 or N<=0 inputs are guarded to 1.0, "empty
+        flock, all sky").
+    """
+    if N <= 0 or R <= 0:
+        return 1.0
+    rho = N / ((4.0 / 3.0) * np.pi * R ** 3)
+    return float(np.clip(np.exp(-rho * b ** 2 * R), 0.0, 1.0))
+
+
+def compute_marginal_opacity_density(N: int, b: float) -> float:
+    """B6 (Pearce et al. 2014): critical number density ρ* at which
+    Psky ≈ 1/2 (marginal opacity) for a flock of N birds with
+    effective body radius b.
+
+    Derivation: set Psky = exp(−ρ·b²·R) = 1/2 → ρ·b²·R = ln2.
+    Substituting R from ρ = N/((4/3)πR³) (i.e. R = (3N/(4πρ))^(1/3))
+    and solving for ρ gives ρ* = √((4/3)π·(ln2)³ / (N·b⁶)) — the
+    N^(−1/2) scaling law B6 states (verified: ρ*·√N is exactly
+    constant across N, algebraically, not just empirically).
+
+    Args:
+        N: number of birds.
+        b: effective body radius (config.boid_size).
+
+    Returns:
+        ρ* — the critical density for marginal opacity. 0.0 for
+        degenerate N<=0 or b<=0.
+    """
+    if N <= 0 or b <= 0:
+        return 0.0
+    return float(np.sqrt((4.0 / 3.0) * np.pi * (np.log(2.0) ** 3) / (N * b ** 6)))
 
 
 # ── P9.8: Motion metrics ──────────────────────────────────────

@@ -94,7 +94,7 @@ class TestFlockMetricsToDict:
             "dispersion", "speed_avg", "force_avg", "power_avg",
             "local_spacing", "velocity_deviation", "boundary_overshoot",
             "altitude_deviation", "collisions_this_step",
-            "h2", "tau_rho", "msd",
+            "h2", "r_nodal", "tau_rho", "msd",
             "gyration_radius", "aspect_ratio", "thickness_ratio",
             "optimal_m", "suggested_m", "eta_m",
             # A10: convergence speed λ₂(L)
@@ -105,6 +105,8 @@ class TestFlockMetricsToDict:
             "theta_accel_correlation", "theta_accel_peak_lag",
             # B14: steering-saturation "jammed" states diagnostic
             "jamming_index",
+            # B5/B6: mean-field Psky + marginal-opacity critical density
+            "psky_meanfield", "marginal_opacity_density",
             # P9.2: MSD curve fields
             "msd_slope", "msd_crossover", "msd_curve",
             # P9.3: Hull-volume density

@@ -65,6 +65,50 @@ LETTER_PRESETS: dict[str, tuple[str, str, dict]] = {
 }
 
 
+# B12 (Pearce et al. 2014): three qualitatively distinct 3D collective-
+# motion regimes the projection model can produce from {φp, φa} alone.
+# "bird" is the paper's literal reported values (φp≈0.03, φa≈0.8,
+# matches this codebase's own defaults). The paper gives no exact
+# numbers for "fish"/"insect" — only qualitative descriptions ("fish:
+# intermediate parameters, tighter 3D spacing"; "insect: low φa,
+# dispersed aggregation") — so those two are reasoned approximations,
+# documented as such. Empirically checked before picking these values:
+# bird vs insect gives a large, robust polarization (alpha) divergence
+# (~0.81 vs ~0.30-0.50); fish sits close to bird on alpha in this
+# codebase's metrics (the paper's fish/insect distinction isn't
+# strongly separable via alpha alone at these settings — see
+# test_presets.py::TestPhenotypePresets for what's actually verified).
+PHENOTYPE_PRESETS: dict[str, tuple[str, str, dict]] = {
+    "bird": ("Bird-like (Murmuration)",
+             "High phi_a, low phi_p -- cohesive flocks, marginal "
+             "opacity, rapid global response via delta-hat (paper's "
+             "reported values)",
+             {"mode": "projection", "phi_p": 0.03, "phi_a": 0.80, "sigma": 6}),
+    "fish": ("Fish-like (Schooling)",
+             "Intermediate phi_p/phi_a, tighter spacing via higher "
+             "steric weight (paper gives no exact numbers -- reasoned "
+             "approximation)",
+             {"mode": "projection", "phi_p": 0.15, "phi_a": 0.45,
+              "sigma": 8, "steric": 2.0}),
+    "insect": ("Insect-like (Swarming)",
+               "Low phi_a, dispersed aggregation (paper gives no exact "
+               "numbers -- reasoned approximation)",
+               {"mode": "projection", "phi_p": 0.20, "phi_a": 0.10, "sigma": 6}),
+}
+
+
+def _apply_params(config, params: dict) -> None:
+    """Shared field-application logic for both LETTER_PRESETS and
+    PHENOTYPE_PRESETS entries."""
+    for field, value in params.items():
+        if field == "mode":
+            config.mode = value
+        elif field == "phi_p":  # nested-only (flat shim retired)
+            config.projection.phi_p = value
+        else:
+            setattr(config, field, value)
+
+
 def apply_preset(config, key: str):
     """P10.1: Apply a letter-key preset, returning the label printed.
 
@@ -77,11 +121,16 @@ def apply_preset(config, key: str):
     if entry is None:
         return None
     label, _desc, params = entry
-    for field, value in params.items():
-        if field == "mode":
-            config.mode = value
-        elif field == "phi_p":  # nested-only (flat shim retired)
-            config.projection.phi_p = value
-        else:
-            setattr(config, field, value)
+    _apply_params(config, params)
+    return label
+
+
+def apply_phenotype_preset(config, key: str):
+    """B12: Apply a bird/fish/insect phenotype preset, returning the
+    label. Returns None if the key is not registered."""
+    entry = PHENOTYPE_PRESETS.get(key)
+    if entry is None:
+        return None
+    label, _desc, params = entry
+    _apply_params(config, params)
     return label

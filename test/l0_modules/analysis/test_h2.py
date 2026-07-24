@@ -6,7 +6,13 @@ k-NN graph, Laplacian eigenvalues, cost-optimal m*.
 import numpy as np
 import pytest
 
-from pymurmur.analysis.metrics import compute_convergence_speed, compute_h2, find_optimal_m
+from pymurmur.analysis.metrics import (
+    compute_convergence_speed,
+    compute_h2,
+    compute_h2_lyapunov,
+    compute_r_nodal,
+    find_optimal_m,
+)
 from pymurmur.core.config import SimConfig
 from pymurmur.simulation.engine import SimulationEngine
 
@@ -266,3 +272,106 @@ class TestConvergenceSpeed:
         speed_no_tree = compute_convergence_speed(positions, m=4)
         speed_with_tree = compute_convergence_speed(positions, m=4, tree=tree)
         assert speed_no_tree == pytest.approx(speed_with_tree, rel=0.01)
+
+
+class TestH2Lyapunov:
+    """A5 (Young et al. 2013): H₂ via the Lyapunov/trace route —
+    a second, independent derivation that must agree numerically
+    with compute_h2's eigenvalue-shortcut result."""
+
+    def test_n_less_than_2_returns_zero(self):
+        positions = np.array([[0, 0, 0]], dtype=np.float32)
+        assert compute_h2_lyapunov(positions, m=5) == (0.0, 0.0)
+
+    def test_m_zero_returns_zero(self):
+        positions = np.random.uniform(0, 10, (10, 3)).astype(np.float32)
+        assert compute_h2_lyapunov(positions, m=0) == (0.0, 0.0)
+
+    def test_disconnected_graph_returns_inf(self):
+        """Same fixture as test_h2_inf_when_disconnected -- both
+        derivations must agree it's disconnected."""
+        import math
+        pts = np.array(
+            [[0, 0, 0], [1, 0, 0], [1000, 0, 0], [1001, 0, 0]], dtype=np.float32
+        )
+        _, h2_lyap = compute_h2_lyapunov(pts, m=1)
+        assert math.isinf(h2_lyap)
+
+    def test_hand_3node_k3_matches_compute_h2(self):
+        """Same 3-node K3 (m=2) hand-computed case as A8's
+        test_uniform_1m_weighting_scales_h2: h2_sq = 2/9 exactly."""
+        positions = np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0]], dtype=np.float32)
+        h2_sq, h2 = compute_h2_lyapunov(positions, m=2)
+        assert h2_sq == pytest.approx(2.0 / 9.0, abs=1e-6)
+        assert h2 == pytest.approx(np.sqrt(2.0 / 9.0), abs=1e-6)
+
+    def test_matches_compute_h2_across_random_graphs(self):
+        """The two independent derivations (eigenvalue shortcut vs.
+        Lyapunov/trace) must agree on connected random graphs -- this
+        is the paper's own claim (A5: 'shows both paths ... same
+        answer'), verified numerically here rather than assumed."""
+        rng = np.random.default_rng(3)
+        checked = 0
+        for N in (8, 15, 30):
+            for m in (3, 5):
+                if m >= N:
+                    continue
+                positions = rng.uniform(-50, 50, (N, 3)).astype(np.float32)
+                h2_sq_eigen, _ = compute_h2(positions, m)
+                if not np.isfinite(h2_sq_eigen):
+                    continue  # skip disconnected graphs
+                h2_sq_lyap, _ = compute_h2_lyapunov(positions, m)
+                assert h2_sq_lyap == pytest.approx(h2_sq_eigen, rel=1e-6), (
+                    f"N={N} m={m}: eigen={h2_sq_eigen} lyapunov={h2_sq_lyap}"
+                )
+                checked += 1
+        assert checked >= 4, "too few connected graphs to be a meaningful check"
+
+    def test_prebuilt_tree_same_result(self):
+        from scipy.spatial import cKDTree
+        positions = np.random.uniform(0, 50, (15, 3)).astype(np.float32)
+        tree = cKDTree(positions)
+        _, h2_no_tree = compute_h2_lyapunov(positions, m=4)
+        _, h2_with_tree = compute_h2_lyapunov(positions, m=4, tree=tree)
+        assert h2_no_tree == pytest.approx(h2_with_tree, rel=0.01)
+
+
+class TestRNodal:
+    """A6 (Young et al. 2013): H₂ nodal robustness R_nodal = √N/H₂ --
+    normalized so *larger* means *more robust*, unlike H₂ itself."""
+
+    def test_disconnected_h2_gives_zero(self):
+        """Per A6's own spec: 'Zero when the graph is disconnected.'"""
+        assert compute_r_nodal(float('inf'), N=10) == 0.0
+
+    def test_degenerate_h2_gives_zero(self):
+        """h2<=0 is this codebase's N<2/failure sentinel, not a real
+        zero-disagreement state -- must not divide-by-zero to inf."""
+        assert compute_r_nodal(0.0, N=10) == 0.0
+
+    def test_hand_computed(self):
+        # R_nodal = sqrt(N)/H2
+        assert compute_r_nodal(h2=2.0, N=16) == pytest.approx(2.0, abs=1e-9)
+
+    def test_larger_h2_gives_smaller_r_nodal(self):
+        """H2 is a disagreement measure (smaller=better); R_nodal
+        inverts it, so robustness ordering flips."""
+        r_low_disagreement = compute_r_nodal(h2=0.5, N=20)
+        r_high_disagreement = compute_r_nodal(h2=2.0, N=20)
+        assert r_low_disagreement > r_high_disagreement
+
+    def test_metrics_collector_computes_r_nodal(self):
+        cfg = SimConfig()
+        cfg.mode = "spatial"
+        cfg.num_boids = 30
+        cfg.metrics_detail_level = 2
+        cfg.metrics_interval = 5
+
+        sim = SimulationEngine(cfg)
+        sim.run_headless(steps=10)
+
+        computed = [s for s in sim.metrics.history if s.r_nodal is not None]
+        assert len(computed) >= 1, "r_nodal was never computed"
+        for snap in computed:
+            assert snap.r_nodal >= 0.0
+            assert np.isfinite(snap.r_nodal)

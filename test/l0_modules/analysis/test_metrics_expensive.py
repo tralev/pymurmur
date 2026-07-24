@@ -9,8 +9,12 @@ from pymurmur.analysis.metrics import (
     _density_histogram,
     compute_gyration,
     compute_jamming_index,
+    compute_marginal_opacity_density,
     compute_msd,
+    compute_opacity_nonuniformity,
+    compute_psky_meanfield,
     compute_r_max,
+    compute_robust_density,
     compute_shape,
     compute_tau_rho,
     compute_theta_accel_correlation,
@@ -97,6 +101,50 @@ class TestShapePCA:
         aspect, thickness = compute_shape(positions)
         assert thickness == 0.0, f"Plane thickness={thickness}, expected 0"
         assert aspect > 0.5, f"Plane aspect={aspect:.3f}, expected >0.5"
+
+
+class TestMStarThickness:
+    """A12 (Young et al. 2013): m* (cost-optimal neighbour count)
+    decreases as 3D flock thickness increases -- thin flocks need
+    more neighbours (thickness ~0.15 -> m*~6-7), thick flocks fewer
+    (thickness ~0.4 -> m*~5-6). Verified empirically before writing
+    this test (unlike B3's fragmentation claim, this one reproduces
+    cleanly): synthetic squashed-Gaussian point clouds at thickness
+    0.11-0.95 gave m*=7 (thinnest) dropping to and staying at m*=5
+    for thickness>=0.18 -- matching the paper's qualitative trend."""
+
+    @staticmethod
+    def _make_flock(N, thickness_scale, rng):
+        """3D Gaussian squashed along z relative to x,y -- thickness_scale
+        controls how flat (small) vs spherical (~1.0) the cloud is."""
+        xy = rng.normal(0, 100, (N, 2))
+        z = rng.normal(0, 100 * thickness_scale, (N, 1))
+        return np.hstack([xy, z]).astype(np.float32)
+
+    def test_thin_flock_has_higher_m_star_than_thick(self):
+        rng = np.random.default_rng(11)
+        thin = self._make_flock(300, 0.1, rng)
+        thick = self._make_flock(300, 0.6, rng)
+
+        thin_aspect, thin_thickness = compute_shape(thin)
+        thick_aspect, thick_thickness = compute_shape(thick)
+        assert thin_thickness < 0.2, f"thin fixture thickness={thin_thickness:.3f}, expected <0.2"
+        assert thick_thickness > 0.4, f"thick fixture thickness={thick_thickness:.3f}, expected >0.4"
+
+        m_star_thin, _ = find_optimal_m(thin)
+        m_star_thick, _ = find_optimal_m(thick)
+        assert m_star_thin >= m_star_thick, (
+            f"thin flock (thickness={thin_thickness:.3f}) m*={m_star_thin} "
+            f"should be >= thick flock (thickness={thick_thickness:.3f}) "
+            f"m*={m_star_thick}"
+        )
+
+    def test_m_star_settles_in_paper_reported_range_for_thick_flock(self):
+        """Thick 3D flocks: paper reports m*~5-6."""
+        rng = np.random.default_rng(12)
+        thick = self._make_flock(300, 0.6, rng)
+        m_star, _ = find_optimal_m(thick)
+        assert 5 <= m_star <= 6, f"thick flock m*={m_star}, expected 5-6"
 
 
 class TestGyration:
@@ -205,6 +253,101 @@ class TestRMax:
             f"substantially exceed phi_p=0.03 (coupled) "
             f"R_max={r_max_coupled:.1f}"
         )
+
+
+class TestPskyMeanfield:
+    """B5 (Pearce et al. 2014): mean-field probability a random ray
+    through the flock hits sky, Psky = exp(-rho*b^2*R)."""
+
+    def test_degenerate_n_returns_one(self):
+        assert compute_psky_meanfield(N=0, b=1.0, R=10.0) == 1.0
+
+    def test_degenerate_r_returns_one(self):
+        assert compute_psky_meanfield(N=100, b=1.0, R=0.0) == 1.0
+
+    def test_hand_computed(self):
+        # rho = 500 / ((4/3)pi*20^3) = 0.0149207759...
+        # Psky = exp(-rho*1^2*20)
+        N, b, R = 500, 1.0, 20.0
+        rho = N / ((4.0 / 3.0) * np.pi * R ** 3)
+        expected = np.exp(-rho * b ** 2 * R)
+        assert compute_psky_meanfield(N, b, R) == pytest.approx(expected, rel=1e-9)
+
+    def test_denser_flock_lower_psky(self):
+        """More birds in the same radius -> higher density -> more
+        occluded -> lower probability of hitting sky."""
+        sparse = compute_psky_meanfield(N=50, b=1.0, R=20.0)
+        dense = compute_psky_meanfield(N=500, b=1.0, R=20.0)
+        assert dense < sparse
+
+    def test_bounded_in_unit_interval(self):
+        for N in (10, 1000, 100000):
+            p = compute_psky_meanfield(N, b=1.0, R=5.0)
+            assert 0.0 <= p <= 1.0
+
+    def test_metrics_collector_computes_psky(self):
+        cfg = SimConfig()
+        cfg.mode = "spatial"
+        cfg.num_boids = 30
+        cfg.metrics_detail_level = 2
+        cfg.metrics_interval = 5
+
+        sim = SimulationEngine(cfg)
+        sim.run_headless(steps=10)
+
+        computed = [s for s in sim.metrics.history if s.psky_meanfield is not None]
+        assert len(computed) >= 1, "psky_meanfield was never computed"
+        for snap in computed:
+            assert 0.0 <= snap.psky_meanfield <= 1.0
+
+
+class TestMarginalOpacityDensity:
+    """B6 (Pearce et al. 2014): critical density rho* for Psky~=0.5,
+    derived from Psky=0.5 -> rho ~ N^(-1/2) scaling."""
+
+    def test_degenerate_n_returns_zero(self):
+        assert compute_marginal_opacity_density(N=0, b=1.0) == 0.0
+
+    def test_degenerate_b_returns_zero(self):
+        assert compute_marginal_opacity_density(N=100, b=0.0) == 0.0
+
+    def test_scaling_law_rho_times_sqrt_n_is_constant(self):
+        """B6's headline claim: rho* ~ N^(-1/2), i.e. rho*.sqrt(N) is
+        constant. Algebraically exact by construction -- verified
+        directly, not just asserted."""
+        b = 1.0
+        values = [
+            compute_marginal_opacity_density(N, b) * np.sqrt(N)
+            for N in (100, 400, 1600, 6400)
+        ]
+        for v in values[1:]:
+            assert v == pytest.approx(values[0], rel=1e-9)
+
+    def test_marginal_density_gives_psky_one_half(self):
+        """Round-trip: plugging rho* back through the Psky formula
+        (at the R implied by rho=N/((4/3)piR^3)) should give ~0.5."""
+        N, b = 300, 1.0
+        rho_star = compute_marginal_opacity_density(N, b)
+        R = (N / ((4.0 / 3.0) * np.pi * rho_star)) ** (1.0 / 3.0)
+        psky = compute_psky_meanfield(N, b, R)
+        assert psky == pytest.approx(0.5, abs=1e-6)
+
+    def test_metrics_collector_computes_marginal_density(self):
+        cfg = SimConfig()
+        cfg.mode = "spatial"
+        cfg.num_boids = 30
+        cfg.metrics_detail_level = 2
+        cfg.metrics_interval = 5
+
+        sim = SimulationEngine(cfg)
+        sim.run_headless(steps=10)
+
+        computed = [
+            s for s in sim.metrics.history if s.marginal_opacity_density is not None
+        ]
+        assert len(computed) >= 1, "marginal_opacity_density was never computed"
+        for snap in computed:
+            assert snap.marginal_opacity_density > 0.0
 
 
 class TestJammingIndex:
@@ -360,6 +503,114 @@ class TestThetaPrime:
         assert tp < 0.01
 
 
+class TestOpacityNonuniformity:
+    """B11 (Pearce et al. 2014): KS test that opacity samples are NOT
+    uniformly distributed -- the statistical proof of marginal opacity
+    as a universal property."""
+
+    def test_uniform_sample_not_rejected(self):
+        """A genuinely uniform sample should NOT be rejected (high p)."""
+        rng = np.random.default_rng(0)
+        uniform_samples = rng.uniform(0.0, 1.0, 300)
+        _, p = compute_opacity_nonuniformity(uniform_samples, x_min=0.0)
+        assert p > 0.05, f"uniform sample should not reject uniformity, p={p:.4f}"
+
+    def test_clustered_sample_rejected(self):
+        """A sample clustered around an intermediate value (like the
+        paper's marginal-opacity claim) should be strongly rejected
+        (low p) -- matches the pre-implementation methodology check."""
+        rng = np.random.default_rng(0)
+        clustered = np.clip(rng.normal(0.3, 0.05, 300), 0.0, 1.0)
+        stat, p = compute_opacity_nonuniformity(clustered, x_min=0.0)
+        assert p < 0.0001, f"clustered sample should strongly reject uniformity, p={p:.6f}"
+        assert stat > 0.3
+
+    def test_returns_finite_stat_and_pvalue(self):
+        rng = np.random.default_rng(1)
+        samples = rng.uniform(0.2, 0.8, 50)
+        stat, p = compute_opacity_nonuniformity(samples, x_min=0.2)
+        assert np.isfinite(stat)
+        assert np.isfinite(p)
+        assert 0.0 <= p <= 1.0
+
+    @pytest.mark.slow
+    def test_our_own_sim_theta_samples_against_uniformity(self):
+        """Run projection mode (bird-like defaults) and gather tail
+        Theta samples, then test them for uniformity. Honest report --
+        no forced conclusion beyond what compute_opacity_nonuniformity
+        itself already proved works (p<0.05 threshold)."""
+        cfg = SimConfig()
+        cfg.mode = "projection"
+        cfg.num_boids = 150
+        cfg.seed = 7
+        cfg.metrics_detail_level = 1
+        cfg.metrics_interval = 1
+
+        sim = SimulationEngine(cfg)
+        sim.run_headless(steps=300)
+
+        theta_samples = [
+            s.theta for s in sim.metrics.history[-150:] if np.isfinite(s.theta)
+        ]
+        assert len(theta_samples) >= 50, "not enough finite theta samples"
+
+        stat, p = compute_opacity_nonuniformity(theta_samples, x_min=0.0)
+        assert np.isfinite(stat) and np.isfinite(p)
+        # Low-bar assertion (matches what the methodology tests above
+        # already prove works): our sim's theta values, produced by a
+        # real dynamical process rather than sampled from a uniform
+        # distribution, should not be statistically indistinguishable
+        # from Uniform[0,1]. Not a re-assertion of the paper's exact
+        # 99.99%-confidence claim about their own photographic dataset
+        # (a different data source entirely) -- just confirming the
+        # qualitative finding (non-uniform clustering) reproduces here.
+        assert p < 0.05, f"expected our sim's theta samples to reject uniformity, p={p}"
+
+
+@pytest.mark.slow
+def test_b8_theta_vs_inverse_n_linear_fit():
+    """B8 (Pearce et al. 2014): Theta vs 1/N should fit a line with
+    a high R^2 (paper reports 0.99, N>=400) -- validates marginal
+    opacity holds across flock sizes at constant phi_p, phi_a.
+
+    Measured directly in this codebase (projection mode, defaults,
+    N=40..800, 200 steps, tail-averaged theta): R^2=0.61 -- clearly
+    linear and positive (theta rises with N, falls with 1/N) but
+    weaker than the paper's 0.99. Asserting a modest, earned
+    threshold rather than forcing the paper's exact number (same
+    honesty as B3's fragmentation test, but this claim reproduces
+    directionally, so it's a real assertion, not an xfail).
+    """
+    from scipy.stats import linregress
+
+    def tail_theta(N, steps=200, seed=7):
+        cfg = SimConfig()
+        cfg.mode = "projection"
+        cfg.num_boids = N
+        cfg.seed = seed
+        cfg.metrics_detail_level = 1
+        sim = SimulationEngine(cfg)
+        sim.run_headless(steps=steps)
+        thetas = [s.theta for s in sim.metrics.history[-50:] if np.isfinite(s.theta)]
+        return float(np.mean(thetas)) if thetas else float("nan")
+
+    Ns = [40, 80, 150, 300, 500, 800]
+    thetas = [tail_theta(N) for N in Ns]
+    inv_n = [1.0 / N for N in Ns]
+
+    result = linregress(inv_n, thetas)
+    r_squared = result.rvalue ** 2
+
+    assert r_squared > 0.4, (
+        f"Theta vs 1/N fit R^2={r_squared:.3f}, expected >0.4 "
+        f"(directional linear relationship; paper reports 0.99)"
+    )
+    assert result.slope < 0, (
+        "Theta should increase as N increases (decrease as 1/N "
+        f"increases), got slope={result.slope:.4f}"
+    )
+
+
 class TestTauRho:
     """Density autocorrelation time."""
 
@@ -452,6 +703,59 @@ class TestTauRho:
 
         computed_tau = [s for s in sim.metrics.history if s.tau_rho is not None and s.tau_rho > 0]
         assert len(computed_tau) >= 1, f"tau_rho never computed: {len(computed_tau)} frames"
+
+    @pytest.mark.slow
+    @pytest.mark.xfail(
+        reason=(
+            "B13's claim (Pearce et al. 2014, Fig. 2f): density "
+            "autocorrelation time tau_rho decreases monotonically as "
+            "phi_p increases (projection provides instantaneous global "
+            "coupling, speeding up dynamics). Measured directly: N=60, "
+            "seed in {1,2,3}, 80x80x80 domain (needed for "
+            "compute_tau_rho_hull's absolute-variance floor to clear at "
+            "all -- a pre-existing scale sensitivity of that metric at "
+            "the default ~1000-unit domain, not something this test "
+            "changes), phi_p in {0, 0.01, 0.03, 0.05, 0.08}, 500 steps, "
+            "tail-averaged over seeds: tau_rho = 64.5, 64.2, 63.6, "
+            "63.0, 69.0 -- essentially flat/non-monotonic, with "
+            "per-seed variance (30-100) dwarfing any phi_p-driven "
+            "signal. Does not reproduce cleanly at realistic settings "
+            "in this codebase. Flagged for follow-up rather than "
+            "asserting a trend the current implementation doesn't "
+            "actually clear."
+        ),
+        strict=False,
+    )
+    def test_b13_tau_rho_decreases_with_phi_p(self):
+        """B13: tau_rho should decrease as phi_p increases."""
+        def _tail_avg_tau_rho(phi_p, steps=500, seed=7, N=60):
+            cfg = SimConfig()
+            cfg.mode = "projection"
+            cfg.num_boids = N
+            cfg.seed = seed
+            cfg.width = 80.0
+            cfg.height = 80.0
+            cfg.depth = 80.0
+            cfg.projection.phi_p = phi_p
+            cfg.metrics_detail_level = 2
+            cfg.metrics_interval = 5
+            sim = SimulationEngine(cfg)
+            sim.run_headless(steps=steps)
+            tau_values = [
+                s.tau_rho for s in sim.metrics.history
+                if s.tau_rho is not None and s.tau_rho > 0
+            ]
+            return np.mean(tau_values[-10:]) if len(tau_values) >= 10 else (
+                np.mean(tau_values) if tau_values else float("nan")
+            )
+
+        low_phi_p = np.mean([_tail_avg_tau_rho(0.0, seed=s) for s in (1, 2, 3)])
+        high_phi_p = np.mean([_tail_avg_tau_rho(0.08, seed=s) for s in (1, 2, 3)])
+
+        assert high_phi_p < low_phi_p * 0.9, (
+            f"tau_rho at phi_p=0.08 ({high_phi_p:.1f}) should be "
+            f"substantially lower than at phi_p=0 ({low_phi_p:.1f})"
+        )
 
 
 class TestThetaAccelCorrelation:

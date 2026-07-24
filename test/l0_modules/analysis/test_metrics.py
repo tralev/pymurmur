@@ -2149,6 +2149,27 @@ def test_marginal_opacity_constants_accessible():
     )
 
 
+def test_b10_public_opacity_constants_accessible_and_in_band():
+    """B10: PUBLIC_OPACITY_MEAN/STD (Pearce et al. 2014's second,
+    public-domain-image dataset) are importable, in reasonable ranges,
+    and the mean falls inside the same S3.6a acceptance band
+    [0.05, 0.55] the "own data" MARGINAL_OPACITY_MEAN anchor is
+    validated against -- i.e. the existing self-regulation regression
+    test already implicitly validates against both empirical anchors,
+    not just the first one."""
+    from pymurmur.analysis.metrics import PUBLIC_OPACITY_MEAN, PUBLIC_OPACITY_STD
+    assert 0.0 < PUBLIC_OPACITY_MEAN < 1.0, (
+        f"PUBLIC_OPACITY_MEAN={PUBLIC_OPACITY_MEAN} should be in (0,1)"
+    )
+    assert 0.0 < PUBLIC_OPACITY_STD < 1.0, (
+        f"PUBLIC_OPACITY_STD={PUBLIC_OPACITY_STD} should be in (0,1)"
+    )
+    assert 0.05 <= PUBLIC_OPACITY_MEAN <= 0.55, (
+        f"PUBLIC_OPACITY_MEAN={PUBLIC_OPACITY_MEAN} should fall inside "
+        f"the S3.6a acceptance band [0.05, 0.55]"
+    )
+
+
 # ── S2.B4: Physical metrics edge cases ────────────────────────────
 
 def test_physical_metrics_zero_mass():
