@@ -149,6 +149,19 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.core.config",
         "pymurmur.physics.extensions.wander",
         "pymurmur.physics.extensions.ripple",
+        "pymurmur.physics.forces.field_anchors",
+        "pymurmur.physics.forces.field_terms",
+    },
+    # File-size split from field.py: blob-anchor/leader-chaser setup
+    # functions. Pure numpy, zero pymurmur imports.
+    "pymurmur.physics.forces.field_anchors": set(),
+    # File-size split from field.py: the 14 per-bird force-term
+    # implementations. Imports field_anchors for _compute_phases
+    # (shared between the shell-force term and the anchor pipeline).
+    "pymurmur.physics.forces.field_terms": {
+        "pymurmur.core.types",
+        "pymurmur.physics.forces._base",
+        "pymurmur.physics.forces.field_anchors",
     },
     "pymurmur.physics.forces.vicsek": {
         "pymurmur.core.types",
