@@ -240,11 +240,31 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     },
 
     # ── Tier F1: Observables — core + read flock ──
+    # metrics.py is now a thin re-export shim (file-size split) —
+    # the implementation lives in the sibling modules below.
     "pymurmur.analysis.metrics": {
+        "pymurmur.analysis.collector",
+        "pymurmur.analysis.consensus_robustness",
+        "pymurmur.analysis.dynamics_curves",
+        "pymurmur.analysis.flock_metrics",
+        "pymurmur.analysis.opacity",
+        "pymurmur.analysis.shape_motion",
+    },
+    "pymurmur.analysis.flock_metrics": {"pymurmur.core.types"},
+    "pymurmur.analysis.consensus_robustness": set(),
+    "pymurmur.analysis.opacity": set(),
+    "pymurmur.analysis.shape_motion": set(),
+    "pymurmur.analysis.dynamics_curves": set(),
+    "pymurmur.analysis.collector": {
         "pymurmur.core.types",
         "pymurmur.core.config",
         "pymurmur.physics.flock",
         "pymurmur.physics.boid",
+        "pymurmur.analysis.consensus_robustness",
+        "pymurmur.analysis.dynamics_curves",
+        "pymurmur.analysis.flock_metrics",
+        "pymurmur.analysis.opacity",
+        "pymurmur.analysis.shape_motion",
     },
     "pymurmur.analysis.presets": {
         "pymurmur.core.types",
