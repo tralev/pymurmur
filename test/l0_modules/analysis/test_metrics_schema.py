@@ -94,7 +94,7 @@ class TestFlockMetricsToDict:
             "dispersion", "speed_avg", "force_avg", "power_avg",
             "local_spacing", "velocity_deviation", "boundary_overshoot",
             "altitude_deviation", "collisions_this_step",
-            "h2", "r_nodal", "tau_rho", "msd",
+            "h2", "r_nodal", "r_per_m", "m_star_sensing", "tau_rho", "msd",
             "gyration_radius", "aspect_ratio", "thickness_ratio",
             "optimal_m", "suggested_m", "eta_m",
             # A10: convergence speed λ₂(L)

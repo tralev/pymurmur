@@ -62,6 +62,8 @@ class FlockMetrics:
     # ── Expensive (O(N²) or O(N log N), gated) ───────────────────
     h2: float | None = None       # H₂ consensus robustness
     r_nodal: float | None = None  # A6: nodal robustness √N/H₂ (larger = more robust)
+    r_per_m: float | None = None       # A7: robustness per neighbour, R_nodal/m at m_star_sensing
+    m_star_sensing: int | None = None  # A7: argmax_m R_per_m(m) — sensing-cost-optimal m*
     tau_rho: float | None = None  # density autocorrelation time (frames)
     theta_accel_correlation: list[float] | None = None  # B9: C(δt), accel vs opacity
     theta_accel_peak_lag: int | None = None  # B9: δt (frames) where |C(δt)| peaks
@@ -818,6 +820,60 @@ def compute_r_nodal(h2: float, N: int) -> float:
     return float(np.sqrt(N) / h2)
 
 
+def compute_r_per_m(r_nodal: float, m: int) -> float:
+    """A7 (Young et al. 2013): robustness per neighbour, R_per_m = R_nodal / m.
+
+    Accounts for sensing cost — each additional neighbour requires
+    neurological/sensory effort, so raw R_nodal alone overstates the
+    benefit of large m. The paper reports this peaks at an interior
+    m*≈6-7 (see find_m_star_by_sensing_cost); empirically, this does
+    NOT reproduce in this codebase's H₂ implementation (verified: the
+    curve is monotonically decreasing from the connectivity threshold
+    onward for both random and simulated flocks) — see
+    test_h2.py::TestRPerM for the honestly-xfailed claim.
+
+    Args:
+        r_nodal: R_nodal (pass compute_r_nodal's output).
+        m: neighbour count the r_nodal value was computed at.
+
+    Returns:
+        R_per_m. 0.0 for m<=0 (division guard).
+    """
+    if m <= 0:
+        return 0.0
+    return float(r_nodal / m)
+
+
+def find_m_star_by_sensing_cost(positions: np.ndarray, tree=None) -> tuple[int, float]:
+    """A7 (Young et al. 2013): m* = argmax_m R_per_m(m), the sensing-
+    cost-optimal neighbour count.
+
+    Distinct from find_optimal_m (which minimizes the linear-penalty
+    cost J(m) = H₂(m) + 0.06·m) — a different objective on the same
+    underlying H₂(m) curve. Mirrors find_optimal_m's scan structure.
+
+    Args:
+        positions: (N, 3) float32 array.
+        tree: optional pre-built cKDTree to avoid rebuild.
+
+    Returns:
+        (m*, R_per_m at m*). (2, 0.0) if no m in [2, 20] connects.
+    """
+    N = len(positions)
+    best_m = 2
+    best_r_per_m = 0.0
+    for m in range(2, min(21, N)):
+        _, h2 = compute_h2(positions, m, tree)
+        if not np.isfinite(h2):
+            continue
+        r_nodal = compute_r_nodal(h2, N)
+        r_per_m = compute_r_per_m(r_nodal, m)
+        if r_per_m > best_r_per_m:
+            best_r_per_m = r_per_m
+            best_m = m
+    return best_m, best_r_per_m
+
+
 def compute_convergence_speed(positions: np.ndarray, m: int, tree=None) -> float:
     """A10 (Young et al. 2013): consensus convergence speed λ₂(L).
 
@@ -898,6 +954,7 @@ def _compute_expensive_metrics(
     m.h2 = h2
     m.optimal_m = optimal_m
     m.r_nodal = compute_r_nodal(h2, n)
+    m.m_star_sensing, m.r_per_m = find_m_star_by_sensing_cost(positions, tree)
 
     # Local spacing: median 7th-neighbour distance (reuses tree)
     k = min(8, n)

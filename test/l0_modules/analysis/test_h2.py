@@ -11,6 +11,8 @@ from pymurmur.analysis.metrics import (
     compute_h2,
     compute_h2_lyapunov,
     compute_r_nodal,
+    compute_r_per_m,
+    find_m_star_by_sensing_cost,
     find_optimal_m,
 )
 from pymurmur.core.config import SimConfig
@@ -375,3 +377,115 @@ class TestRNodal:
         for snap in computed:
             assert snap.r_nodal >= 0.0
             assert np.isfinite(snap.r_nodal)
+
+
+class TestRPerM:
+    """A7 (Young et al. 2013): robustness per neighbour,
+    R_per_m = R_nodal/m, accounting for sensing cost. Paper claims
+    m* = argmax(R_per_m) peaks at an interior m~=6-7."""
+
+    def test_hand_computed(self):
+        assert compute_r_per_m(r_nodal=12.0, m=4) == pytest.approx(3.0, abs=1e-9)
+
+    def test_m_zero_or_negative_returns_zero(self):
+        assert compute_r_per_m(r_nodal=10.0, m=0) == 0.0
+        assert compute_r_per_m(r_nodal=10.0, m=-1) == 0.0
+
+    def test_find_m_star_returns_valid_range(self):
+        positions = np.random.uniform(0, 100, (100, 3)).astype(np.float32)
+        m_star, r_per_m = find_m_star_by_sensing_cost(positions)
+        assert 2 <= m_star <= 20
+        assert r_per_m >= 0.0
+
+    def test_disconnected_everywhere_returns_fallback(self):
+        """If nothing in [2,20] connects, returns the (2, 0.0)
+        no-data fallback.
+
+        Two clusters of 25 points each, far apart: any m<=20 nearest-
+        neighbour query from within a cluster only ever finds
+        same-cluster points (cross-cluster distances are far larger),
+        so the graph stays genuinely disconnected across the whole
+        tested m range -- unlike a small 4-point fixture, where m
+        eventually reaches N-1 and the k-NN graph becomes complete
+        (trivially connected) regardless of actual distance.
+        """
+        rng = np.random.default_rng(0)
+        cluster_a = rng.uniform(0, 1, (25, 3)).astype(np.float32)
+        cluster_b = rng.uniform(10000, 10001, (25, 3)).astype(np.float32)
+        pts = np.vstack([cluster_a, cluster_b])
+        m_star, r_per_m = find_m_star_by_sensing_cost(pts)
+        assert m_star == 2
+        assert r_per_m == 0.0
+
+    def test_prebuilt_tree_same_result(self):
+        from scipy.spatial import cKDTree
+        positions = np.random.uniform(0, 50, (30, 3)).astype(np.float32)
+        tree = cKDTree(positions)
+        m_no_tree, r_no_tree = find_m_star_by_sensing_cost(positions)
+        m_with_tree, r_with_tree = find_m_star_by_sensing_cost(positions, tree=tree)
+        assert m_no_tree == m_with_tree
+        assert r_no_tree == pytest.approx(r_with_tree, rel=0.01)
+
+    def test_metrics_collector_computes_r_per_m(self):
+        cfg = SimConfig()
+        cfg.mode = "spatial"
+        cfg.num_boids = 30
+        cfg.metrics_detail_level = 2
+        cfg.metrics_interval = 5
+
+        sim = SimulationEngine(cfg)
+        sim.run_headless(steps=10)
+
+        computed = [s for s in sim.metrics.history if s.m_star_sensing is not None]
+        assert len(computed) >= 1, "m_star_sensing was never computed"
+        for snap in computed:
+            assert 2 <= snap.m_star_sensing <= 20
+            assert snap.r_per_m is not None and snap.r_per_m >= 0.0
+
+    def test_r_per_m_monotonically_decreasing_from_connectivity_threshold(self):
+        """What's actually true in this codebase (verified empirically
+        before writing this test, both for uniform-random and real
+        simulated flocks): R_per_m falls monotonically from the first
+        connected m -- the argmax always sits at the connectivity
+        threshold, not at an interior m."""
+        rng = np.random.default_rng(1)
+        positions = rng.uniform(-100, 100, (300, 3)).astype(np.float32)
+        from scipy.spatial import cKDTree
+        tree = cKDTree(positions)
+
+        curve = []
+        for m in range(3, 16):
+            _, h2 = compute_h2(positions, m, tree)
+            if not np.isfinite(h2):
+                continue
+            r_nodal = compute_r_nodal(h2, len(positions))
+            curve.append(compute_r_per_m(r_nodal, m))
+
+        assert len(curve) >= 8, "not enough connected m values to be meaningful"
+        assert all(curve[i] >= curve[i + 1] - 1e-9 for i in range(len(curve) - 1)), (
+            f"expected monotonically non-increasing R_per_m curve, got {curve}"
+        )
+
+    @pytest.mark.slow
+    @pytest.mark.xfail(
+        reason=(
+            "A7's claim (Young et al. 2013, cross-referenced by A10): "
+            "robustness per neighbour R_per_m peaks at an interior "
+            "m*~=6-7. Measured directly in this codebase across 3 "
+            "seeds x {uniform-random N=300, simulated projection-mode "
+            "flock N=200}: R_per_m is monotonically decreasing from "
+            "the first connected m (typically 3-5) all the way to "
+            "m=20 in every case -- the argmax always sits at the "
+            "connectivity threshold, never at 6-7. H2's fall-off right "
+            "after the connectivity threshold isn't steep enough in "
+            "this implementation to produce the paper's interior knee. "
+            "Flagged for follow-up rather than asserting a peak "
+            "location the current implementation doesn't actually hit."
+        ),
+        strict=False,
+    )
+    def test_a7_m_star_peaks_near_6_or_7(self):
+        rng = np.random.default_rng(2)
+        positions = rng.uniform(-100, 100, (300, 3)).astype(np.float32)
+        m_star, _ = find_m_star_by_sensing_cost(positions)
+        assert 6 <= m_star <= 7, f"m_star={m_star}, expected 6-7"
