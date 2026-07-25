@@ -443,9 +443,9 @@ run outside Docker:
 
 | Test / class | Skip message | File |
 |---|---|---|
-| `TestRenderer3D::test_renderer_windowed_context` | `No display available for windowed context` | `test/l0_modules/viz/test_renderer.py` |
-| `TestVisualizerIntegration::test_visualizer_windowed_frame` | `Windowed context creation failed (no display)` | `test/l0_modules/viz/test_renderer.py` |
-| `@pytest.mark.gpu`-decorated tests (~80+) | `GPU not available` | `test/l0_modules/viz/test_renderer.py`, `test_renderer_impostor.py`, `test_camera.py`, `test_input.py`, `test_shaders.py`, `test_hud.py`, etc. |
+| `TestRenderer3D::test_renderer_windowed_context` | `No display available for windowed context` | `test/l0_modules/viz/renderer/test_renderer.py` |
+| `TestVisualizerIntegration::test_visualizer_windowed_frame` | `Windowed context creation failed (no display)` | `test/l0_modules/viz/renderer/test_renderer.py` |
+| `@pytest.mark.gpu`-decorated tests (~80+) | `GPU not available` | `test/l0_modules/viz/renderer/test_renderer.py`, `test_renderer_impostor.py`, `test_camera.py`, `test_input.py`, `test_shaders.py`, `test_hud.py`, etc. |
 
 To run the **full GPU test suite** on macOS, use Docker:
 
