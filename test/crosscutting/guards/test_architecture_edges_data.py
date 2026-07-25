@@ -248,31 +248,33 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     },
 
     # ── Tier F1: Observables — core + read flock ──
-    # metrics.py is now a thin re-export shim (file-size split) —
-    # the implementation lives in the sibling modules below.
+    # metrics.py is now a thin re-export shim (file-size split), moved
+    # into analysis/metrics/__init__.py (logical-structure split) —
+    # dotted path "pymurmur.analysis.metrics" unchanged. The
+    # implementation lives in the nested sibling modules below.
     "pymurmur.analysis.metrics": {
-        "pymurmur.analysis.collector",
-        "pymurmur.analysis.consensus_robustness",
-        "pymurmur.analysis.dynamics_curves",
-        "pymurmur.analysis.flock_metrics",
-        "pymurmur.analysis.opacity",
-        "pymurmur.analysis.shape_motion",
+        "pymurmur.analysis.metrics.collector",
+        "pymurmur.analysis.metrics.consensus_robustness",
+        "pymurmur.analysis.metrics.dynamics_curves",
+        "pymurmur.analysis.metrics.flock_metrics",
+        "pymurmur.analysis.metrics.opacity",
+        "pymurmur.analysis.metrics.shape_motion",
     },
-    "pymurmur.analysis.flock_metrics": {"pymurmur.core.types"},
-    "pymurmur.analysis.consensus_robustness": set(),
-    "pymurmur.analysis.opacity": set(),
-    "pymurmur.analysis.shape_motion": set(),
-    "pymurmur.analysis.dynamics_curves": set(),
-    "pymurmur.analysis.collector": {
+    "pymurmur.analysis.metrics.flock_metrics": {"pymurmur.core.types"},
+    "pymurmur.analysis.metrics.consensus_robustness": set(),
+    "pymurmur.analysis.metrics.opacity": set(),
+    "pymurmur.analysis.metrics.shape_motion": set(),
+    "pymurmur.analysis.metrics.dynamics_curves": set(),
+    "pymurmur.analysis.metrics.collector": {
         "pymurmur.core.types",
         "pymurmur.core.config",
         "pymurmur.physics.flock",
         "pymurmur.physics.boid",
-        "pymurmur.analysis.consensus_robustness",
-        "pymurmur.analysis.dynamics_curves",
-        "pymurmur.analysis.flock_metrics",
-        "pymurmur.analysis.opacity",
-        "pymurmur.analysis.shape_motion",
+        "pymurmur.analysis.metrics.consensus_robustness",
+        "pymurmur.analysis.metrics.dynamics_curves",
+        "pymurmur.analysis.metrics.flock_metrics",
+        "pymurmur.analysis.metrics.opacity",
+        "pymurmur.analysis.metrics.shape_motion",
     },
     "pymurmur.analysis.presets": {
         "pymurmur.core.types",
@@ -284,6 +286,9 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     },
 
     # ── Tier F2: Drivers — core + simulation ──
+    # Logical-structure split: evoflock.py -> analysis/evoflock/__init__.py
+    # (dotted path "pymurmur.analysis.evoflock" unchanged, it's still the
+    # package root); evoflock_objectives.py moved alongside it.
     "pymurmur.analysis.evoflock": {
         "pymurmur.core.types",
         "pymurmur.core.config",
@@ -291,12 +296,12 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.flock",
         "pymurmur.physics.boid",
         "pymurmur.physics.obstacles",  # P11.4: ObstacleScene evaluation
-        "pymurmur.analysis.evoflock_objectives",
+        "pymurmur.analysis.evoflock.evoflock_objectives",
     },
     # File-size split from evoflock.py: per-step objective collector +
     # objective-function helpers (_ObjectiveCollector, load_obstacle_scene,
     # _trapezoid, _linear_ramp, _pareto_front).
-    "pymurmur.analysis.evoflock_objectives": {
+    "pymurmur.analysis.evoflock.evoflock_objectives": {
         "pymurmur.core.types",
         "pymurmur.physics.obstacles",
         "pymurmur.analysis.evoflock",  # TYPE_CHECKING only (Genome)

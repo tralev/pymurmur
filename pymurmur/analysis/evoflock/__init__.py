@@ -40,8 +40,8 @@ from .evoflock_objectives import (
 )
 
 if TYPE_CHECKING:
-    from ..core.config import SimConfig
-    from ..physics.obstacles import ObstacleScene
+    from ...core.config import SimConfig
+    from ...physics.obstacles import ObstacleScene
 
 
 # ── Evolvable parameter space ────────────────────────────────────
@@ -335,7 +335,7 @@ class EvoFlock:
         self, genome: Genome, seed: int,
     ) -> tuple[float, np.ndarray]:
         """Run one headless simulation and score the genome on it."""
-        from ..simulation.engine import SimulationEngine
+        from ...simulation.engine import SimulationEngine
 
         cfg = copy.copy(self._base)
         cfg.mode = "spatial"

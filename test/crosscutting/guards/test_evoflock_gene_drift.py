@@ -28,15 +28,18 @@ pytestmark = pytest.mark.guard
 # ── Source scanning ────────────────────────────────────────────────
 
 def _read_source_files() -> dict[str, str]:
-    """Read all pymurmur/physics/*.py files plus analysis/evoflock.py
-    itself (the genome->config->physics chain lives across both)."""
+    """Read all pymurmur/physics/*.py files plus the whole
+    analysis/evoflock/ package (the genome->config->physics chain lives
+    across all of these)."""
     sources: dict[str, str] = {}
     for py_file in sorted(Path("pymurmur/physics").rglob("*.py")):
         if "__pycache__" in str(py_file):
             continue
         sources[str(py_file)] = py_file.read_text()
-    evoflock_path = Path("pymurmur/analysis/evoflock.py")
-    sources[str(evoflock_path)] = evoflock_path.read_text()
+    for py_file in sorted(Path("pymurmur/analysis/evoflock").rglob("*.py")):
+        if "__pycache__" in str(py_file):
+            continue
+        sources[str(py_file)] = py_file.read_text()
     return sources
 
 

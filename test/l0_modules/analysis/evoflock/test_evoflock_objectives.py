@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from pymurmur.analysis.evoflock import EvoConfig, EvoFlock
-from pymurmur.analysis.evoflock_objectives import (
+from pymurmur.analysis.evoflock.evoflock_objectives import (
     _linear_ramp,
     _ObjectiveCollector,
     _trapezoid,

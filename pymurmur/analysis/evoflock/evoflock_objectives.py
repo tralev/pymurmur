@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from ..physics.obstacles import ObstacleScene
-    from .evoflock import Genome
+    from ...physics.obstacles import ObstacleScene
+    from . import Genome
 
 
 # ── P11.3/P11.4: Per-step objective sampling ─────────────────────
@@ -102,7 +102,7 @@ def load_obstacle_scene(path: str | Path) -> "ObstacleScene | None":
     obstacles (e.g. conf/evo_open.yaml)."""
     import yaml
 
-    from ..physics.obstacles import ObstacleScene
+    from ...physics.obstacles import ObstacleScene
 
     with open(path) as f:
         data = yaml.safe_load(f) or {}

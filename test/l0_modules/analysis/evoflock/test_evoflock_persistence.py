@@ -147,7 +147,7 @@ class TestPersistence:
         Verified via text search of the source file — no slow evolution needed.
         """
         from pathlib import Path
-        src = Path("pymurmur/analysis/evoflock.py").read_text()
+        src = Path("pymurmur/analysis/evoflock/__init__.py").read_text()
 
         # Check that save() is called with _save_path in the run method
         assert "self.save(self._save_path)" in src, (
