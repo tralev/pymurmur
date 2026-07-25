@@ -7,136 +7,159 @@ returns any issues. References cfg._VALID_MODES etc. (the small
 class-level allowed-value sets stay on SimConfig itself, since
 SimConfig._VALID_MODES is accessed directly by at least one test) --
 this function is passed a SimConfig instance, not decoupled from it.
+
+Split into per-concern private helpers (each returns a list of issue
+strings for its slice of the rule set) so no single function holds
+the whole 400+-line rule set — validate_config() just calls each in
+turn and concatenates. Every helper takes the same (cfg, ok) shape:
+`ok(fname)` is true when that field passed the type guard, so
+downstream comparisons on it are safe.
 """
 from __future__ import annotations
 
+from typing import Callable
 
-def validate_config(cfg) -> list[str]:
-    """Check cross-field consistency, returning a list of issue strings
-    (empty if valid). SimConfig.validate() raises ValueError with these
-    aggregated if non-empty -- call at engine creation time to catch
-    misconfiguration early.
+_OkFn = Callable[[str], bool]
+
+# Fields that must be numeric — checked once, up front, so every
+# downstream comparison (`cfg.x <= 0` etc.) is guarded by `ok(fname)`
+# rather than risking a TypeError on a misconfigured field.
+_NUMERIC_FIELDS = (
+    "width", "height", "depth",
+    "num_boids", "boid_size", "v0", "max_force", "visual_range",
+    "phi_a", "sigma",
+    "separation_weight", "alignment_weight", "cohesion_weight",
+    "noise_scale", "acceleration_scale",
+    "influence_count",
+    "predator_escape_factor", "predator_speed_boost",
+    "predator_perception_boost",            "predator_accel_boost",
+    "jitter_separation", "jitter_cohesion", "jitter_alignment",
+    "steric", "blind_deg", "anisotropy",
+    "parallel_workers", "metrics_interval", "metrics_detail_level",
+    "bird_mass_kg", "cruise_speed_ms", "acc_peak_ms2",
+    "topological_cap",
+    "boundary_sphere_radius",
+    "fps", "window_width", "window_height",
+    "capture_width", "capture_height", "capture_frames",
+    "capture_every", "capture_fps",
+    "vicsek_couplage", "vicsek_diffusion",
+    "vicsek_radius_influence", "vicsek_radius_avoid",
+    "vicsek_velocity", "vicsek_time_step",
+    "vicsek_radius_predators", "vicsek_velocity_predator",
+    "vicsek_detect_ratio", "vicsek_weight_afraid",
+    "vicsek_predator_noise_ratio",
+    "vicsek_radius_predators", "vicsek_velocity_predator",
+    "vicsek_detect_ratio", "vicsek_weight_afraid",
+    "vicsek_predator_noise_ratio",
+    "influencer_rank_exponent", "influencer_substeps",
+    "influencer_scale",
+    "influencer_near_dist_sq", "influencer_init_separation",
+    "influencer_tick_rate", "influencer_pilot_speed",
+    "influencer_influence_min", "influencer_influence_max",
+    "influencer_target_vert_offset",
+    "predator_threat_radius", "predator_strength",
+    "predator_momentum", "predator_split_gain",
+    "field_separation", "field_alignment", "field_cohesion",
+    "field_flow", "field_chase_strength",
+    "field_noise", "field_target_pull", "field_drift_pull",
+    "field_shell_influence", "field_tangent_pull",
+    "field_wave_gain", "field_inertia",
+    "field_shell_radius_base", "field_ripple_trains",
+    "field_inner_radius_factor", "field_leader_fraction",
+    "field_num_groups",
+    "wander_attractor_speed", "wander_attractor_radius",
+    "boundary_avoidance_factor", "boundary_radius_factor",
+    "acceleration_scale",
+    "ecology_dusk_width", "ecology_seasonal_amplitude",
+    "ecology_temperature_boost",
+    "trail_length",
+    # AngleConfig
+    "turn_rate", "max_turn_rate", "turn_threshold",
+    "jitter_deg", "base_speed", "angle_neighbors",
+    "sep_radius_bodies", "align_radius_bodies",
+    "range_radius_bodies",
+    # MarlConfig
+    "marl_velocity_cap", "marl_rule_weight",
+    "marl_separation_radius", "marl_action_scale",
+    "marl_episode_steps",
+    "marl_reward_w_a", "marl_reward_w_c", "marl_reward_w_L",
+    "marl_reward_w_b", "marl_reward_w_z",
+    # PredatorConfig extras
+    "predator_acceleration", "predator_vacuole_strength",
+    "predator_blackening_gain",
+    # New spatial leaves
+    "flow_weight", "w_fwd",
+    "readout_smooth",
+    "max_dist_sep", "max_dist_align", "max_dist_coh",
+    "angle_sep", "angle_align", "angle_coh", "coherence_factor",
+    # New boundary leaves
+    "boundary_margin",
+    # New projection leaves
+    "max_visibility", "max_occlusion_neighbors",
+    # New flock leaves
+    "n_predators",
+    # New field leaves
+    "field_flow_pull",
+    # New perf leaves
+    "num_threads",
+    # New viz leaves
+    "flap_period",
+    # New spatial obstacle avoidance leaves
+    "static_avoid_weight", "predictive_avoid_weight",
+    "fly_away_max_dist", "min_time_to_collide",
+    # New roost config leaves
+    "roost_z_target",
+)
+
+
+def _validate_types(cfg) -> tuple[list[str], _OkFn]:
+    """Type guards: catch non-numeric values early.
+
+    Returns the issue list plus an `ok(fname)` predicate that every
+    other validator uses before comparing a field's value, so a
+    misconfigured (non-numeric) field never raises a TypeError deeper
+    in this module.
     """
     issues: list[str] = []
-
-    # ── Type guards: catch non-numeric values early ───────
-    _numeric_fields = (
-        "width", "height", "depth",
-        "num_boids", "boid_size", "v0", "max_force", "visual_range",
-        "phi_a", "sigma",
-        "separation_weight", "alignment_weight", "cohesion_weight",
-        "noise_scale", "acceleration_scale",
-        "influence_count",
-        "predator_escape_factor", "predator_speed_boost",
-        "predator_perception_boost",            "predator_accel_boost",
-        "jitter_separation", "jitter_cohesion", "jitter_alignment",
-        "steric", "blind_deg", "anisotropy",
-        "parallel_workers", "metrics_interval", "metrics_detail_level",
-        "bird_mass_kg", "cruise_speed_ms", "acc_peak_ms2",
-        "topological_cap",
-        "boundary_sphere_radius",
-        "fps", "window_width", "window_height",
-        "capture_width", "capture_height", "capture_frames",
-        "capture_every", "capture_fps",
-        "vicsek_couplage", "vicsek_diffusion",
-        "vicsek_radius_influence", "vicsek_radius_avoid",
-        "vicsek_velocity", "vicsek_time_step",
-        "vicsek_radius_predators", "vicsek_velocity_predator",
-        "vicsek_detect_ratio", "vicsek_weight_afraid",
-        "vicsek_predator_noise_ratio",
-        "vicsek_radius_predators", "vicsek_velocity_predator",
-        "vicsek_detect_ratio", "vicsek_weight_afraid",
-        "vicsek_predator_noise_ratio",
-        "influencer_rank_exponent", "influencer_substeps",
-        "influencer_scale",
-        "influencer_near_dist_sq", "influencer_init_separation",
-        "influencer_tick_rate", "influencer_pilot_speed",
-        "influencer_influence_min", "influencer_influence_max",
-        "influencer_target_vert_offset",
-        "predator_threat_radius", "predator_strength",
-        "predator_momentum", "predator_split_gain",
-        "field_separation", "field_alignment", "field_cohesion",
-        "field_flow", "field_chase_strength",
-        "field_noise", "field_target_pull", "field_drift_pull",
-        "field_shell_influence", "field_tangent_pull",
-        "field_wave_gain", "field_inertia",
-        "field_shell_radius_base", "field_ripple_trains",
-        "field_inner_radius_factor", "field_leader_fraction",
-        "field_num_groups",
-        "wander_attractor_speed", "wander_attractor_radius",
-        "boundary_avoidance_factor", "boundary_radius_factor",
-        "acceleration_scale",
-        "ecology_dusk_width", "ecology_seasonal_amplitude",
-        "ecology_temperature_boost",
-        "trail_length",
-        # AngleConfig
-        "turn_rate", "max_turn_rate", "turn_threshold",
-        "jitter_deg", "base_speed", "angle_neighbors",
-        "sep_radius_bodies", "align_radius_bodies",
-        "range_radius_bodies",
-        # MarlConfig
-        "marl_velocity_cap", "marl_rule_weight",
-        "marl_separation_radius", "marl_action_scale",
-        "marl_episode_steps",
-        "marl_reward_w_a", "marl_reward_w_c", "marl_reward_w_L",
-        "marl_reward_w_b", "marl_reward_w_z",
-        # PredatorConfig extras
-        "predator_acceleration", "predator_vacuole_strength",
-        "predator_blackening_gain",
-        # New spatial leaves
-        "flow_weight", "w_fwd",
-        "readout_smooth",
-        "max_dist_sep", "max_dist_align", "max_dist_coh",
-        "angle_sep", "angle_align", "angle_coh", "coherence_factor",
-        # New boundary leaves
-        "boundary_margin",
-        # New projection leaves
-        "max_visibility", "max_occlusion_neighbors",
-        # New flock leaves
-        "n_predators",
-        # New field leaves
-        "field_flow_pull",
-        # New perf leaves
-        "num_threads",
-        # New viz leaves
-        "flap_period",
-        # New spatial obstacle avoidance leaves
-        "static_avoid_weight", "predictive_avoid_weight",
-        "fly_away_max_dist", "min_time_to_collide",
-        # New roost config leaves
-        "roost_z_target",
-    )
-    _type_bad: set[str] = set()
-    for fname in _numeric_fields:
+    type_bad: set[str] = set()
+    for fname in _NUMERIC_FIELDS:
         val = getattr(cfg, fname)
         if not isinstance(val, (int, float)):
             issues.append(
                 f"{fname} must be numeric, got {type(val).__name__} {val!r}"
             )
-            _type_bad.add(fname)
+            type_bad.add(fname)
 
-    def _ok(fname: str) -> bool:
+    def ok(fname: str) -> bool:
         """True if this field passed the type guard (safe for comparisons)."""
-        return fname not in _type_bad
+        return fname not in type_bad
+
+    return issues, ok
+
+
+def _validate_domain_flock_boundary(cfg, ok: _OkFn) -> list[str]:
+    """Domain dimensions, flock scale, boundary mode, direct fields
+    (position_init/velocity_init), and the top-level mode enum."""
+    issues: list[str] = []
 
     # ── Domain dimensions ──────────────────────────────────
-    if _ok("width") and cfg.width <= 0:
+    if ok("width") and cfg.width <= 0:
         issues.append(f"domain.width must be > 0, got {cfg.width}")
-    if _ok("height") and cfg.height <= 0:
+    if ok("height") and cfg.height <= 0:
         issues.append(f"domain.height must be > 0, got {cfg.height}")
-    if _ok("depth") and cfg.depth <= 0:
+    if ok("depth") and cfg.depth <= 0:
         issues.append(f"domain.depth must be > 0, got {cfg.depth}")
 
     # ── Flock ─────────────────────────────────────────────
-    if _ok("num_boids") and cfg.num_boids < 0:
+    if ok("num_boids") and cfg.num_boids < 0:
         issues.append(f"num_boids must be >= 0, got {cfg.num_boids}")
-    if _ok("boid_size") and cfg.boid_size <= 0:
+    if ok("boid_size") and cfg.boid_size <= 0:
         issues.append(f"boid_size must be > 0, got {cfg.boid_size}")
-    if _ok("v0") and cfg.v0 < 0:
+    if ok("v0") and cfg.v0 < 0:
         issues.append(f"v0 must be >= 0, got {cfg.v0}")
-    if _ok("max_force") and cfg.max_force < 0:
+    if ok("max_force") and cfg.max_force < 0:
         issues.append(f"max_force must be >= 0, got {cfg.max_force}")
-    if _ok("visual_range") and cfg.visual_range <= 0:
+    if ok("visual_range") and cfg.visual_range <= 0:
         issues.append(f"visual_range must be > 0, got {cfg.visual_range}")
 
     # ── Boundary ──────────────────────────────────────────
@@ -145,7 +168,7 @@ def validate_config(cfg) -> list[str]:
             f"boundary_mode must be one of {cfg._VALID_BOUNDARY_MODES}, "
             f"got {cfg.boundary_mode!r}"
         )
-    if _ok("boundary_sphere_radius") and cfg.boundary_sphere_radius <= 0:
+    if ok("boundary_sphere_radius") and cfg.boundary_sphere_radius <= 0:
         issues.append(
             f"boundary_sphere_radius must be > 0, got {cfg.boundary_sphere_radius}"
         )
@@ -168,7 +191,14 @@ def validate_config(cfg) -> list[str]:
             f"mode must be one of {cfg._VALID_MODES}, got {cfg.mode!r}"
         )
 
-    # ── Mode-specific constraints ─────────────────────────
+    return issues
+
+
+def _validate_mode_specific_forces(cfg, ok: _OkFn) -> list[str]:
+    """Per-mode constraints for the four modes with the richest rule
+    sets: projection, spatial, vicsek, influencer."""
+    issues: list[str] = []
+
     # Explicit phi_p validation (shim retired — read from sub-config)
     if not isinstance(cfg.projection.phi_p, (int, float)):
         issues.append(
@@ -177,64 +207,64 @@ def validate_config(cfg) -> list[str]:
         )
 
     if cfg.mode == "projection":
-        if _ok("sigma") and cfg.sigma <= 0:
+        if ok("sigma") and cfg.sigma <= 0:
             issues.append(f"projection.sigma must be > 0, got {cfg.sigma}")
         if isinstance(cfg.projection.phi_p, (int, float)) and cfg.projection.phi_p < 0:
             issues.append(f"projection.phi_p must be >= 0, got {cfg.projection.phi_p}")
-        if _ok("phi_a") and cfg.phi_a < 0:
+        if ok("phi_a") and cfg.phi_a < 0:
             issues.append(f"projection.phi_a must be >= 0, got {cfg.phi_a}")
 
     if cfg.mode == "spatial":
-        if _ok("separation_weight") and cfg.separation_weight < 0:
+        if ok("separation_weight") and cfg.separation_weight < 0:
             issues.append(f"spatial.separation_weight >= 0, got {cfg.separation_weight}")
-        if _ok("alignment_weight") and cfg.alignment_weight < 0:
+        if ok("alignment_weight") and cfg.alignment_weight < 0:
             issues.append(f"spatial.alignment_weight >= 0, got {cfg.alignment_weight}")
-        if _ok("cohesion_weight") and cfg.cohesion_weight < 0:
+        if ok("cohesion_weight") and cfg.cohesion_weight < 0:
             issues.append(f"spatial.cohesion_weight >= 0, got {cfg.cohesion_weight}")
-        if _ok("influence_count") and cfg.influence_count < 1:
+        if ok("influence_count") and cfg.influence_count < 1:
             issues.append(f"spatial.influence_count must be >= 1, got {cfg.influence_count}")
-        if _ok("noise_scale") and cfg.noise_scale < 0:
+        if ok("noise_scale") and cfg.noise_scale < 0:
             issues.append(f"spatial.noise_scale >= 0, got {cfg.noise_scale}")
 
     if cfg.mode == "vicsek":
-        if _ok("vicsek_couplage") and not (
+        if ok("vicsek_couplage") and not (
             0.0 <= cfg.vicsek_couplage <= 1.0
         ):
             issues.append(
                 f"vicsek_couplage must be in [0,1], got {cfg.vicsek_couplage}"
             )
-        if _ok("vicsek_diffusion") and cfg.vicsek_diffusion < 0:
+        if ok("vicsek_diffusion") and cfg.vicsek_diffusion < 0:
             issues.append(
                 f"vicsek_diffusion must be >= 0, got {cfg.vicsek_diffusion}"
             )
         if (
-            _ok("vicsek_radius_influence")
-            and _ok("vicsek_radius_avoid")
+            ok("vicsek_radius_influence")
+            and ok("vicsek_radius_avoid")
             and cfg.vicsek_radius_influence <= cfg.vicsek_radius_avoid
         ):
             issues.append(
                 f"vicsek_radius_influence ({cfg.vicsek_radius_influence}) "
                 f"must be > vicsek_radius_avoid ({cfg.vicsek_radius_avoid})"
             )
-        if _ok("vicsek_velocity") and cfg.vicsek_velocity <= 0:
+        if ok("vicsek_velocity") and cfg.vicsek_velocity <= 0:
             issues.append(
                 f"vicsek_velocity must be > 0, got {cfg.vicsek_velocity}"
             )
-        if _ok("vicsek_time_step") and cfg.vicsek_time_step <= 0:
+        if ok("vicsek_time_step") and cfg.vicsek_time_step <= 0:
             issues.append(
                 f"vicsek_time_step must be > 0, got {cfg.vicsek_time_step}"
             )
 
     if cfg.mode == "influencer":
-        if _ok("influencer_substeps") and cfg.influencer_substeps < 1:
+        if ok("influencer_substeps") and cfg.influencer_substeps < 1:
             issues.append(
                 f"influencer_substeps must be >= 1, got {cfg.influencer_substeps}"
             )
-        if _ok("influencer_rank_exponent") and cfg.influencer_rank_exponent <= 0:
+        if ok("influencer_rank_exponent") and cfg.influencer_rank_exponent <= 0:
             issues.append(
                 f"influencer_rank_exponent must be > 0, got {cfg.influencer_rank_exponent}"
             )
-        if _ok("influencer_scale") and cfg.influencer_scale <= 0:
+        if ok("influencer_scale") and cfg.influencer_scale <= 0:
             issues.append(
                 f"influencer_scale must be > 0, got {cfg.influencer_scale}"
             )
@@ -243,15 +273,15 @@ def validate_config(cfg) -> list[str]:
                 f"influencer_influence_mode must be 'rank' or 'distance', "
                 f"got {cfg.influencer_influence_mode!r}"
             )
-        if _ok("influencer_near_dist_sq") and cfg.influencer_near_dist_sq <= 0:
+        if ok("influencer_near_dist_sq") and cfg.influencer_near_dist_sq <= 0:
             issues.append(
                 f"influencer_near_dist_sq must be > 0, got {cfg.influencer_near_dist_sq}"
             )
-        if _ok("influencer_init_separation") and cfg.influencer_init_separation <= 0:
+        if ok("influencer_init_separation") and cfg.influencer_init_separation <= 0:
             issues.append(
                 f"influencer_init_separation must be > 0, got {cfg.influencer_init_separation}"
             )
-        if _ok("influencer_tick_rate") and cfg.influencer_tick_rate <= 0:
+        if ok("influencer_tick_rate") and cfg.influencer_tick_rate <= 0:
             issues.append(
                 f"influencer_tick_rate must be > 0, got {cfg.influencer_tick_rate}"
             )
@@ -277,21 +307,29 @@ def validate_config(cfg) -> list[str]:
             f == 0 for f in cfg.influencer_target_freq_secondary
         ):
             issues.append("influencer_target_freq_primary/secondary entries must be nonzero")
-        if _ok("influencer_pilot_speed") and cfg.influencer_pilot_speed <= 0:
+        if ok("influencer_pilot_speed") and cfg.influencer_pilot_speed <= 0:
             issues.append(
                 f"influencer_pilot_speed must be > 0, got {cfg.influencer_pilot_speed}"
             )
 
+    return issues
+
+
+def _validate_refinements_angle_extensions(cfg, ok: _OkFn) -> list[str]:
+    """Occlusion/steric refinements, the general angle_speed_mode enum,
+    and extensions cross-field rules (predator_mode/predator_enabled)."""
+    issues: list[str] = []
+
     # ── Refinements ───────────────────────────────────────
-    if _ok("blind_deg") and (cfg.blind_deg < 0 or cfg.blind_deg >= 360):
+    if ok("blind_deg") and (cfg.blind_deg < 0 or cfg.blind_deg >= 360):
         issues.append(
             f"blind_deg must be in [0, 360), got {cfg.blind_deg}"
         )
-    if _ok("anisotropy") and cfg.anisotropy < 1.0:
+    if ok("anisotropy") and cfg.anisotropy < 1.0:
         issues.append(
             f"anisotropy must be >= 1.0 (body axis ratio a/b), got {cfg.anisotropy}"
         )
-    if _ok("steric") and cfg.steric < 0:
+    if ok("steric") and cfg.steric < 0:
         issues.append(f"steric must be >= 0, got {cfg.steric}")
 
     # ── Angle mode ──────────────────────────────────────────
@@ -309,16 +347,24 @@ def validate_config(cfg) -> list[str]:
         )
     if cfg.predator_enabled:
         if (
-            _ok("predator_threat_radius")
+            ok("predator_threat_radius")
             and cfg.predator_threat_radius <= 0
         ):
             issues.append(
                 "predator_enabled=True but predator_threat_radius must be > 0"
             )
-        if _ok("predator_strength") and cfg.predator_strength <= 0:
+        if ok("predator_strength") and cfg.predator_strength <= 0:
             issues.append(
                 "predator_enabled=True but predator_strength must be > 0"
             )
+
+    return issues
+
+
+def _validate_index_performance(cfg, ok: _OkFn) -> list[str]:
+    """Spatial index type/topological cap, and performance settings
+    (metrics detail level, parallel workers, fastmath)."""
+    issues: list[str] = []
 
     # ── Spatial index ─────────────────────────────────────
     if cfg.spatial_index not in cfg._VALID_INDEX_TYPES:
@@ -326,7 +372,7 @@ def validate_config(cfg) -> list[str]:
             f"spatial_index must be one of {cfg._VALID_INDEX_TYPES}, "
             f"got {cfg.spatial_index!r}"
         )
-    if _ok("topological_cap") and cfg.topological_cap < 1:
+    if ok("topological_cap") and cfg.topological_cap < 1:
         issues.append(f"topological_cap must be >= 1, got {cfg.topological_cap}")
 
     # ── Performance ───────────────────────────────────────
@@ -335,9 +381,9 @@ def validate_config(cfg) -> list[str]:
             f"metrics_detail_level must be in {cfg._VALID_METRICS_LEVELS}, "
             f"got {cfg.metrics_detail_level}"
         )
-    if _ok("metrics_interval") and cfg.metrics_interval < 1:
+    if ok("metrics_interval") and cfg.metrics_interval < 1:
         issues.append(f"metrics_interval must be >= 1, got {cfg.metrics_interval}")
-    if _ok("parallel_workers") and cfg.parallel_workers < -1:
+    if ok("parallel_workers") and cfg.parallel_workers < -1:
         issues.append(
             f"parallel_workers must be >= -1, got {cfg.parallel_workers}"
         )
@@ -353,12 +399,19 @@ def validate_config(cfg) -> list[str]:
             "metrics non-reproducible."
         )
 
+    return issues
+
+
+def _validate_viz_capture(cfg, ok: _OkFn) -> list[str]:
+    """Visualization (fps/window/theme/mesh) and capture settings."""
+    issues: list[str] = []
+
     # ── Visualization ─────────────────────────────────────
-    if _ok("fps") and cfg.fps <= 0:
+    if ok("fps") and cfg.fps <= 0:
         issues.append(f"viz.fps must be > 0, got {cfg.fps}")
-    if _ok("window_width") and cfg.window_width <= 0:
+    if ok("window_width") and cfg.window_width <= 0:
         issues.append(f"viz.window_width must be > 0, got {cfg.window_width}")
-    if _ok("window_height") and cfg.window_height <= 0:
+    if ok("window_height") and cfg.window_height <= 0:
         issues.append(f"viz.window_height must be > 0, got {cfg.window_height}")
     if cfg.theme not in cfg._VALID_THEMES:
         issues.append(
@@ -366,52 +419,60 @@ def validate_config(cfg) -> list[str]:
         )
 
     # S4.4a: Validate bird_mesh
-    if _ok("bird_mesh") and cfg.bird_mesh not in cfg._VALID_MESH_NAMES:
+    if ok("bird_mesh") and cfg.bird_mesh not in cfg._VALID_MESH_NAMES:
         issues.append(
             f"viz.bird_mesh must be one of {cfg._VALID_MESH_NAMES}, "
             f"got {cfg.bird_mesh!r}"
         )
 
     # ── Capture ───────────────────────────────────────────
-    if _ok("capture_width") and cfg.capture_width <= 0:
+    if ok("capture_width") and cfg.capture_width <= 0:
         issues.append(f"capture_width must be > 0, got {cfg.capture_width}")
-    if _ok("capture_height") and cfg.capture_height <= 0:
+    if ok("capture_height") and cfg.capture_height <= 0:
         issues.append(f"capture_height must be > 0, got {cfg.capture_height}")
-    if _ok("capture_frames") and cfg.capture_frames < 1:
+    if ok("capture_frames") and cfg.capture_frames < 1:
         issues.append(f"capture_frames must be >= 1, got {cfg.capture_frames}")
-    if _ok("capture_every") and cfg.capture_every < 1:
+    if ok("capture_every") and cfg.capture_every < 1:
         issues.append(f"capture_every must be >= 1, got {cfg.capture_every}")
-    if _ok("capture_fps") and cfg.capture_fps <= 0:
+    if ok("capture_fps") and cfg.capture_fps <= 0:
         issues.append(f"capture_fps must be > 0, got {cfg.capture_fps}")
+
+    return issues
+
+
+def _validate_angle_marl_ecology(cfg, ok: _OkFn) -> list[str]:
+    """Mode-specific constraints for angle/marl mode, plus the ecology
+    roosting cross-field rule (roost point must be inside the domain)."""
+    issues: list[str] = []
 
     # ── Angle mode ────────────────────────────────────────
     if cfg.mode == "angle":
-        if _ok("turn_rate") and cfg.turn_rate <= 0:
+        if ok("turn_rate") and cfg.turn_rate <= 0:
             issues.append(f"angle.turn_rate must be > 0, got {cfg.turn_rate}")
-        if _ok("max_turn_rate") and cfg.max_turn_rate <= 0:
+        if ok("max_turn_rate") and cfg.max_turn_rate <= 0:
             issues.append(f"angle.max_turn_rate must be > 0, got {cfg.max_turn_rate}")
-        if _ok("turn_threshold") and cfg.turn_threshold < 0:
+        if ok("turn_threshold") and cfg.turn_threshold < 0:
             issues.append(f"angle.turn_threshold must be >= 0, got {cfg.turn_threshold}")
-        if _ok("base_speed") and cfg.base_speed <= 0:
+        if ok("base_speed") and cfg.base_speed <= 0:
             issues.append(f"angle.base_speed must be > 0, got {cfg.base_speed}")
-        if _ok("angle_neighbors") and cfg.angle_neighbors < 1:
+        if ok("angle_neighbors") and cfg.angle_neighbors < 1:
             issues.append(f"angle.angle_neighbors must be >= 1, got {cfg.angle_neighbors}")
 
     # ── MARL mode ─────────────────────────────────────────
     if cfg.mode == "marl":
-        if _ok("marl_velocity_cap") and cfg.marl_velocity_cap <= 0:
+        if ok("marl_velocity_cap") and cfg.marl_velocity_cap <= 0:
             issues.append(f"marl.velocity_cap must be > 0, got {cfg.marl_velocity_cap}")
-        if _ok("marl_rule_weight") and cfg.marl_rule_weight < 0:
+        if ok("marl_rule_weight") and cfg.marl_rule_weight < 0:
             issues.append(f"marl.rule_weight must be >= 0, got {cfg.marl_rule_weight}")
-        if _ok("marl_separation_radius") and cfg.marl_separation_radius <= 0:
+        if ok("marl_separation_radius") and cfg.marl_separation_radius <= 0:
             issues.append(
                 f"marl.separation_radius must be > 0, got {cfg.marl_separation_radius}"
             )
-        if _ok("marl_action_scale") and cfg.marl_action_scale <= 0:
+        if ok("marl_action_scale") and cfg.marl_action_scale <= 0:
             issues.append(
                 f"marl.action_scale must be > 0, got {cfg.marl_action_scale}"
             )
-        if _ok("marl_episode_steps") and cfg.marl_episode_steps < 1:
+        if ok("marl_episode_steps") and cfg.marl_episode_steps < 1:
             issues.append(
                 f"marl.episode_steps must be >= 1, got {cfg.marl_episode_steps}"
             )
@@ -420,9 +481,9 @@ def validate_config(cfg) -> list[str]:
     if cfg.roosting_enabled:
         rx, ry, rz = cfg.ecology_roost
         domain_ok = (
-            _ok("width") and 0 <= rx <= cfg.width
-            and _ok("height") and 0 <= ry <= cfg.height
-            and _ok("depth") and 0 <= rz <= cfg.depth
+            ok("width") and 0 <= rx <= cfg.width
+            and ok("height") and 0 <= ry <= cfg.height
+            and ok("depth") and 0 <= rz <= cfg.depth
         )
         if not domain_ok:
             issues.append(
@@ -430,5 +491,20 @@ def validate_config(cfg) -> list[str]:
                 f"is outside domain bounds ({cfg.width}x{cfg.height}x{cfg.depth})"
             )
 
+    return issues
 
+
+def validate_config(cfg) -> list[str]:
+    """Check cross-field consistency, returning a list of issue strings
+    (empty if valid). SimConfig.validate() raises ValueError with these
+    aggregated if non-empty -- call at engine creation time to catch
+    misconfiguration early.
+    """
+    issues, ok = _validate_types(cfg)
+    issues += _validate_domain_flock_boundary(cfg, ok)
+    issues += _validate_mode_specific_forces(cfg, ok)
+    issues += _validate_refinements_angle_extensions(cfg, ok)
+    issues += _validate_index_performance(cfg, ok)
+    issues += _validate_viz_capture(cfg, ok)
+    issues += _validate_angle_marl_ecology(cfg, ok)
     return issues
