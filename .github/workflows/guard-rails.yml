@@ -43,10 +43,10 @@ jobs:
           mkdir -p output
           docker run --rm -v ${{ github.workspace }}/output:/app/output \
             pymurmur-test:latest \
-            pytest test/crosscutting/guards/test_architecture_edges_data.py \
-              test/crosscutting/guards/test_architecture_edges.py \
-              test/crosscutting/guards/test_architecture_scans.py \
-              test/crosscutting/guards/test_architecture_file_size.py \
+            pytest test/crosscutting/guards/architecture/test_architecture_edges_data.py \
+              test/crosscutting/guards/architecture/test_architecture_edges.py \
+              test/crosscutting/guards/architecture/test_architecture_scans.py \
+              test/crosscutting/guards/architecture/test_architecture_file_size.py \
               -v --tb=long --timeout=60 \
               --junitxml=output/guard-dag.xml
       - name: Upload results

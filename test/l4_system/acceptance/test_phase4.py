@@ -448,7 +448,7 @@ class TestP4ArchitectureEdges:
 
     def test_p4_edges_registered(self):
         """P4 edges: spatial.py→_kernels, _kernels→core, ecology→core+flock are registered."""
-        from test.crosscutting.guards.test_architecture_edges_data import ALLOWED_EDGES
+        from test.crosscutting.guards.architecture.test_architecture_edges_data import ALLOWED_EDGES
 
         # Check _kernels has its own entry
         if "pymurmur.physics.forces._kernels" in ALLOWED_EDGES:

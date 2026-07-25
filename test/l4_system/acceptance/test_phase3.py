@@ -296,7 +296,7 @@ class TestP3ArchitectureEdges:
     def test_p3_edges_in_allowed_edges(self):
         """P3-specific allowed edges are registered in
         test_architecture_edges_data.ALLOWED_EDGES."""
-        from test.crosscutting.guards.test_architecture_edges_data import ALLOWED_EDGES
+        from test.crosscutting.guards.architecture.test_architecture_edges_data import ALLOWED_EDGES
 
         p3_edges = {
             "pymurmur.physics.forces.field": {

@@ -93,10 +93,10 @@ jobs:
             -v ${{ github.workspace }}/output:/app/output \
             pymurmur-test:latest \
             pytest test/crosscutting/guards/test_imports.py \
-              test/crosscutting/guards/test_architecture_edges_data.py \
-              test/crosscutting/guards/test_architecture_edges.py \
-              test/crosscutting/guards/test_architecture_scans.py \
-              test/crosscutting/guards/test_architecture_file_size.py \
+              test/crosscutting/guards/architecture/test_architecture_edges_data.py \
+              test/crosscutting/guards/architecture/test_architecture_edges.py \
+              test/crosscutting/guards/architecture/test_architecture_scans.py \
+              test/crosscutting/guards/architecture/test_architecture_file_size.py \
               test/crosscutting/guards/test_docs.py \
               test/crosscutting/guards/test_golden.py \
               test/l3_subsystems/test_subsystem_a.py \

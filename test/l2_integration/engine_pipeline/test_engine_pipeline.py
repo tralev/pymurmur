@@ -354,8 +354,8 @@ class TestOnlyEngineDualImporter:
         Forces sub-modules that import forces._base + flock are internal
         to the forces package and are excluded from this check.
         """
-        from test.crosscutting.guards.test_architecture_edges import _collect_import_edges
-        from test.crosscutting.guards.test_architecture_edges_data import ALLOWED_EDGES
+        from test.crosscutting.guards.architecture.test_architecture_edges import _collect_import_edges
+        from test.crosscutting.guards.architecture.test_architecture_edges_data import ALLOWED_EDGES
 
         # Check ALLOWED_EDGES — exclude forces-package-internal modules
         allowed_dual = []

@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from test.crosscutting.guards.test_architecture_edges_data import (
+from test.crosscutting.guards.architecture.test_architecture_edges_data import (
     ALLOWED_EDGES,
     FORBIDDEN_EDGES,
     KNOWN_VIOLATIONS,

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from test.crosscutting.guards.test_architecture_edges import (
+from test.crosscutting.guards.architecture.test_architecture_edges import (
     _collect_import_edges,
     _is_known_violation,
 )

@@ -104,7 +104,7 @@ imported as `from test.helpers import …`.
 - `SimConfig.from_file(path)` is the loader (not `from_yaml`); validation
   requires `capture.frames >= 1`.
 - Every new module import edge must be registered in `ALLOWED_EDGES` in
-  `test/crosscutting/guards/test_architecture_edges_data.py`.
+  `test/crosscutting/guards/architecture/test_architecture_edges_data.py`.
 - Docker/pygame-gated tests use `pytest.mark.skipif(not PYGAME_AVAILABLE, …)`
   rather than a `pygame` marker — this is why that marker was removed rather
   than kept as a second, unused mechanism.
@@ -157,10 +157,10 @@ test/
 │                                  # guard, marl (S7 bridge, gymnasium-gated)
 │
 ├── l2_integration/               # ── Level 2: SUBSYSTEM WIRING (meso) ──
-│   ├── test_engine_pipeline.py   # 6-stage engine order under live mutations
+│   ├── engine_pipeline/          # test_engine_pipeline*.py — 6-stage engine order under live mutations
 │   ├── test_render_contract.py   # frame()/headless_frame() never step the sim
-│   ├── test_capture_pipeline.py  # step → on_frame → serialize round-trip
-│   ├── test_config_contract.py   # facade, field map, nested↔flat contract
+│   ├── capture_pipeline/         # test_capture_pipeline*.py — step → on_frame → serialize round-trip
+│   ├── config_contract/          # test_config_contract*.py — facade, field map, nested↔flat contract
 │   ├── test_cross_subsystem.py   # index swap, threat pipeline, instance schema
 │   └── test_defect_regressions.py # D1–D21 whole-system defect regression guards
 │
@@ -189,7 +189,7 @@ test/
 │
 └── crosscutting/                 # ── unnumbered: ORTHOGONAL TO ALL LEVELS ──
     ├── guards/                   # repo guard-rails (CI: guard-rails.yml, -m guard)
-    │   ├── test_architecture_edges*.py  # ALLOWED_EDGES import-DAG enforcement (+ scans, file-size)
+    │   ├── architecture/         # test_architecture_edges*.py — ALLOWED_EDGES import-DAG enforcement (+ scans, file-size)
     │   ├── test_imports.py            # no-upward-import rules
     │   ├── test_docs.py               # arch.md/test.md link + topology validation
     │   ├── test_golden.py             # golden trajectory regression (test/data)
@@ -202,7 +202,7 @@ test/
     │   └── test_strictly_3d.py        # P14.3 — no 2D spatial arrays in physics/
     └── perf/                     # slow benchmarks (nightly / PR merge)
         ├── test_budgets.py       # P1 — per-mode step-time budget table (MODE_REGISTRY-parametrized)
-        ├── test_performance.py   # P2/P3/P4 — scaling checkpoints, memory audit, soak
+        ├── performance/          # test_performance*.py — P2/P3/P4 scaling checkpoints, memory audit, soak
         └── test_scaling.py       # O(N) / O(N log N) scaling fits
 ```
 
@@ -334,10 +334,10 @@ docker run --rm -it -v $(pwd)/output:/app/output pymurmur-test bash
 
 # A single guard rail, exactly as guard-rails.yml runs it
 docker run --rm -v $(pwd)/output:/app/output pymurmur-test \
-  pytest test/crosscutting/guards/test_architecture_edges_data.py \
-    test/crosscutting/guards/test_architecture_edges.py \
-    test/crosscutting/guards/test_architecture_scans.py \
-    test/crosscutting/guards/test_architecture_file_size.py -v
+  pytest test/crosscutting/guards/architecture/test_architecture_edges_data.py \
+    test/crosscutting/guards/architecture/test_architecture_edges.py \
+    test/crosscutting/guards/architecture/test_architecture_scans.py \
+    test/crosscutting/guards/architecture/test_architecture_file_size.py -v
 ```
 
 All services mount `./output` (JUnit XML `test-results-*.xml`, coverage
@@ -495,7 +495,7 @@ Where to look when you want the tests for a concept. Paths are relative to
 |---|---|
 | **Determinism** (same seed → bit-identical; numba↔numpy parity; threads/jitter axes; subprocess leg) | `crosscutting/guards/test_determinism.py`, `l0m/physics/test_flock.py` |
 | **Golden trajectory regression** (5 modes × 2 boundaries, bit-exact) | `crosscutting/guards/test_golden.py` (+ generator `regenerate_golden.py`) |
-| **Import-DAG / layering enforcement** (`ALLOWED_EDGES`) | `crosscutting/guards/test_architecture_edges*.py`, `test_imports.py`; waiver-removal in `l2_integration/test_render_contract.py` |
+| **Import-DAG / layering enforcement** (`ALLOWED_EDGES`) | `crosscutting/guards/architecture/test_architecture_edges*.py`, `test_imports.py`; waiver-removal in `l2_integration/test_render_contract.py` |
 | **Suite never silently shrinks** (collection floors) | `crosscutting/guards/test_collection_count.py` |
 | **Docs stay linked & in sync** (arch.md ↔ test.md, retired schemes absent) | `crosscutting/guards/test_docs.py` |
 | **No orphan config fields** | `crosscutting/guards/test_config_drift.py` |
@@ -685,7 +685,7 @@ One line per file: what idea(s) it pins down. Grouped micro → macro.
 ### crosscutting/
 | File | Idea |
 |---|---|
-| `guards/test_architecture_edges*.py` | Import-DAG matrix (`ALLOWED_EDGES`) enforcement |
+| `guards/architecture/test_architecture_edges*.py` | Import-DAG matrix (`ALLOWED_EDGES`) enforcement |
 | `guards/test_imports.py` | AST-level upward-import bans |
 | `guards/test_golden.py` | Bit-exact trajectories vs `test/data/golden_*.npz` |
 | `guards/test_determinism.py` | Registry-wide same-seed identity × threads × jitter, plus one subprocess leg per mode |
