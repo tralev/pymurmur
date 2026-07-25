@@ -503,16 +503,16 @@ Where to look when you want the tests for a concept. Paths are relative to
 | **No dead L0 atoms** (every public atom has a caller) | `crosscutting/guards/test_composers.py` |
 | **CI YAML correctness** (valid bash, dangling `needs:`, summary-gate completeness) | `crosscutting/guards/test_ci_workflow_integrity.py` |
 | **Strictly-3D invariant** (no 2D spatial arrays; `depth > 0`) | `crosscutting/guards/test_strictly_3d.py` |
-| **Config system** (nested dataclasses, YAML I/O, validation, flat↔nested map) | `l0m/core/test_config.py`, `test_config_validation.py`, `l2_integration/test_config_contract.py` |
+| **Config system** (nested dataclasses, YAML I/O, validation, flat↔nested map) | `l0m/core/test_config.py`, `test_config_validation.py`, `l2_integration/config_contract/test_config_contract.py` |
 | **Config loading & resolution** (search path, shipped files) | `l4_system/test_config_resolution.py`, `test_config_files.py` |
 | **No `print()` in package sources / structured run logging** | `l0m/core/test_logging.py` |
 | **CLI dispatch & flags** (`--set`, `--probe`, `--list-configs`…) | `l4_system/test_cli.py`, `test_cli_e2e.py`, `test_probe.py` |
-| **Public facade** (`pymurmur.Simulation`) | `l4_system/test_facade.py`, `l2_integration/test_config_contract.py` |
+| **Public facade** (`pymurmur.Simulation`) | `l4_system/test_facade.py`, `l2_integration/config_contract/test_config_contract.py` |
 | **Headless end-to-end runs** | `l4_system/test_e2e.py`, `test_mode_switch_no_crash.py` |
 | **Phase acceptance gates** | `l4_system/acceptance/test_phase{1,3,4}.py` |
 | **Subsystem isolation (A–F)** | `l3_subsystems/test_subsystem_{a..f}.py` |
 | **Whole-system defect regressions (D1–D21)** | `l2_integration/test_defect_regressions.py` |
-| **Engine step order & command queue** | `l0m/simulation/test_engine.py`, `l2_integration/test_engine_pipeline.py` |
+| **Engine step order & command queue** | `l0m/simulation/test_engine.py`, `l2_integration/engine_pipeline/test_engine_pipeline.py` |
 | **Fixed-timestep accumulator + render lerp** | `l0m/simulation/test_accumulator.py` |
 | **Force-mode contract** (registry, needs_index, active mask) | `l0m/physics/forces/test_mode_contract.py` |
 | **Force primitives** (sep/align/cohere/noise; property-based) | `l0m/physics/forces/test_base.py`, `test_force_primitives_properties.py`, `test_force_terms.py` |
@@ -547,7 +547,7 @@ Where to look when you want the tests for a concept. Paths are relative to
 | **HUD sliders (logic)** | `l0m/viz/test_hud.py` |
 | **Input → config bridge** | `l0m/viz/test_input.py` |
 | **Render purity contract** (render never steps sim) | `l2_integration/test_render_contract.py` |
-| **Capture** (recorder, GIF/CSV/JSON, prewarm, mpl fallback) | `l0m/capture/test_recorder.py`, `test_mpl_recorder.py`, `l2_integration/test_capture_pipeline.py` |
+| **Capture** (recorder, GIF/CSV/JSON, prewarm, mpl fallback) | `l0m/capture/test_recorder.py`, `test_mpl_recorder.py`, `l2_integration/capture_pipeline/test_capture_pipeline.py` |
 | **Step-time budget table** (data-driven, MODE_REGISTRY-parametrized) | `crosscutting/perf/test_budgets.py` |
 | **Scaling checkpoint ladder** (150/1.5K/16K/50K/300K, tier assertions) | `crosscutting/perf/test_performance.py::TestScalingCheckpoints` |
 | **Full-inventory memory audit at N=300K** | `crosscutting/perf/test_performance.py::TestMemoryAtEachCheckpoint` |

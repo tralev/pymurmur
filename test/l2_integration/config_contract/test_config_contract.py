@@ -45,7 +45,7 @@ def test_config_sub_classes_have_no_forbidden_imports():
 
     forbidden = {"pygame", "moderngl", "PIL", "numba", "matplotlib", "gymnasium",
                  "stable_baselines3"}
-    config_dir = Path(__file__).resolve().parents[2] / "pymurmur" / "core" / "config"
+    config_dir = Path(__file__).resolve().parents[3] / "pymurmur" / "core" / "config"
     tree_sources = [
         ast.parse(py_file.read_text()) for py_file in sorted(config_dir.glob("*.py"))
     ]
