@@ -5,7 +5,7 @@ error message directs the user to `pip install gymnasium`.
 
 Observation: Box(−1, 1, (6N,)) — concat((p−C)/3U, v/v_cap)
 Action: Box(−1, 1, (3N,)) — per-bird velocity adjustment
-Reward: from pymurmur.analysis.rewards (P9.9 weighted composite)
+Reward: from pymurmur.analysis.rl.rewards (P9.9 weighted composite)
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import numpy as np
 
 if TYPE_CHECKING:
 
-    from ..simulation.engine import SimulationEngine
+    from ...simulation.engine import SimulationEngine
 
 
 # ── Lazy gymnasium import ──────────────────────────────────────────
@@ -59,7 +59,7 @@ class MurmurationEnv(_BaseEnv):
     Usage::
 
         import gymnasium
-        from pymurmur.analysis.gym_env import MurmurationEnv
+        from pymurmur.analysis.rl import MurmurationEnv
 
         env = MurmurationEnv(num_boids=20, episode_steps=500)
         obs, info = env.reset()
@@ -84,7 +84,7 @@ class MurmurationEnv(_BaseEnv):
         self._seed = seed
         self._step_count: int = 0
 
-        from ..core.config import SimConfig
+        from ...core.config import SimConfig
         self._base_config = SimConfig(
             num_boids=num_boids,
             mode=mode,
@@ -131,7 +131,7 @@ class MurmurationEnv(_BaseEnv):
             cfg.seed = self._seed
         cfg.num_boids = self._num_boids
 
-        from ..simulation.engine import SimulationEngine
+        from ...simulation.engine import SimulationEngine
         self._engine = SimulationEngine(cfg)
         self._step_count = 0
 
@@ -199,7 +199,7 @@ class MurmurationEnv(_BaseEnv):
         penalty) without a code change.
         """
         assert self._engine is not None
-        from ..analysis.rewards import RewardConfig, compute_reward
+        from .rewards import RewardConfig, compute_reward
 
         history = self._engine.metrics.history
         if not history:

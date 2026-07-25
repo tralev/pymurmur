@@ -25,7 +25,7 @@ from pymurmur.analysis.metrics import (
     compute_tau_rho_hull,
     compute_theta_prime,
 )
-from pymurmur.analysis.rewards import RewardConfig, compute_reward
+from pymurmur.analysis.rl.rewards import RewardConfig, compute_reward
 
 # ═══════════════════════════════════════════════════════════════
 # 1. Reward scalarization of P9 observables (P9.9 ↔ P9.1, P9.4, P9.8)

@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from pymurmur.analysis.metrics import FlockMetrics
-from pymurmur.analysis.rewards import (
+from pymurmur.analysis.rl.rewards import (
     RewardConfig,
     compute_reward,
     reward_linearity_check,

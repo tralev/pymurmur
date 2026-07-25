@@ -311,15 +311,23 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.core.config",
         "pymurmur.simulation.engine",
     },
-    "pymurmur.analysis.rewards": {
+    # Logical-structure split: gym_env.py + rewards.py moved from flush in
+    # analysis/ into a new analysis/rl/ subpackage (RL bridge). Both
+    # dotted paths change; rl/__init__.py re-exports MurmurationEnv/
+    # RewardConfig/compute_reward for ergonomics.
+    "pymurmur.analysis.rl": {
+        "pymurmur.analysis.rl.gym_env",
+        "pymurmur.analysis.rl.rewards",
+    },
+    "pymurmur.analysis.rl.rewards": {
         "pymurmur.core.types",
         "pymurmur.analysis.metrics",
     },
-    "pymurmur.analysis.gym_env": {  # P12.2: MurmurationEnv
+    "pymurmur.analysis.rl.gym_env": {  # P12.2: MurmurationEnv
         "pymurmur.core.types",
         "pymurmur.core.config",
         "pymurmur.simulation.engine",
-        "pymurmur.analysis.rewards",
+        "pymurmur.analysis.rl.rewards",
         "pymurmur.analysis.metrics",
     },
     "pymurmur.analysis.density_scaling": {

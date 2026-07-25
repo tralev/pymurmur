@@ -12,7 +12,7 @@ import pytest
 
 from pymurmur.core.config import SimConfig
 from pymurmur.physics.forces.marl import MarlMode
-from test.l0_modules.analysis.test_marl import _make_flock_arrays
+from test.l0_modules.physics.forces.test_marl import _make_flock_arrays
 
 
 class TestMarlModeTwoStep:
@@ -156,7 +156,7 @@ class TestMarlFullPipeline:
     def _env(self):
         """Create a basic environment (skip if gymnasium unavailable)."""
         pytest.importorskip("gymnasium")
-        from pymurmur.analysis.gym_env import MurmurationEnv
+        from pymurmur.analysis.rl.gym_env import MurmurationEnv
         return MurmurationEnv(num_boids=10, episode_steps=200, seed=42)
 
     def test_env_step_reflects_action_in_obs(self, _env):
@@ -168,7 +168,7 @@ class TestMarlFullPipeline:
         identical starting state — isolates the action's marginal
         effect from internal rules (cohesion, etc.) that both
         environments share.  P12.1→P12.2 roundtrip."""
-        from pymurmur.analysis.gym_env import MurmurationEnv
+        from pymurmur.analysis.rl.gym_env import MurmurationEnv
 
         # Two envs with same seed → identical initial state
         env_action = MurmurationEnv(num_boids=10, episode_steps=200, seed=42)
@@ -215,7 +215,7 @@ class TestMarlFullPipeline:
     def test_two_envs_independent_state(self, _env):
         """Two MurmurationEnv instances have completely independent
         flock state — reset() creates a new SimulationEngine."""
-        from pymurmur.analysis.gym_env import MurmurationEnv
+        from pymurmur.analysis.rl.gym_env import MurmurationEnv
 
         env_a = MurmurationEnv(num_boids=10, episode_steps=200, seed=42)
         env_b = MurmurationEnv(num_boids=10, episode_steps=200, seed=99)

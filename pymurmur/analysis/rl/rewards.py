@@ -25,7 +25,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .metrics import FlockMetrics
+from ..metrics import FlockMetrics
 
 
 @dataclass

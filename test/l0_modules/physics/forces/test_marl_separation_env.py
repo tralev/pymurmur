@@ -12,7 +12,7 @@ import pytest
 
 from pymurmur.core.config import SimConfig
 from pymurmur.physics.forces.marl import MarlMode
-from test.l0_modules.analysis.test_marl import _make_flock_arrays
+from test.l0_modules.physics.forces.test_marl import _make_flock_arrays
 
 
 class TestMarlSeparationRadius:
@@ -241,7 +241,7 @@ class TestMurmurationEnv:
     def _env(self):
         """Create a basic environment (skip if gymnasium unavailable)."""
         pytest.importorskip("gymnasium")
-        from pymurmur.analysis.gym_env import MurmurationEnv
+        from pymurmur.analysis.rl.gym_env import MurmurationEnv
         return MurmurationEnv(num_boids=10, episode_steps=200, seed=42)
 
     def test_env_spaces_correct_shape(self, _env):
@@ -252,7 +252,7 @@ class TestMurmurationEnv:
     def test_episode_steps_defaults_to_config_marl_episode_steps(self):
         """C3: episode_steps=None falls back to config.marl_episode_steps."""
         pytest.importorskip("gymnasium")
-        from pymurmur.analysis.gym_env import MurmurationEnv
+        from pymurmur.analysis.rl.gym_env import MurmurationEnv
 
         env = MurmurationEnv(num_boids=5, seed=42)
         assert env._episode_steps == env._base_config.marl_episode_steps
@@ -266,7 +266,7 @@ class TestMurmurationEnv:
     def test_explicit_episode_steps_overrides_config(self):
         """C3: an explicit episode_steps kwarg wins over config."""
         pytest.importorskip("gymnasium")
-        from pymurmur.analysis.gym_env import MurmurationEnv
+        from pymurmur.analysis.rl.gym_env import MurmurationEnv
 
         env = MurmurationEnv(
             num_boids=5, seed=42, episode_steps=7,
@@ -325,7 +325,7 @@ class TestMurmurationEnv:
         obs1, _ = _env.reset(seed=42)
         _env.action_space.sample()
 
-        from pymurmur.analysis.gym_env import MurmurationEnv
+        from pymurmur.analysis.rl.gym_env import MurmurationEnv
         env2 = MurmurationEnv(num_boids=10, episode_steps=200, seed=42)
         obs2, _ = env2.reset(seed=42)
 
@@ -347,7 +347,7 @@ class TestMurmurationEnv:
 
     def test_config_overrides_flow_to_engine(self, _env):
         """config_overrides dict modifies the base config used by the engine."""
-        from pymurmur.analysis.gym_env import MurmurationEnv
+        from pymurmur.analysis.rl.gym_env import MurmurationEnv
         env = MurmurationEnv(
             num_boids=5,
             episode_steps=100,
@@ -359,7 +359,7 @@ class TestMurmurationEnv:
 
     def test_mode_parameter_is_marl_by_default(self, _env):
         """mode='marl' is the default and flows to engine config."""
-        from pymurmur.analysis.gym_env import MurmurationEnv
+        from pymurmur.analysis.rl.gym_env import MurmurationEnv
         env = MurmurationEnv(num_boids=5, episode_steps=100)
         env.reset()
         assert env._engine is not None
@@ -367,7 +367,7 @@ class TestMurmurationEnv:
 
     def test_get_obs_formula_positions(self, _env):
         """_get_obs normalizes positions as (p-C)/3U."""
-        from pymurmur.analysis.gym_env import MurmurationEnv
+        from pymurmur.analysis.rl.gym_env import MurmurationEnv
         env = MurmurationEnv(num_boids=5, episode_steps=100, seed=42)
         env.reset()
 
@@ -406,7 +406,7 @@ class TestMurmurationEnv:
 
     def test_seed_none_produces_different_obs(self, _env):
         """seed=None creates non-deterministic initial states."""
-        from pymurmur.analysis.gym_env import MurmurationEnv
+        from pymurmur.analysis.rl.gym_env import MurmurationEnv
         env_a = MurmurationEnv(num_boids=10, episode_steps=100, seed=None)
         env_b = MurmurationEnv(num_boids=10, episode_steps=100, seed=None)
 
@@ -420,7 +420,7 @@ class TestMurmurationEnv:
 
     def test_config_overrides_unknown_key_does_not_crash(self, _env):
         """config_overrides with an unrecognized key doesn't crash."""
-        from pymurmur.analysis.gym_env import MurmurationEnv
+        from pymurmur.analysis.rl.gym_env import MurmurationEnv
         env = MurmurationEnv(
             num_boids=5,
             episode_steps=100,
