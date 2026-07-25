@@ -206,7 +206,7 @@ class TestD15AngleConfigStructured:
         and read via getattr(config, '_coherence_factor', 1.0) — this
         is the sanctioned runtime-bridge pattern, not a config fallback."""
         from pathlib import Path
-        src = Path(__file__).parents[4] / "pymurmur" / "physics" / "forces" / "angle.py"
+        src = Path(__file__).parents[5] / "pymurmur" / "physics" / "forces" / "angle.py"
         text = src.read_text()
         # getattr on index is fine (D14 per-index storage), but
         # getattr on config must not exist anywhere in angle.py,

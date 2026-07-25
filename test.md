@@ -43,7 +43,7 @@ pytest test/l4_system/ -v          # system goal
 pytest test/crosscutting/ -v       # guards + perf (orthogonal)
 
 # One module's tests
-pytest test/l0_modules/physics/forces/test_field.py -v
+pytest test/l0_modules/physics/forces/field/test_field.py -v
 
 # Match by test name pattern
 pytest test/ -k "test_vicsek" -v
@@ -222,7 +222,7 @@ File names are module-first (`test_<module>[_<aspect>].py`), not phase-first;
 phase provenance lives in docstrings (`P8.10: …`). The `guard` marker — not
 the directory — is what CI's guard-rails workflow selects, so module-shaped
 guards (e.g. `l0_modules/analysis/evoflock/test_evolved_yaml.py`,
-`l0_modules/physics/forces/test_vicsek_core.py`) stay with their modules.
+`l0_modules/physics/forces/vicsek/test_vicsek_core.py`) stay with their modules.
 
 ---
 

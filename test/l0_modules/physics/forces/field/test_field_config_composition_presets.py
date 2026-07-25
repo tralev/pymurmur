@@ -424,7 +424,7 @@ class TestFieldPresets:
     @staticmethod
     def _load(name: str) -> SimConfig:
         from pathlib import Path
-        conf_dir = Path(__file__).resolve().parents[4] / "conf"
+        conf_dir = Path(__file__).resolve().parents[5] / "conf"
         return SimConfig.from_file(conf_dir / name)
 
     def test_quiet_roost(self):

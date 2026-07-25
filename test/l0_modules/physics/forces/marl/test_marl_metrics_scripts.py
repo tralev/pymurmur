@@ -12,7 +12,7 @@ import pytest
 
 from pymurmur.core.config import SimConfig
 from pymurmur.physics.forces.marl import MarlMode
-from test.l0_modules.physics.forces.test_marl import _make_flock_arrays
+from test.l0_modules.physics.forces.marl.test_marl import _make_flock_arrays
 
 
 class TestMarlEngineStepMetrics:
@@ -246,7 +246,7 @@ class TestMarlScripts:
         import importlib.util
         import os
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(
-            os.path.dirname(os.path.dirname(__file__)))))
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))))))
         path = os.path.join(project_root, "scripts", "train_marl.py")
         spec = importlib.util.spec_from_file_location("train_marl", path)
         module = importlib.util.module_from_spec(spec)
@@ -258,7 +258,7 @@ class TestMarlScripts:
         import importlib.util
         import os
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(
-            os.path.dirname(os.path.dirname(__file__)))))
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))))))
         path = os.path.join(project_root, "scripts", "rollout_marl.py")
         spec = importlib.util.spec_from_file_location("rollout_marl", path)
         module = importlib.util.module_from_spec(spec)
@@ -295,7 +295,7 @@ class TestMarlScripts:
         """train_marl.py source contains the gymnasium import guard."""
         import os
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(
-            os.path.dirname(os.path.dirname(__file__)))))
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))))))
         path = os.path.join(project_root, "scripts", "train_marl.py")
         with open(path) as f:
             source = f.read()
@@ -310,7 +310,7 @@ class TestMarlScripts:
         """rollout_marl.py source contains the gymnasium import guard."""
         import os
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(
-            os.path.dirname(os.path.dirname(__file__)))))
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))))))
         path = os.path.join(project_root, "scripts", "rollout_marl.py")
         with open(path) as f:
             source = f.read()

@@ -12,7 +12,7 @@ import pytest
 
 from pymurmur.core.config import SimConfig
 from pymurmur.physics.forces.marl import MarlMode
-from test.l0_modules.physics.forces.test_marl import _make_flock_arrays
+from test.l0_modules.physics.forces.marl.test_marl import _make_flock_arrays
 
 
 class TestMarlSeparationRadius:
