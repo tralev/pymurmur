@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from ..core.types import Vec3
+from ...core.types import Vec3
 
 
 @dataclass

@@ -50,8 +50,8 @@ from .shape_motion import (
 )
 
 if TYPE_CHECKING:
-    from ..core.config import SimConfig
-    from ..physics.flock import PhysicsFlock
+    from ...core.config import SimConfig
+    from ...physics.flock import PhysicsFlock
 
 
 class MetricsCollector:
@@ -107,7 +107,7 @@ class MetricsCollector:
         # value otherwise.
         self._roost_z_target: float | None = None
         if config is not None:
-            from ..core.config import RoostConfig
+            from ...core.config import RoostConfig
             if config.roost.z_target == RoostConfig().z_target:
                 self._roost_z_target = config.depth / 2.0
             else:
