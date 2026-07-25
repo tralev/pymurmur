@@ -34,7 +34,8 @@ def _apply_influencer_density_init(flock: PhysicsFlock, config: SimConfig) -> No
     """C4/S2.E4: position_init="influencer_density" composer.
 
     physics.flock/physics.boid (L0/L1) can't import physics.forces (would
-    create an import cycle — see test_architecture.py's forbidden edges),
+    create an import cycle — see test_architecture_edges_data.py's
+    forbidden edges),
     so the density-scaled Gaussian init (P7.4) is applied here instead,
     overwriting PhysicsFlock's default position init post-construction.
 

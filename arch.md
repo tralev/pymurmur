@@ -61,7 +61,7 @@ parallax scenes. All deliberately out of scope, not partially-built.
 
 This section is the generator of the **dependency rules and subsystem
 contracts** enforced elsewhere in this document (§5) and in CI
-(`test/crosscutting/guards/test_architecture.py`). `test/l3_subsystems/`
+(`test/crosscutting/guards/test_architecture_edges*.py`). `test/l3_subsystems/`
 isolates the Level-1 subsystems below with their dependencies mocked;
 `test/l0_modules/` mirrors the module map (§4); `test/crosscutting/guards/`
 enforces the dependency matrix (§5).
@@ -290,7 +290,7 @@ git_mur/
 
 ---
 
-## 5. Dependency Rules *(Level 2 — enforced by `test/crosscutting/guards/test_architecture.py`)*
+## 5. Dependency Rules *(Level 2 — enforced by `test/crosscutting/guards/test_architecture_edges*.py`)*
 
 The guard encodes a **module-level** `ALLOWED_EDGES` matrix (an import
 from A to B must match an allowed prefix; `TYPE_CHECKING` imports count)
