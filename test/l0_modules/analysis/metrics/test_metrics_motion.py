@@ -340,7 +340,7 @@ def test_robust_density_nonzero_sphere():
 
 def test_ideal_exponent_in_density_scaling_result():
     """P9.7: DensityScalingResult carries ideal_density_exponent = −0.5."""
-    from pymurmur.analysis.density_scaling import DensityScalingResult
+    from pymurmur.analysis.research.density_scaling import DensityScalingResult
 
     result = DensityScalingResult(
         n_values=np.array([50.0, 100.0], dtype=np.float64),

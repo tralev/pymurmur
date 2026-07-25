@@ -4,7 +4,7 @@
 import numpy as np
 import pytest
 
-from pymurmur.analysis.density_scaling import (
+from pymurmur.analysis.research.density_scaling import (
     DensityScalingResult,
     _fit_power_laws,
     load_results,

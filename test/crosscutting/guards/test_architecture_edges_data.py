@@ -306,7 +306,13 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.obstacles",
         "pymurmur.analysis.evoflock",  # TYPE_CHECKING only (Genome)
     },
-    "pymurmur.analysis.phase_diagram": {
+    # Logical-structure split: phase_diagram.py/density_scaling.py/
+    # point_clouds.py/topological_range.py moved from flush in analysis/
+    # into a new analysis/research/ subpackage (independent Young-et-al-
+    # 2013 validation scripts, no shared API so research/__init__.py is
+    # empty). point_clouds.py and topological_range.py have no entries
+    # here since they import nothing from pymurmur.
+    "pymurmur.analysis.research.phase_diagram": {
         "pymurmur.core.types",
         "pymurmur.core.config",
         "pymurmur.simulation.engine",
@@ -330,7 +336,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.analysis.rl.rewards",
         "pymurmur.analysis.metrics",
     },
-    "pymurmur.analysis.density_scaling": {
+    "pymurmur.analysis.research.density_scaling": {
         "pymurmur.core.types",
         "pymurmur.core.config",
         "pymurmur.simulation.engine",

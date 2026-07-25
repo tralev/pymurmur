@@ -59,8 +59,8 @@ def sweep_density_scaling(
     Returns:
         DensityScalingResult with measurements and power-law fits.
     """
-    from ..core.config import SimConfig
-    from ..simulation.engine import SimulationEngine
+    from ...core.config import SimConfig
+    from ...simulation.engine import SimulationEngine
 
     if n_values is None:
         n_values = [50, 100, 200, 400, 800]

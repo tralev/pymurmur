@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from pymurmur.analysis.metrics import compute_shape, find_m_star_by_sensing_cost
-from pymurmur.analysis.point_clouds import (
+from pymurmur.analysis.research.point_clouds import (
     generate_grid_noise_flock,
     generate_halton_flock,
     generate_uniform_flock,

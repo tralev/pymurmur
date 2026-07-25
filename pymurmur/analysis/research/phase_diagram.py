@@ -86,8 +86,8 @@ def sweep_vicsek_phase(
         raise ValueError(
             f"order_type must be 'polar' or 'nematic', got '{order_type}'"
         )
-    from ..core.config import SimConfig
-    from ..simulation.engine import SimulationEngine
+    from ...core.config import SimConfig
+    from ...simulation.engine import SimulationEngine
 
     eta_grid = np.linspace(eta_range[0], eta_range[1], n_eta, dtype=np.float64)
     d_grid = np.linspace(d_range[0], d_range[1], n_d, dtype=np.float64)

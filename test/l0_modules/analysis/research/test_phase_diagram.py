@@ -4,7 +4,7 @@
 import numpy as np
 import pytest
 
-from pymurmur.analysis.phase_diagram import (
+from pymurmur.analysis.research.phase_diagram import (
     PhaseDiagramResult,
     _find_phase_boundary,
     load_results,
@@ -405,7 +405,7 @@ def test_nematic_invalid_order_type_raises():
     """P9.1: Invalid order_type raises ValueError."""
     import pytest
 
-    from pymurmur.analysis.phase_diagram import sweep_vicsek_phase
+    from pymurmur.analysis.research.phase_diagram import sweep_vicsek_phase
 
     with pytest.raises(ValueError, match="order_type must be 'polar' or 'nematic'"):
         sweep_vicsek_phase(n_eta=2, n_d=2, n_boids=10, steps=20, order_type="bogus")

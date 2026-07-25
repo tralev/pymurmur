@@ -7,7 +7,7 @@ import pytest
 from scipy.stats import pearsonr
 
 from pymurmur.analysis.metrics import find_m_star_by_sensing_cost
-from pymurmur.analysis.topological_range import compute_topological_correlation_range
+from pymurmur.analysis.research.topological_range import compute_topological_correlation_range
 from pymurmur.core.config import SimConfig
 from pymurmur.simulation.engine import SimulationEngine
 
