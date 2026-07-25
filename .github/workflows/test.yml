@@ -176,7 +176,7 @@ jobs:
             -e NUMBA_NUM_THREADS=4 \
             pymurmur-test:latest \
             sh -c "pip install --no-cache-dir 'stable-baselines3>=2.0' 2>/dev/null || true; \
-              pytest test/crosscutting/perf/performance/test_performance.py \
+              pytest test/crosscutting/perf/performance/ \
                 test/crosscutting/perf/test_scaling.py \
                 test/crosscutting/perf/test_budgets.py \
                 -v -m slow \
