@@ -229,6 +229,52 @@ def test_g2_force_mode_registry_prose_matches():
     )
 
 
+# ── G2: Module Map §4/§5 stay pointed at the current subpackage layout ──
+#
+# core/ and analysis/ were each split from a flat pile of files into
+# subpackages (core/config/, analysis/{metrics,evoflock,rl,research}/).
+# The Module Map (§4) and Dependency Rules subpackage summary (§5) are
+# prose/tree-diagram text, not the executable ALLOWED_EDGES matrix, so
+# nothing else catches them silently drifting back to the pre-split flat
+# paths — this is a targeted string-presence check, not a full
+# tree-diagram parser (which would itself need constant upkeep as the
+# surrounding commentary evolves).
+
+CURRENT_SUBPACKAGE_PATHS = [
+    "core/config/",
+    "analysis/{metrics,presets}",
+    "analysis/{perf,evoflock,rl,research}",
+]
+
+STALE_FLAT_FILE_PATHS = [
+    "core/config.py",
+    "analysis/evoflock.py",
+    "analysis/gym_env.py",
+    "analysis/rewards.py",
+    "analysis/phase_diagram.py",
+    "analysis/density_scaling.py",
+]
+
+
+def test_arch_md_module_map_matches_current_subpackage_layout():
+    """G2: arch.md's Module Map (§4) and Dependency Rules (§5) reference
+    the current core/config/ and analysis/{metrics,evoflock,rl,research}/
+    subpackages, not the pre-split flat file names."""
+    content = Path(FORCE_MODE_TABLE_FILE).read_text()
+
+    for path in CURRENT_SUBPACKAGE_PATHS:
+        assert path in content, (
+            f"{FORCE_MODE_TABLE_FILE} doesn't mention '{path}' — "
+            f"the Module Map has drifted from the current subpackage layout"
+        )
+
+    for path in STALE_FLAT_FILE_PATHS:
+        assert path not in content, (
+            f"{FORCE_MODE_TABLE_FILE} still mentions the stale flat path "
+            f"'{path}' — it was split into a subpackage; update §4/§5"
+        )
+
+
 # ── G4: CI guard topology documentation ──────────────────────────
 
 GUARD_RAIL_JOB_NAMES = [

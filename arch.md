@@ -180,7 +180,14 @@ pymurmur/                          # pip-installable package
 │   │                          #   SpatialIndex Protocol, rotate_about, min_image,
 │   │                          #   normalize3/limit3, hash01, smoothstep,
 │   │                          #   fibonacci_sphere, seed_noise3, isfinite3
-│   ├── config.py              # nested SimConfig (+ sub-config dataclasses), YAML I/O, validate()
+│   ├── config/                # nested SimConfig, YAML I/O, validate() (was config.py —
+│   │   │                      #   split by file size; __init__.py re-exports, so
+│   │   │                      #   "pymurmur.core.config" is unchanged for every caller)
+│   │   ├── __init__.py        # SimConfig — composes the sub-configs below
+│   │   ├── config_sections.py # per-subsystem dataclasses (flock, projection, spatial, …)
+│   │   ├── config_field_map.py # flat↔nested field-name map
+│   │   ├── config_io.py       # load_config_from_file / save_config_to_file (YAML)
+│   │   └── config_validation.py # validate_config(cfg) -> list[str]
 │   └── logging.py             # setup_run_logging → output/run-<UTC>.log (header/metrics/
 │                              #   lifecycle/footer); cli_out/cli_err (the only sanctioned
 │                              #   stdout/stderr seam — no print() anywhere else in pymurmur/)
@@ -249,15 +256,39 @@ pymurmur/                          # pip-installable package
 │   ├── recorder.py            # GL path: pre-warm, sweep, GIF(optimize,disposal)/CSV/JSON
 │   └── mpl_recorder.py        # GPU-free dual-view matplotlib fallback
 │
-└── analysis/
-    ├── metrics.py             # F1: observables + FlockMetrics.to_dict() schema
-    ├── rewards.py             # F1: weighted composite reward terms
-    ├── presets.py             # F1: letter-key scenario table + themes
-    ├── perf.py                # F2: PerfDiagnostics + QualityGovernor
-    ├── evoflock.py            # F2: SSGA (crossover, worst-of-N, SDF objectives, islands)
-    ├── phase_diagram.py       # F2: (η, D) sweep, polar|nematic
-    ├── density_scaling.py     # F2: N-sweep vs ideal exponent −0.5
-    └── gym_env.py             # F2: MurmurationEnv (lazy gymnasium)
+└── analysis/                  # subpackaged by concern (was 17 flat files)
+    ├── metrics/               # F1: observables + FlockMetrics.to_dict() schema
+    │   │                      #   (was metrics.py — __init__.py re-exports, so
+    │   │                      #   "pymurmur.analysis.metrics" is unchanged for every caller)
+    │   ├── __init__.py        # thin re-export shim — every public name below
+    │   ├── flock_metrics.py   # FlockMetrics container dataclass
+    │   ├── collector.py       # MetricsCollector — per-frame orchestration
+    │   ├── consensus_robustness.py # Young et al. H2 graph-Laplacian pipeline
+    │   ├── opacity.py         # Pearce et al. opacity pipeline
+    │   ├── shape_motion.py    # nematic order, PCA shape, gyration, R_max, motion metrics
+    │   └── dynamics_curves.py # MSD, tau_rho, convex-hull density, accel/opacity correlation
+    ├── evoflock/              # F2: SSGA (crossover, worst-of-N, SDF objectives, islands)
+    │   │                      #   (was evoflock.py — __init__.py re-exports, so
+    │   │                      #   "pymurmur.analysis.evoflock" is unchanged for every caller)
+    │   ├── __init__.py        # EvoConfig, Genome, EvoFlock
+    │   └── evoflock_objectives.py # per-step objective collector + scoring helpers
+    ├── rl/                    # F2: MARL/gym RL bridge (was rewards.py + gym_env.py,
+    │   │                      #   flush in analysis/ — new subpackage, path changed)
+    │   ├── __init__.py        # re-exports MurmurationEnv, RewardConfig, compute_reward
+    │   ├── gym_env.py         # MurmurationEnv (lazy gymnasium)
+    │   └── rewards.py         # weighted composite reward terms
+    ├── research/              # F2: independent Young-et-al-2013 validation scripts
+    │   │                      #   (was 4 files flush in analysis/ — new subpackage,
+    │   │                      #   path changed; empty __init__.py, no shared API)
+    │   ├── phase_diagram.py   # (η, D) sweep, polar|nematic
+    │   ├── density_scaling.py # N-sweep vs ideal exponent −0.5
+    │   ├── point_clouds.py    # uniform/grid-noise/Halton point-cloud generators
+    │   └── topological_range.py # independent topological interaction-range estimator
+    ├── presets.py             # F1: letter-key scenario table + themes (unchanged, flat —
+    │                          #   genuinely cross-cutting: consumed by viz.input_control)
+    └── perf.py                # F2: PerfDiagnostics + QualityGovernor (unchanged, flat —
+                               #   genuinely cross-cutting: consumed by simulation.engine
+                               #   and viz.visualizer)
 ```
 
 ### Repository layout (project root)
@@ -297,7 +328,8 @@ from A to B must match an allowed prefix; `TYPE_CHECKING` imports count)
 plus named `FORBIDDEN_EDGES`. Subpackage summary:
 
 ```
-core/                    → numpy/stdlib only
+core/                    → numpy/stdlib only          (core/config/ is a subpackage;
+                                                      "core.config" path unchanged)
 physics/boid             → core                      (never flock/forces)
 physics/occlusion|steric → core                      (pure numpy)
 physics/obstacles        → core
@@ -305,10 +337,12 @@ physics/forces/*         → physics primitives, core  (read flock arrays; no cK
                                                       construction — use flock.index)
 physics/flock            → core, physics/boid        (NEVER forces — the cycle is dead)
 physics/extensions       → physics/flock(read), core
-simulation/engine        → physics/*, analysis/{metrics,rewards}, core
-analysis/{metrics,rewards,presets}  → physics/flock(read), core        (tier F1)
-analysis/{perf,evoflock,phase_diagram,density_scaling,gym_env}
-                         → simulation, core                             (tier F2)
+simulation/engine        → physics/*, analysis/{metrics,perf}, core
+analysis/{metrics,presets}  → physics/flock(read), core                (tier F1)
+analysis/{perf,evoflock,rl,research}
+                         → simulation, core                             (tier F2;
+                           rl subsumes rewards+gym_env, research subsumes
+                           phase_diagram+density_scaling+point_clouds+topological_range)
 viz/                     → core, physics/flock(read), analysis/presets  (never simulation*)
 capture/                 → simulation, viz, core
 __main__ / scripts       → everything
