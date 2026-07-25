@@ -547,7 +547,7 @@ Where to look when you want the tests for a concept. Paths are relative to
 | **HUD sliders (logic)** | `l0m/viz/test_hud.py` |
 | **Input → config bridge** | `l0m/viz/test_input.py` |
 | **Render purity contract** (render never steps sim) | `l2_integration/test_render_contract.py` |
-| **Capture** (recorder, GIF/CSV/JSON, prewarm, mpl fallback) | `l0m/capture/test_recorder.py`, `test_mpl_recorder.py`, `l2_integration/capture_pipeline/test_capture_pipeline.py` |
+| **Capture** (recorder, GIF/CSV/JSON, prewarm, mpl fallback) | `l0m/capture/recorder/test_recorder.py`, `mpl_recorder/test_mpl_recorder.py`, `l2_integration/capture_pipeline/test_capture_pipeline.py` |
 | **Step-time budget table** (data-driven, MODE_REGISTRY-parametrized) | `crosscutting/perf/test_budgets.py` |
 | **Scaling checkpoint ladder** (150/1.5K/16K/50K/300K, tier assertions) | `crosscutting/perf/test_performance.py::TestScalingCheckpoints` |
 | **Full-inventory memory audit at N=300K** | `crosscutting/perf/test_performance.py::TestMemoryAtEachCheckpoint` |
