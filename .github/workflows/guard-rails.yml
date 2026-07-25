@@ -264,7 +264,7 @@ jobs:
           mkdir -p output
           docker run --rm -v ${{ github.workspace }}/output:/app/output \
             pymurmur-test:latest \
-            pytest test/l0_modules/analysis/test_evolved_yaml.py \
+            pytest test/l0_modules/analysis/evoflock/test_evolved_yaml.py \
               -v --tb=long --timeout=30 \
               --junitxml=output/guard-evolved.xml
       - name: Upload results

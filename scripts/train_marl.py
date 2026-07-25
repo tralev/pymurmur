@@ -42,7 +42,7 @@ def main() -> None:
 
     from stable_baselines3 import PPO
 
-    from pymurmur.analysis.gym_env import MurmurationEnv
+    from pymurmur.analysis.rl import MurmurationEnv
 
     print(
         f"Training PPO on MurmurationEnv (N={args.num_boids}, "

@@ -42,7 +42,7 @@ def main() -> None:
 
     from stable_baselines3 import PPO
 
-    from pymurmur.analysis.gym_env import MurmurationEnv
+    from pymurmur.analysis.rl import MurmurationEnv
 
     print(f"Loading model from {args.model}")
     model = PPO.load(args.model)

@@ -221,7 +221,7 @@ test/
 File names are module-first (`test_<module>[_<aspect>].py`), not phase-first;
 phase provenance lives in docstrings (`P8.10: …`). The `guard` marker — not
 the directory — is what CI's guard-rails workflow selects, so module-shaped
-guards (e.g. `l0_modules/analysis/test_evolved_yaml.py`,
+guards (e.g. `l0_modules/analysis/evoflock/test_evolved_yaml.py`,
 `l0_modules/physics/forces/test_vicsek_core.py`) stay with their modules.
 
 ---

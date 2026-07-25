@@ -468,7 +468,7 @@ CAPTURE_W=400 CAPTURE_H=300 CAPTURE_FRAMES=120 CAPTURE_OUT=out.gif …
 import pymurmur
 sim = pymurmur.Simulation(num_boids=200, mode="spatial", seed=42)
 timings = sim.benchmark(num_steps=1000)          # render-free per-step seconds
-from pymurmur.analysis.gym_env import MurmurationEnv   # lazy gymnasium
+from pymurmur.analysis.rl import MurmurationEnv   # lazy gymnasium
 ```
 
 ### What the user can do
@@ -501,7 +501,7 @@ flowchart LR
 | force mode | new file in `forces/`, subclass `ForceMode`, `@register` (declares needs_index/speed_mode/owns_positions); add its edges to `ALLOWED_EDGES` |
 | behavioural extension | subclass `Extension`, register in `ExtensionManager`; read everything from `ctx` |
 | metric | field on `FlockMetrics` + fill in `collect()`; auto-exported via `to_dict()` |
-| reward term | named term in `analysis/rewards.py` + weight in `MarlConfig` |
+| reward term | named term in `analysis/rl/rewards.py` + weight in `MarlConfig` |
 | spatial index | implement `SpatialIndex` Protocol; must pass the shared conformance suite |
 | bird mesh / render layer | mesh entry in `mesh_registry.py` + viz config; `draw_layer` for overlays |
 | obstacle shape | SDF function in `physics/obstacles.py` (+ compose via min/max) |
