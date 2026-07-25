@@ -62,8 +62,8 @@ L0_ATOMS: list[tuple[str, str]] = [
     ("pymurmur/physics/boid.py", "integrate"),
     ("pymurmur/physics/boid.py", "init_positions"),
     ("pymurmur/physics/boid.py", "init_velocities"),
-    # core/config.py — public construction
-    ("pymurmur/core/config.py", "SimConfig"),
+    # core/config/__init__.py — public construction
+    ("pymurmur/core/config/__init__.py", "SimConfig"),
 ]
 
 

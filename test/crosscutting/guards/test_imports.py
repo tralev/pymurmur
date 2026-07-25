@@ -99,8 +99,8 @@ def test_viz_modules_importable():
 
 
 def test_config_no_game_imports():
-    """config.py does not import pygame/modernGL."""
-    path = Path("pymurmur/core/config.py")
-    text = path.read_text()
-    assert "import pygame" not in text
-    assert "import moderngl" not in text
+    """core/config/ does not import pygame/modernGL."""
+    for path in Path("pymurmur/core/config").rglob("*.py"):
+        text = path.read_text()
+        assert "import pygame" not in text, f"{path} imports pygame"
+        assert "import moderngl" not in text, f"{path} imports moderngl"

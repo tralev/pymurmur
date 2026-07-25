@@ -39,17 +39,19 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     # ── Tier 0: core/ — numpy/stdlib only, zero pymurmur imports ──
     "pymurmur.core.types": set(),
     # File-size split: config.py is now a slim SimConfig class that
-    # composes/re-exports the modules below.
+    # composes/re-exports the modules below. Logical-structure split:
+    # config.py -> core/config/__init__.py, siblings moved alongside it
+    # into core/config/ (dotted path "pymurmur.core.config" unchanged).
     "pymurmur.core.config": {
-        "pymurmur.core.config_field_map",
-        "pymurmur.core.config_io",
-        "pymurmur.core.config_sections",
-        "pymurmur.core.config_validation",
+        "pymurmur.core.config.config_field_map",
+        "pymurmur.core.config.config_io",
+        "pymurmur.core.config.config_sections",
+        "pymurmur.core.config.config_validation",
     },
-    "pymurmur.core.config_sections": set(),
-    "pymurmur.core.config_field_map": set(),
-    "pymurmur.core.config_validation": set(),
-    "pymurmur.core.config_io": {"pymurmur.core.config_field_map"},
+    "pymurmur.core.config.config_sections": set(),
+    "pymurmur.core.config.config_field_map": set(),
+    "pymurmur.core.config.config_validation": set(),
+    "pymurmur.core.config.config_io": {"pymurmur.core.config.config_field_map"},
 
     # ── Tier 0: physics/obstacles (L0 atom, P0.14) — core only ──
     "pymurmur.physics.obstacles": {"pymurmur.core.types"},
