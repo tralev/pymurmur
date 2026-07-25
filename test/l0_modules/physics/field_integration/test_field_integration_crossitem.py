@@ -22,7 +22,7 @@ from pymurmur.physics.forces.field import (
     _compute_fold_noise,
 )
 from test.helpers import _call_force
-from test.l0_modules.physics.test_field_integration import _make_ctx
+from test.l0_modules.physics.field_integration.test_field_integration import _make_ctx
 
 
 class TestIntegrationRippleToFoldNoise:
