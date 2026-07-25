@@ -549,9 +549,9 @@ Where to look when you want the tests for a concept. Paths are relative to
 | **Render purity contract** (render never steps sim) | `l2_integration/test_render_contract.py` |
 | **Capture** (recorder, GIF/CSV/JSON, prewarm, mpl fallback) | `l0m/capture/recorder/test_recorder.py`, `mpl_recorder/test_mpl_recorder.py`, `l2_integration/capture_pipeline/test_capture_pipeline.py` |
 | **Step-time budget table** (data-driven, MODE_REGISTRY-parametrized) | `crosscutting/perf/test_budgets.py` |
-| **Scaling checkpoint ladder** (150/1.5K/16K/50K/300K, tier assertions) | `crosscutting/perf/test_performance.py::TestScalingCheckpoints` |
-| **Full-inventory memory audit at N=300K** | `crosscutting/perf/test_performance.py::TestMemoryAtEachCheckpoint` |
-| **Long-run stability soak** (20K-frame nightly tier; 24h release-gate tier) | `crosscutting/perf/test_performance.py::TestSoak`; `scripts/soak_release_gate.py` (manual, not CI-wired by design) |
+| **Scaling checkpoint ladder** (150/1.5K/16K/50K/300K, tier assertions) | `crosscutting/perf/performance/test_performance.py::TestScalingCheckpoints` |
+| **Full-inventory memory audit at N=300K** | `crosscutting/perf/performance/test_performance.py::TestMemoryAtEachCheckpoint` |
+| **Long-run stability soak** (20K-frame nightly tier; 24h release-gate tier) | `crosscutting/perf/performance/test_performance.py::TestSoak`; `scripts/soak_release_gate.py` (manual, not CI-wired by design) |
 | **Step-time / memory budgets; O(N)/O(N log N) complexity claims** | `crosscutting/perf/test_scaling.py` |
 
 ## Index B — Test Files → Implemented Ideas

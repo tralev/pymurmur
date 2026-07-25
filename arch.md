@@ -384,7 +384,7 @@ source; integer seeds honored incl. 0, `None` → fresh entropy), `center`
 (exponentially smoothed centroid), `index` (`SpatialIndex`: modulo-celled
 hash grid or boxsize-aware cKDTree, both returning **global** indices),
 per-mode state on ForceMode instances. The memory-audit test
-(`test/crosscutting/perf/test_performance.py`) pins the 300K budget;
+(`test/crosscutting/perf/performance/test_performance.py`) pins the 300K budget;
 extending the audited-array inventory to this full column list is tracked
 as roadmap6 S8.3.
 

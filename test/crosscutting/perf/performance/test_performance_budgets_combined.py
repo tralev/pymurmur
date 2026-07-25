@@ -8,7 +8,7 @@ smoke checks.
 import numpy as np
 import pytest
 
-from test.crosscutting.perf.test_performance import HEADROOM_P2
+from test.crosscutting.perf.performance.test_performance import HEADROOM_P2
 
 # ── P1 × P2: Budgets with full metrics enabled ────────────────────
 #
