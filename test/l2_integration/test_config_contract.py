@@ -40,36 +40,38 @@ def test_public_facade_recorder_is_same_class():
 
 
 def test_config_sub_classes_have_no_forbidden_imports():
-    """I7.6: Sub-config dataclasses in config.py have no forbidden module imports."""
+    """I7.6: Sub-config dataclasses in core/config/ have no forbidden module imports."""
     from pathlib import Path
 
     forbidden = {"pygame", "moderngl", "PIL", "numba", "matplotlib", "gymnasium",
                  "stable_baselines3"}
-    config_src = (Path(__file__).resolve().parents[2] / "pymurmur" /
-                  "core" / "config.py").read_text()
-    tree = ast.parse(config_src)
+    config_dir = Path(__file__).resolve().parents[2] / "pymurmur" / "core" / "config"
+    tree_sources = [
+        ast.parse(py_file.read_text()) for py_file in sorted(config_dir.glob("*.py"))
+    ]
 
-    # Find all @dataclass class definitions
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef):
-            for dec in node.decorator_list:
-                if (isinstance(dec, ast.Name) and dec.id == "dataclass"):
-                    # Check for forbidden imports in this class body
-                    for child in ast.walk(node):
-                        if isinstance(child, ast.Import):
-                            for alias in child.names:
-                                top = alias.name.split(".")[0]
-                                assert top not in forbidden, (
-                                    f"Sub-config {node.name} imports forbidden "
-                                    f"module {alias.name}"
-                                )
-                        elif isinstance(child, ast.ImportFrom):
-                            if child.module:
-                                top = child.module.split(".")[0]
-                                assert top not in forbidden, (
-                                    f"Sub-config {node.name} imports from forbidden "
-                                    f"module {child.module}"
-                                )
+    # Find all @dataclass class definitions across every file in core/config/
+    for tree in tree_sources:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                for dec in node.decorator_list:
+                    if (isinstance(dec, ast.Name) and dec.id == "dataclass"):
+                        # Check for forbidden imports in this class body
+                        for child in ast.walk(node):
+                            if isinstance(child, ast.Import):
+                                for alias in child.names:
+                                    top = alias.name.split(".")[0]
+                                    assert top not in forbidden, (
+                                        f"Sub-config {node.name} imports forbidden "
+                                        f"module {alias.name}"
+                                    )
+                            elif isinstance(child, ast.ImportFrom):
+                                if child.module:
+                                    top = child.module.split(".")[0]
+                                    assert top not in forbidden, (
+                                        f"Sub-config {node.name} imports from forbidden "
+                                        f"module {child.module}"
+                                    )
 
 
 # ═══════════════════════════════════════════════════════════════════
