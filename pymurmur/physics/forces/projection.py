@@ -120,6 +120,21 @@ class ProjectionMode(ForceMode):
 
         v_desired = delta * phi_p + align_dir * phi_a  # (n_active, 3)
 
+        # §09/§11-style heading-blend inertia: a genuinely separate
+        # additive pull toward the bird's OWN current heading, independent
+        # of the phi_p+phi_a+phi_n partition of unity below (v_desired was
+        # never actually constrained to unit length before the Reynolds
+        # subtraction, so this extends rather than breaks that invariant).
+        # 0.0 (default) adds nothing — byte-identical to before this existed.
+        heading_inertia = config.projection.projection_heading_inertia
+        if heading_inertia > 0.0:
+            v_norms = np.linalg.norm(velocities[active_idx], axis=1, keepdims=True)
+            safe_norms = np.where(v_norms > 1e-6, v_norms, 1.0)
+            current_heading = np.where(
+                v_norms > 1e-6, velocities[active_idx] / safe_norms, 0.0,
+            )
+            v_desired = v_desired + current_heading * heading_inertia
+
         # S1.4: Pearce noise term — v ∝ φp·δ̂ + φa·⟨v̂⟩_σ + φn·η̂ with
         # φn = 1 − φp − φa and η̂ uniform on S². Keeps the flock from
         # converging to perfect alignment.

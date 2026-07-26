@@ -108,6 +108,22 @@ def test_projection_defaults_valid():
     _assert_valid(SimConfig(mode="projection"))
 
 
+def test_projection_heading_inertia_out_of_range_rejected():
+    _assert_invalid(
+        SimConfig(mode="projection", projection_heading_inertia=1.5),
+        "projection_heading_inertia",
+    )
+    _assert_invalid(
+        SimConfig(mode="projection", projection_heading_inertia=-0.1),
+        "projection_heading_inertia",
+    )
+
+
+def test_projection_heading_inertia_boundary_accepted():
+    _assert_valid(SimConfig(mode="projection", projection_heading_inertia=0.0))
+    _assert_valid(SimConfig(mode="projection", projection_heading_inertia=1.0))
+
+
 # ── Mode-specific: spatial ────────────────────────────────────────
 
 def test_spatial_negative_weights_rejected():
@@ -183,6 +199,20 @@ def test_vicsek_zero_time_step_rejected():
 
 def test_vicsek_defaults_valid():
     _assert_valid(SimConfig(mode="vicsek"))
+
+
+def test_vicsek_heading_inertia_out_of_range_rejected():
+    _assert_invalid(
+        SimConfig(mode="vicsek", vicsek_heading_inertia=1.5), "vicsek_heading_inertia",
+    )
+    _assert_invalid(
+        SimConfig(mode="vicsek", vicsek_heading_inertia=-0.1), "vicsek_heading_inertia",
+    )
+
+
+def test_vicsek_heading_inertia_boundary_accepted():
+    _assert_valid(SimConfig(mode="vicsek", vicsek_heading_inertia=0.0))
+    _assert_valid(SimConfig(mode="vicsek", vicsek_heading_inertia=1.0))
 
 
 # ── Mode-specific: influencer ─────────────────────────────────────

@@ -336,6 +336,73 @@ class TestVicsekCore:
         )
 
 
+class TestVicsekHeadingInertia:
+    """§09/§11-style heading-blend inertia (vicsek_heading_inertia) —
+    independent of the vicsek_couplage/vicsek_diffusion memory term."""
+
+    def test_default_is_zero(self):
+        assert SimConfig().vicsek_heading_inertia == 0.0
+
+    def _autocorr_at_inertia(self, inertia_val, D=1.0, n_frames=20, seed=42):
+        cfg = SimConfig()
+        cfg.mode = "vicsek"
+        cfg.num_boids = 1
+        cfg.vicsek_couplage = 0.0  # no neighbour coupling — isolate inertia
+        cfg.vicsek_diffusion = D
+        cfg.vicsek_heading_inertia = inertia_val
+        cfg.seed = seed
+        flock = PhysicsFlock(cfg)
+        directions = []
+        for _ in range(n_frames):
+            _call_force(vicsek_forces, flock, cfg)
+            v = flock.velocities[0]
+            directions.append(v / np.linalg.norm(v))
+        dirs = np.array(directions)
+        return float(np.sum(dirs[:-1] * dirs[1:]) / (len(dirs) - 1))
+
+    def test_higher_inertia_increases_autocorrelation(self):
+        """Higher heading_inertia -> heading changes less per tick ->
+        higher frame-to-frame direction autocorrelation."""
+        ac_low = self._autocorr_at_inertia(0.0)
+        ac_high = self._autocorr_at_inertia(0.9)
+        assert ac_high > ac_low
+
+    def test_zero_matches_no_inertia_field(self):
+        """Explicit 0.0 must match the default (never-touched) baseline."""
+        cfg_a = SimConfig()
+        cfg_a.mode = "vicsek"
+        cfg_a.num_boids = 20
+        cfg_a.seed = 3
+        cfg_b = SimConfig()
+        cfg_b.mode = "vicsek"
+        cfg_b.num_boids = 20
+        cfg_b.seed = 3
+        cfg_b.vicsek_heading_inertia = 0.0
+
+        flock_a = PhysicsFlock(cfg_a)
+        flock_b = PhysicsFlock(cfg_b)
+        for _ in range(10):
+            _call_force(vicsek_forces, flock_a, cfg_a)
+            _call_force(vicsek_forces, flock_b, cfg_b)
+        np.testing.assert_array_equal(flock_a.velocities, flock_b.velocities)
+
+    def test_full_strength_no_crash(self):
+        cfg = SimConfig()
+        cfg.mode = "vicsek"
+        cfg.num_boids = 30
+        cfg.vicsek_heading_inertia = 1.0
+        cfg.seed = 1
+        flock = PhysicsFlock(cfg)
+        for _ in range(10):
+            _call_force(vicsek_forces, flock, cfg)
+        assert np.all(np.isfinite(flock.velocities))
+
+    def test_deterministic(self):
+        ac1 = self._autocorr_at_inertia(0.5, seed=7)
+        ac2 = self._autocorr_at_inertia(0.5, seed=7)
+        assert ac1 == ac2
+
+
 def _compute_alpha(flock: PhysicsFlock) -> float:
     """Helper: compute polar order parameter."""
     vels = flock.velocities[flock.active]

@@ -48,6 +48,10 @@ class ProjectionConfig:
     sigma: int = 4               # topological neighbor count
     max_visibility: int = 64      # max visible neighbors for occlusion culling
     max_occlusion_neighbors: int = 64  # max occlusion neighbor candidates
+    # §09/§11-style heading-blend inertia: an additional additive pull
+    # toward the bird's own current heading in v_desired, independent of
+    # the phi_p+phi_a+phi_n partition (0 = no change, default).
+    projection_heading_inertia: float = 0.0
 
 
 @dataclass
@@ -226,6 +230,10 @@ class VicsekConfig:
     vicsek_velocity_predator: float = 2.0      # predator speed (faster than prey)
     vicsek_detect_ratio: float = 1.5          # predator hunting range multiplier
     vicsek_weight_afraid: float = 3.0          # neighbour weight boost when afraid
+    # §09/§11-style heading-blend inertia: blends the bird's prior heading
+    # into the finalized new direction, independent of the vicsek_couplage/
+    # vicsek_diffusion memory-term blend (0 = no change, default).
+    vicsek_heading_inertia: float = 0.0
     vicsek_predator_noise_ratio: float = 0.1   # hunting directional noise
 
 

@@ -161,6 +161,18 @@ class VicsekMode(ForceMode):
             noisy_dirs = old_dirs + noise_scale * n_perp
             noisy_norms = np.linalg.norm(noisy_dirs, axis=1, keepdims=True) + 1e-10
             directions = noisy_dirs / noisy_norms
+
+            # §09/§11-style heading-blend inertia — this early-return path
+            # has its own velocity assignment, separate from the "Finalise
+            # velocities" section below, so it needs the same blend applied
+            # here too for the feature to apply uniformly regardless of
+            # flock size. 0.0 (default) skips this entirely.
+            heading_inertia = config.vicsek.vicsek_heading_inertia
+            if heading_inertia > 0.0:
+                blended = old_dirs * heading_inertia + directions * (1.0 - heading_inertia)
+                blended_norms = np.linalg.norm(blended, axis=1, keepdims=True) + 1e-10
+                directions = blended / blended_norms
+
             velocities[active_idx] = directions * v0
             return
 
@@ -261,6 +273,19 @@ class VicsekMode(ForceMode):
                     active_pos, directions, pred_mask,
                     is_pred, config, rng,
                 )
+
+        # §09/§11-style heading-blend inertia: blends the bird's prior
+        # heading into the fully-finalized new direction, applying
+        # uniformly regardless of which branch above produced `directions`
+        # (plain Vicsek blend, fear-blend, solo-fear, predator-hunting).
+        # Independent of the vicsek_couplage/vicsek_diffusion memory term
+        # above. 0.0 (default) skips this entirely — byte-identical to
+        # before this existed.
+        heading_inertia = config.vicsek.vicsek_heading_inertia
+        if heading_inertia > 0.0:
+            blended = old_dirs * heading_inertia + directions * (1.0 - heading_inertia)
+            blended_norms = np.linalg.norm(blended, axis=1, keepdims=True) + 1e-10
+            directions = blended / blended_norms
 
         # ── Finalise velocities ───────────────────────────────
         speeds = np.full(n_active, v0, dtype=np.float32)

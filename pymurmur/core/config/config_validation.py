@@ -44,7 +44,8 @@ _NUMERIC_FIELDS = (
     "fps", "window_width", "window_height",
     "capture_width", "capture_height", "capture_frames",
     "capture_every", "capture_fps",
-    "vicsek_couplage", "vicsek_diffusion",
+    "vicsek_couplage", "vicsek_diffusion", "vicsek_heading_inertia",
+    "projection_heading_inertia",
     "vicsek_radius_influence", "vicsek_radius_avoid",
     "vicsek_velocity", "vicsek_time_step",
     "vicsek_radius_predators", "vicsek_velocity_predator",
@@ -226,6 +227,14 @@ def _validate_mode_specific_forces(cfg, ok: _OkFn) -> list[str]:
             issues.append(f"projection.phi_p must be >= 0, got {cfg.projection.phi_p}")
         if ok("phi_a") and cfg.phi_a < 0:
             issues.append(f"projection.phi_a must be >= 0, got {cfg.phi_a}")
+        if (
+            ok("projection_heading_inertia")
+            and not (0.0 <= cfg.projection_heading_inertia <= 1.0)
+        ):
+            issues.append(
+                f"projection_heading_inertia must be in [0, 1], "
+                f"got {cfg.projection_heading_inertia}"
+            )
 
     if cfg.mode == "spatial":
         if ok("separation_weight") and cfg.separation_weight < 0:
@@ -280,6 +289,14 @@ def _validate_mode_specific_forces(cfg, ok: _OkFn) -> list[str]:
         if ok("vicsek_time_step") and cfg.vicsek_time_step <= 0:
             issues.append(
                 f"vicsek_time_step must be > 0, got {cfg.vicsek_time_step}"
+            )
+        if (
+            ok("vicsek_heading_inertia")
+            and not (0.0 <= cfg.vicsek_heading_inertia <= 1.0)
+        ):
+            issues.append(
+                f"vicsek_heading_inertia must be in [0, 1], "
+                f"got {cfg.vicsek_heading_inertia}"
             )
 
     if cfg.mode == "influencer":

@@ -30,6 +30,7 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "sigma": ("_projection", "sigma"),
     "max_visibility": ("_projection", "max_visibility"),  # C4
     "max_occlusion_neighbors": ("_projection", "max_occlusion_neighbors"),  # C4
+    "projection_heading_inertia": ("_projection", "projection_heading_inertia"),
     # SpatialConfig
     "separation_weight": ("_spatial", "separation_weight"),
     "alignment_weight": ("_spatial", "alignment_weight"),
@@ -131,6 +132,7 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "vicsek_detect_ratio": ("_vicsek", "vicsek_detect_ratio"),
     "vicsek_weight_afraid": ("_vicsek", "vicsek_weight_afraid"),
     "vicsek_predator_noise_ratio": ("_vicsek", "vicsek_predator_noise_ratio"),
+    "vicsek_heading_inertia": ("_vicsek", "vicsek_heading_inertia"),
     # InfluencerConfig
     "influencer_rank_exponent": ("_influencer", "influencer_rank_exponent"),
     "influencer_substeps": ("_influencer", "influencer_substeps"),

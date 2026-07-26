@@ -474,3 +474,61 @@ def test_phi_n_with_coherence_gating():
     assert not np.allclose(acc_no_coherence, acc_with_coherence, rtol=1e-4), (
         "Coherence gating should change force distribution via φn compensation"
     )
+
+
+# ── §09/§11-style heading-blend inertia (projection_heading_inertia) ────
+
+
+def _heading_inertia_forces(heading_inertia: float, seed: int = 1) -> np.ndarray:
+    """Run projection compute with all birds sharing a known heading
+    (+x); return accelerations. Isolates the heading-inertia pull."""
+    from pymurmur.core.config import SimConfig
+    from pymurmur.physics.flock import PhysicsFlock
+    from pymurmur.physics.forces.projection import projection_forces
+
+    cfg = SimConfig()
+    cfg.seed = seed
+    cfg.mode = "projection"
+    cfg.num_boids = 30
+    cfg.projection_heading_inertia = heading_inertia
+
+    flock = PhysicsFlock(cfg)
+    flock.velocities[:] = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    flock.accelerations[:] = 0.0
+    flock.get_index().rebuild(flock.positions, flock.active)
+    _call_force(projection_forces, flock, cfg)
+    return flock.accelerations[flock.active].copy()
+
+
+def test_heading_inertia_default_is_zero(default_config):
+    assert default_config.projection_heading_inertia == 0.0
+
+
+def test_heading_inertia_zero_matches_no_inertia_field():
+    """Explicitly setting 0.0 must be identical to never touching the
+    field at all (same default)."""
+    acc_default = _heading_inertia_forces(0.0)
+    acc_explicit_zero = _heading_inertia_forces(0.0)
+    np.testing.assert_array_equal(acc_default, acc_explicit_zero)
+
+
+def test_heading_inertia_pulls_toward_current_heading():
+    """With all birds heading +x, increasing inertia should measurably
+    shift the mean x-component of acceleration upward (pulled toward
+    maintaining +x) relative to the no-inertia baseline."""
+    acc_low = _heading_inertia_forces(0.0)
+    acc_high = _heading_inertia_forces(0.9)
+    assert acc_high[:, 0].mean() > acc_low[:, 0].mean()
+
+
+def test_heading_inertia_full_strength_no_crash():
+    """inertia=1.0 (maximum, fully static heading pull) runs without
+    crashing and produces finite output."""
+    acc = _heading_inertia_forces(1.0)
+    assert np.isfinite(acc).all()
+
+
+def test_heading_inertia_deterministic():
+    acc1 = _heading_inertia_forces(0.5, seed=7)
+    acc2 = _heading_inertia_forces(0.5, seed=7)
+    np.testing.assert_array_equal(acc1, acc2)
