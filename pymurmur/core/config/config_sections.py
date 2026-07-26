@@ -28,6 +28,7 @@ class FlockConfig:
     dt_phys: float = 1.0 / 60.0  # P8.10: fixed physics timestep (seconds)
     speed_min_factor: float = 0.3  # P11.5: min speed = v0 · factor (band clamp)
     n_predators: int = 0          # number of predator boids (0 = off)
+    velocity_damping: float = 0.0  # general friction: v *= (1 - damping*dt), 0 = off
 
 
 @dataclass
@@ -67,10 +68,14 @@ class SpatialConfig:
     speed_mode: str = "clamp"          # clamp | band | none — how speed is enforced
     flow_weight: float = 0.0           # P11.5: global flow contribution weight
     neighbor_filter: str = "hybrid"    # hybrid | metric | topological | global | none
-    # sum | mean | unit | exp | linear_ramp | asymptotic | velocity_weighted | cosine_zone
+    # sum | mean | unit | exp | linear_ramp | asymptotic | velocity_weighted |
+    # cosine_zone | linear | nearest_only | bell_zone
     separation_kernel: str = "sum"     # how sep forces are combined (kernels.py registry)
-    separation_kernel_radius: float = 20.0  # only used by exp/linear_ramp/asymptotic
-    cohesion_kernel: str = "unweighted"      # unweighted | inverse_distance
+    separation_kernel_radius: float = 20.0  # exp/linear_ramp/asymptotic/bell_zone (zone center)
+    cohesion_kernel: str = "unweighted"      # unweighted | inverse_distance | bell_zone
+    # unweighted | fov_weighted | circular_mean_2d
+    alignment_kernel: str = "unweighted"     # how align forces are combined
+    kernel_zone_width: float = 10.0    # bell_zone half-width (sep + cohesion)
     # S2.B1: dual-radii — alignment sees a tighter subset than sep/coh.
     # 1.0 = no extra restriction beyond visual_range (back-compat default);
     # the starlings preset sets 0.75 per the source-parity table.

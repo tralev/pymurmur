@@ -94,6 +94,7 @@ def _dispatch_separation_kernel(
     dists: np.ndarray,
     close: np.ndarray,
     radius: float | None = None,
+    zone_width: float | None = None,
     closing_speed: np.ndarray | None = None,
     heading: np.ndarray | None = None,
 ) -> np.ndarray:
@@ -115,6 +116,12 @@ def _dispatch_separation_kernel(
         return _kernels.kernel_velocity_weighted(diffs, dists, close, closing_speed)
     if kernel == "cosine_zone":
         return _kernels.kernel_cosine_zone(diffs, dists, close, heading)
+    if kernel == "linear":
+        return _kernels.kernel_linear(diffs, dists, close)
+    if kernel == "nearest_only":
+        return _kernels.kernel_nearest_only(diffs, dists, close)
+    if kernel == "bell_zone":
+        return _kernels.kernel_bell_zone(diffs, dists, close, radius, zone_width)
     return _kernels.kernel_sum(diffs, dists, close)
 
 
@@ -134,6 +141,7 @@ def separation_force(
     active: np.ndarray,
     kernel: str = "sum",
     kernel_radius: float = 20.0,
+    kernel_zone_width: float = 10.0,
 ) -> np.ndarray:
     """Separation: push away from nearby neighbours.
 
@@ -151,8 +159,15 @@ def separation_force(
     kernel="cosine_zone" → "sum" base scaled by a continuous (1+cosθ)/2
                             weight on bearing vs. own heading (§08-style
                             continuous zone, vs. a hard FOV cone cutoff)
+    kernel="linear"       → Σ r̂/d (plain 1/d falloff)
+    kernel="nearest_only" → only the single closest neighbour contributes
+    kernel="bell_zone"    → cosine-bell weight peaking at kernel_radius
+                            (zone center), falling off symmetrically on
+                            both sides over kernel_zone_width
 
-    kernel_radius is only consulted by exp/linear_ramp/asymptotic.
+    kernel_radius is consulted by exp/linear_ramp/asymptotic/bell_zone
+    (as the zone center for bell_zone). kernel_zone_width is only
+    consulted by bell_zone.
     Returns (N, 3) float32.
     """
     N = len(positions)
@@ -183,8 +198,8 @@ def separation_force(
             heading = velocities[i] if needs_heading else None
             force[i] = _dispatch_separation_kernel(
                 kernel, diffs, dists, close,
-                radius=kernel_radius, closing_speed=closing_speed,
-                heading=heading,
+                radius=kernel_radius, zone_width=kernel_zone_width,
+                closing_speed=closing_speed, heading=heading,
             )
         return force
 
@@ -212,10 +227,30 @@ def separation_force(
 
     contrib = _dispatch_separation_kernel(
         kernel, diffs, dists, close,
-        radius=kernel_radius, closing_speed=closing_speed, heading=heading,
+        radius=kernel_radius, zone_width=kernel_zone_width,
+        closing_speed=closing_speed, heading=heading,
     )
     force[active_idx] = contrib.astype(np.float32)
     return force
+
+
+def _weighted_avg_vel(
+    kernel: str,
+    diffs: np.ndarray,
+    dists: np.ndarray,
+    close: np.ndarray,
+    neighbor_vel: np.ndarray,
+    heading: np.ndarray,
+    fov_min: float,
+) -> np.ndarray:
+    """Alignment kernel dispatch — mirrors _dispatch_separation_kernel.
+    Returns the weighted-average neighbour velocity (..., 3), NOT yet
+    turned into a normalized steering vector (caller does that)."""
+    if kernel == "fov_weighted":
+        return _kernels.kernel_fov_weighted(diffs, dists, close, heading, neighbor_vel, fov_min)
+    if kernel == "circular_mean_2d":
+        return _kernels.kernel_circular_mean_2d(diffs, dists, close, neighbor_vel)
+    return np.mean(neighbor_vel, axis=-2)
 
 
 def alignment_force(
@@ -223,10 +258,21 @@ def alignment_force(
     velocities: np.ndarray,
     neighbor_idx: np.ndarray,
     active: np.ndarray,
+    kernel: str = "unweighted",
+    fov_min: float = -1.0,
 ) -> np.ndarray:
-    """Alignment: steer toward average neighbour heading.
+    """Alignment: steer toward average (or weighted) neighbour heading.
 
-    F_align[i] = û_avg(j) − û_i.
+    kernel="unweighted" (default) → F_align[i] = û_avg(j) − û_i, plain mean
+        of neighbour velocities — pre-existing behavior, unchanged.
+    kernel="fov_weighted" → InverseLerp(cos_theta, fov_min, 1.0)-weighted
+        average: neighbours near the bearing axis (dead ahead) dominate,
+        neighbours near fov_min contribute ~0.
+    kernel="circular_mean_2d" → 2D circular mean (atan2(Σsinθ,Σcosθ)) of
+        neighbour headings projected onto the XY plane, Z averaged linearly.
+
+    fov_min is only consulted by "fov_weighted" (reuses the same
+    InverseLerp-lower-bound semantics as the existing angle_align field).
     Returns (N, 3) float32.
     """
     N = len(positions)
@@ -236,14 +282,27 @@ def alignment_force(
     if n_active == 0:
         return force
 
+    needs_dists = kernel in ("fov_weighted", "circular_mean_2d")
+
     if _is_ragged(neighbor_idx):
         # Ragged object array — per-bird fallback
         for i in active_idx:
             nbrs = neighbor_idx[i]
             if len(nbrs) == 0:
                 continue
+            neighbor_vel = velocities[nbrs]
+            if needs_dists:
+                diffs = positions[nbrs] - positions[i]
+                dists = np.linalg.norm(diffs, axis=1)
+                close = dists > 1e-6
+                if not close.any():
+                    continue
+                avg_vel = _weighted_avg_vel(
+                    kernel, diffs, dists, close, neighbor_vel, velocities[i], fov_min,
+                )
+            else:
+                avg_vel = np.mean(neighbor_vel, axis=0)
             # S1.5: Reynolds steering — normalize(v̄ − v_i)
-            avg_vel = np.mean(velocities[nbrs], axis=0)
             steering = avg_vel - velocities[i]
             s_norm = np.linalg.norm(steering)
             if s_norm > 1e-6:
@@ -257,11 +316,20 @@ def alignment_force(
 
     nbr_idx = neighbor_idx[active_idx]           # (n_active, k)
     v_j = velocities[nbr_idx]                    # (n_active, k, 3)
-
-    # S1.5: Reynolds steering — normalize(v̄ − v_i), not normalize(v̄) − normalize(v_i).
-    # The subtract-then-normalize avoids unequal-speed vector distortion.
-    avg_vel = np.mean(v_j, axis=1)               # (n_active, 3)
     v_i = velocities[active_idx]                 # (n_active, 3)
+
+    if needs_dists:
+        p_i = positions[active_idx]               # (n_active, 3)
+        p_j = positions[nbr_idx]                   # (n_active, k, 3)
+        diffs = p_j - p_i[:, np.newaxis, :]         # (n_active, k, 3)
+        dists = np.linalg.norm(diffs, axis=2)       # (n_active, k)
+        close = dists > 1e-6
+        avg_vel = _weighted_avg_vel(kernel, diffs, dists, close, v_j, v_i, fov_min)
+    else:
+        # S1.5: Reynolds steering — normalize(v̄ − v_i), not normalize(v̄) − normalize(v_i).
+        # The subtract-then-normalize avoids unequal-speed vector distortion.
+        avg_vel = np.mean(v_j, axis=1)             # (n_active, 3)
+
     steering = avg_vel - v_i                      # (n_active, 3)
     steering_norms = np.linalg.norm(steering, axis=1)
     valid = steering_norms > 1e-6
@@ -279,14 +347,21 @@ def cohesion_force(
     neighbor_idx: np.ndarray,
     active: np.ndarray,
     kernel: str = "unweighted",
+    kernel_radius: float = 20.0,
+    kernel_zone_width: float = 10.0,
 ) -> np.ndarray:
-    """Cohesion: steer toward average (or 1/d-weighted) neighbour position.
+    """Cohesion: steer toward average (or weighted) neighbour position.
 
     kernel="unweighted" (default) → F_coh[i] = û(mean(p_j) − p_i), bounded
         unit vector (P1.7 fix) — pre-existing behavior, unchanged.
     kernel="inverse_distance" → 1/d-weighted center of mass: nearer
         neighbours pull more strongly than farther ones.
+    kernel="bell_zone" → cosine-bell-weighted center of mass, peaking at
+        kernel_radius (zone center) and falling off symmetrically over
+        kernel_zone_width — same distance-zone concept as separation's
+        "bell_zone", not the bearing-angle "cosine_zone" kernel.
 
+    kernel_radius/kernel_zone_width are only consulted by "bell_zone".
     Returns (N, 3) float32.
     """
     N = len(positions)
@@ -307,6 +382,12 @@ def cohesion_force(
                 dists = np.linalg.norm(diffs, axis=1)
                 close = dists > 1e-6
                 to_center = _kernels.kernel_inverse_distance(diffs, dists, close)
+            elif kernel == "bell_zone":
+                dists = np.linalg.norm(diffs, axis=1)
+                close = dists > 1e-6
+                to_center = _kernels.kernel_bell_zone_cohesion(
+                    diffs, dists, close, kernel_radius, kernel_zone_width,
+                )
             else:
                 to_center = _kernels.kernel_unweighted(diffs)
             length = np.linalg.norm(to_center)
@@ -332,6 +413,12 @@ def cohesion_force(
         dists = np.linalg.norm(diffs, axis=2)
         close = dists > 1e-6
         to_center = _kernels.kernel_inverse_distance(diffs, dists, close)
+    elif kernel == "bell_zone":
+        dists = np.linalg.norm(diffs, axis=2)
+        close = dists > 1e-6
+        to_center = _kernels.kernel_bell_zone_cohesion(
+            diffs, dists, close, kernel_radius, kernel_zone_width,
+        )
     else:
         to_center = _kernels.kernel_unweighted(diffs)
     lengths = np.linalg.norm(to_center, axis=1)  # (n_active,)

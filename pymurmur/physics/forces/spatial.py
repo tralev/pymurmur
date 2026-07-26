@@ -244,7 +244,8 @@ class SpatialMode(ForceMode):
         sep = separation_force(
             positions, velocities, sep_idx, active,
             kernel=config.spatial.separation_kernel,
-            kernel_radius=config.spatial.separation_kernel_radius)
+            kernel_radius=config.spatial.separation_kernel_radius,
+            kernel_zone_width=config.spatial.kernel_zone_width)
         if config.spatial.neighbor_filter == "global":
             # S2.B1: degenerate "global" case — alignment/cohesion steer
             # toward the whole-flock mean velocity / centre of mass, no
@@ -270,10 +271,14 @@ class SpatialMode(ForceMode):
                 coh[global_active_idx] = coh_vecs
         else:
             align = alignment_force(
-                positions, velocities, align_idx, active)
+                positions, velocities, align_idx, active,
+                kernel=config.spatial.alignment_kernel,
+                fov_min=config.spatial.angle_align)
             coh = cohesion_force(
                 positions, velocities, coh_idx, active,
-                kernel=config.spatial.cohesion_kernel)
+                kernel=config.spatial.cohesion_kernel,
+                kernel_radius=config.spatial.separation_kernel_radius,
+                kernel_zone_width=config.spatial.kernel_zone_width)
         # S2.B2: velocity-domain noise — (U³−0.5)·noise_scale added
         # directly to velocity, after v+=a and before the final speed
         # clamp (spec pipeline order), not to accelerations. Stashed on

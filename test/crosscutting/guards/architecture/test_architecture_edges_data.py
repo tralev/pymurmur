@@ -61,7 +61,11 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     "pymurmur.physics.obstacles": {"pymurmur.core.types"},
 
     # ── Tier 1: physics L0 atoms — core only ──
-    "pymurmur.physics.boid":      {"pymurmur.core.types"},
+    "pymurmur.physics.boid":      {
+        "pymurmur.core.types",
+        "pymurmur.physics.boid_init",  # re-exports init helpers (file-size split)
+    },
+    "pymurmur.physics.boid_init": set(),  # numpy only, zero pymurmur imports
     "pymurmur.physics.occlusion": {"pymurmur.core.types"},
     "pymurmur.physics.steric":    {"pymurmur.core.types"},
     "pymurmur.physics.priority_stack": set(),  # numpy only, zero pymurmur imports

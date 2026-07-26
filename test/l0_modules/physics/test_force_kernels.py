@@ -148,18 +148,180 @@ class TestKernelInverseDistance:
         np.testing.assert_allclose(out, 0.0, atol=1e-6)
 
 
+class TestKernelLinear:
+    def test_magnitude_is_inverse_distance(self):
+        diffs_near, dists_near, close_near = _single_bird_scenario(2.0)
+        diffs_far, dists_far, close_far = _single_bird_scenario(4.0)
+        near = kernels.kernel_linear(diffs_near, dists_near, close_near)
+        far = kernels.kernel_linear(diffs_far, dists_far, close_far)
+        # magnitude ~ 1/d -> doubling distance halves the magnitude
+        ratio = np.linalg.norm(near) / np.linalg.norm(far)
+        assert 1.8 < ratio < 2.2
+
+    def test_falls_off_slower_than_sum(self):
+        # "linear" (1/d) should retain more magnitude at distance than
+        # "sum" (1/d^2), for the same near/far pair.
+        diffs_near, dists_near, close_near = _single_bird_scenario(2.0)
+        diffs_far, dists_far, close_far = _single_bird_scenario(4.0)
+        linear_ratio = (
+            np.linalg.norm(kernels.kernel_linear(diffs_near, dists_near, close_near))
+            / np.linalg.norm(kernels.kernel_linear(diffs_far, dists_far, close_far))
+        )
+        sum_ratio = (
+            np.linalg.norm(kernels.kernel_sum(diffs_near, dists_near, close_near))
+            / np.linalg.norm(kernels.kernel_sum(diffs_far, dists_far, close_far))
+        )
+        assert linear_ratio < sum_ratio
+
+
+class TestKernelNearestOnly:
+    def test_only_closest_neighbor_contributes(self):
+        # Three neighbours at different distances/directions; only the
+        # closest (at z=-3) should determine the output direction.
+        diffs = np.array([
+            [10.0, 0.0, 0.0],
+            [0.0, 8.0, 0.0],
+            [0.0, 0.0, -3.0],
+        ], dtype=np.float32)
+        dists = np.linalg.norm(diffs, axis=1)
+        close = dists > 1e-6
+        out = kernels.kernel_nearest_only(diffs, dists, close)
+        expected_dir = np.array([0.0, 0.0, 1.0], dtype=np.float32)  # away from -3z
+        out_dir = out / np.linalg.norm(out)
+        np.testing.assert_allclose(out_dir, expected_dir, atol=1e-5)
+
+    def test_ignores_farther_neighbors_entirely(self):
+        near_only = kernels.kernel_nearest_only(
+            *_single_bird_scenario(3.0),
+        )
+        diffs = np.array([[3.0, 0.0, 0.0], [20.0, 0.1, 0.0]], dtype=np.float32)
+        dists = np.linalg.norm(diffs, axis=1)
+        close = dists > 1e-6
+        near_plus_far = kernels.kernel_nearest_only(diffs, dists, close)
+        np.testing.assert_allclose(near_only, near_plus_far, atol=1e-5)
+
+
+class TestKernelBellZoneSeparation:
+    def test_peaks_at_zone_center(self):
+        at_center = kernels.kernel_bell_zone(
+            *_single_bird_scenario(10.0), zone_center=10.0, zone_width=5.0,
+        )
+        near_edge = kernels.kernel_bell_zone(
+            *_single_bird_scenario(14.0), zone_center=10.0, zone_width=5.0,
+        )
+        assert np.linalg.norm(at_center) > np.linalg.norm(near_edge)
+
+    def test_falls_off_on_both_sides(self):
+        # Symmetric fall-off: a neighbour closer than the zone center AND
+        # one farther than it should both weight less than the center —
+        # this is the property that distinguishes bell_zone from every
+        # distance-monotonic kernel already implemented.
+        closer = kernels.kernel_bell_zone(
+            *_single_bird_scenario(5.0), zone_center=10.0, zone_width=5.0,
+        )
+        center = kernels.kernel_bell_zone(
+            *_single_bird_scenario(10.0), zone_center=10.0, zone_width=5.0,
+        )
+        farther = kernels.kernel_bell_zone(
+            *_single_bird_scenario(15.0), zone_center=10.0, zone_width=5.0,
+        )
+        assert np.linalg.norm(closer) < np.linalg.norm(center)
+        assert np.linalg.norm(farther) < np.linalg.norm(center)
+
+    def test_zero_beyond_zone_width(self):
+        beyond = kernels.kernel_bell_zone(
+            *_single_bird_scenario(30.0), zone_center=10.0, zone_width=5.0,
+        )
+        np.testing.assert_allclose(beyond, 0.0, atol=1e-6)
+
+
+class TestKernelBellZoneCohesion:
+    def test_symmetric_neighbors_cancel(self):
+        diffs = np.array([[10.0, 0, 0], [-10.0, 0, 0]], dtype=np.float32)
+        dists = np.linalg.norm(diffs, axis=1)
+        close = dists > 1e-6
+        out = kernels.kernel_bell_zone_cohesion(
+            diffs, dists, close, zone_center=10.0, zone_width=5.0,
+        )
+        np.testing.assert_allclose(out, 0.0, atol=1e-5)
+
+    def test_zone_center_neighbor_dominates_off_center_one(self):
+        # One neighbour at the zone center (full weight), one far outside
+        # the zone (near-zero weight) -> result should be dominated by
+        # the zone-center neighbour's direction.
+        diffs = np.array([[10.0, 0, 0], [-40.0, 0, 0]], dtype=np.float32)
+        dists = np.linalg.norm(diffs, axis=1)
+        close = dists > 1e-6
+        out = kernels.kernel_bell_zone_cohesion(
+            diffs, dists, close, zone_center=10.0, zone_width=5.0,
+        )
+        assert out[0] > 5.0  # dominated by the +10 neighbour, not the -40 one
+
+
+class TestKernelFovWeighted:
+    def test_dead_ahead_neighbor_dominates(self):
+        heading = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        # neighbour dead ahead, moving +y; neighbour behind, moving -y
+        diffs = np.array([[10.0, 0, 0], [-10.0, 0, 0]], dtype=np.float32)
+        dists = np.linalg.norm(diffs, axis=1)
+        close = dists > 1e-6
+        neighbor_vel = np.array([[0.0, 1.0, 0.0], [0.0, -1.0, 0.0]], dtype=np.float32)
+        out = kernels.kernel_fov_weighted(
+            diffs, dists, close, heading, neighbor_vel, fov_min=0.0,
+        )
+        np.testing.assert_allclose(out, [0.0, 1.0, 0.0], atol=1e-5)
+
+    def test_neighbor_outside_fov_gets_zero_weight(self):
+        heading = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        diffs, dists, close = _single_bird_scenario(-10.0)  # directly behind
+        neighbor_vel = np.array([[0.0, 5.0, 0.0]], dtype=np.float32)
+        out = kernels.kernel_fov_weighted(
+            diffs, dists, close, heading, neighbor_vel, fov_min=0.0,
+        )
+        np.testing.assert_allclose(out, 0.0, atol=1e-6)
+
+
+class TestKernelCircularMean2d:
+    def test_reduces_to_plain_circular_mean_in_xy_plane(self):
+        # Two neighbours: heading 0 degrees and 90 degrees, equal speed.
+        # Circular mean of {0, 90} degrees = 45 degrees.
+        diffs = np.array([[10.0, 0, 0], [0, 10.0, 0]], dtype=np.float32)
+        dists = np.linalg.norm(diffs, axis=1)
+        close = dists > 1e-6
+        neighbor_vel = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+        out = kernels.kernel_circular_mean_2d(diffs, dists, close, neighbor_vel)
+        expected = np.array([np.cos(np.pi / 4), np.sin(np.pi / 4), 0.0], dtype=np.float32)
+        np.testing.assert_allclose(out, expected, atol=1e-5)
+
+    def test_z_averaged_linearly(self):
+        diffs = np.array([[10.0, 0, 0], [10.0, 0.1, 0]], dtype=np.float32)
+        dists = np.linalg.norm(diffs, axis=1)
+        close = dists > 1e-6
+        neighbor_vel = np.array([[1.0, 0.0, 2.0], [1.0, 0.0, 6.0]], dtype=np.float32)
+        out = kernels.kernel_circular_mean_2d(diffs, dists, close, neighbor_vel)
+        assert out[2] == pytest.approx(4.0, rel=1e-4)  # plain mean of 2 and 6
+
+
 class TestValidKernelSets:
     def test_separation_kernels_needing_radius(self):
         assert kernels.SEPARATION_KERNELS_NEEDING_RADIUS == {
-            "exp", "linear_ramp", "asymptotic",
+            "exp", "linear_ramp", "asymptotic", "bell_zone",
         }
 
     def test_valid_separation_kernels_matches_registry(self):
         expected = {
             "sum", "mean", "unit", "exp", "linear_ramp",
             "asymptotic", "velocity_weighted", "cosine_zone",
+            "linear", "nearest_only", "bell_zone",
         }
         assert kernels.VALID_SEPARATION_KERNELS == expected
 
     def test_valid_cohesion_kernels(self):
-        assert kernels.VALID_COHESION_KERNELS == {"unweighted", "inverse_distance"}
+        assert kernels.VALID_COHESION_KERNELS == {
+            "unweighted", "inverse_distance", "bell_zone",
+        }
+
+    def test_valid_alignment_kernels(self):
+        assert kernels.VALID_ALIGNMENT_KERNELS == {
+            "unweighted", "fov_weighted", "circular_mean_2d",
+        }

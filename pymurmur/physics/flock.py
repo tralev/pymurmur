@@ -227,6 +227,9 @@ class PhysicsFlock:
             # when spatial.noise_mode=="velocity"; cleared right after
             # use so a stale array can't leak into a later mode switch.
             velocity_noise=getattr(config, '_spatial_velocity_noise', None),
+            # General velocity damping/friction — mode-agnostic (unlike
+            # field_inertia, not gated to one mode at the engine level).
+            damping=config.velocity_damping,
         )
         if hasattr(config, '_spatial_velocity_noise'):
             config._spatial_velocity_noise = None

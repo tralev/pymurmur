@@ -162,6 +162,37 @@ def test_negative_separation_kernel_radius_rejected():
     )
 
 
+def test_unknown_alignment_kernel_rejected():
+    _assert_invalid(SimConfig(mode="spatial", alignment_kernel="bogus"), "alignment_kernel")
+
+
+def test_all_valid_alignment_kernels_accepted():
+    for kernel in SimConfig._VALID_ALIGNMENT_KERNELS:
+        _assert_valid(SimConfig(mode="spatial", alignment_kernel=kernel))
+
+
+def test_zero_kernel_zone_width_rejected():
+    _assert_invalid(SimConfig(mode="spatial", kernel_zone_width=0), "kernel_zone_width")
+
+
+def test_negative_kernel_zone_width_rejected():
+    _assert_invalid(SimConfig(mode="spatial", kernel_zone_width=-1), "kernel_zone_width")
+
+
+# ── velocity_damping (mode-agnostic, FlockConfig) ──────────────────
+
+def test_negative_velocity_damping_rejected():
+    _assert_invalid(SimConfig(velocity_damping=-0.1), "velocity_damping")
+
+
+def test_zero_velocity_damping_accepted():
+    _assert_valid(SimConfig(velocity_damping=0.0))
+
+
+def test_positive_velocity_damping_accepted():
+    _assert_valid(SimConfig(velocity_damping=0.5))
+
+
 # ── Mode-specific: vicsek ─────────────────────────────────────────
 
 def test_vicsek_couplage_out_of_range_rejected():

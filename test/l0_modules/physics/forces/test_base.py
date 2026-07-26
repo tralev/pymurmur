@@ -213,6 +213,80 @@ def test_curl_flow_is_normalized_before_base_scale():
     assert np.allclose(norms, 0.08, atol=1e-5)
 
 
+# ── New kernel dispatch: separation "linear"/"nearest_only"/"bell_zone",
+#    cohesion "bell_zone", alignment "fov_weighted"/"circular_mean_2d" ──
+
+def test_separation_force_linear_kernel_dispatch(known_positions, known_velocities):
+    idx = np.array([[1], [0], [3], [2]], dtype=np.int32)
+    active = np.ones(4, dtype=bool)
+    force = separation_force(known_positions, known_velocities, idx, active, kernel="linear")
+    assert force[0, 0] < 0  # still pushes away from neighbour at +x
+    assert np.isfinite(force).all()
+
+
+def test_separation_force_nearest_only_kernel_dispatch():
+    pos = np.array([[0, 0, 0], [10, 0, 0], [0, 8, 0], [0, 0, -3]], dtype=np.float32)
+    vel = np.zeros((4, 3), dtype=np.float32)
+    idx = np.array([[1, 2, 3], [0, 0, 0], [0, 0, 0], [0, 0, 0]], dtype=np.int32)
+    active = np.array([True, True, True, True])
+    force = separation_force(pos, vel, idx, active, kernel="nearest_only")
+    # Bird 0's nearest neighbour is bird 3 at (0,0,-3) -> push toward +z
+    assert force[0, 2] > 0
+    assert abs(force[0, 0]) < 1e-5
+    assert abs(force[0, 1]) < 1e-5
+
+
+def test_separation_force_bell_zone_kernel_dispatch(known_positions, known_velocities):
+    idx = np.array([[1], [0], [3], [2]], dtype=np.int32)
+    active = np.ones(4, dtype=bool)
+    force = separation_force(
+        known_positions, known_velocities, idx, active,
+        kernel="bell_zone", kernel_radius=10.0, kernel_zone_width=5.0,
+    )
+    assert np.isfinite(force).all()
+    assert np.linalg.norm(force[0]) > 0
+
+
+def test_cohesion_force_bell_zone_kernel_dispatch(known_positions, known_velocities):
+    idx = np.array([[1], [0], [3], [2]], dtype=np.int32)
+    active = np.ones(4, dtype=bool)
+    force = cohesion_force(
+        known_positions, known_velocities, idx, active,
+        kernel="bell_zone", kernel_radius=10.0, kernel_zone_width=5.0,
+    )
+    assert np.isfinite(force).all()
+
+
+def test_alignment_force_fov_weighted_kernel_dispatch():
+    pos = np.array([[0, 0, 0], [10, 0, 0], [-10, 0, 0]], dtype=np.float32)
+    vel = np.array([[1, 0, 0], [0, 1, 0], [0, -1, 0]], dtype=np.float32)
+    idx = np.array([[1, 2], [0, 0], [0, 0]], dtype=np.int32)
+    active = np.ones(3, dtype=bool)
+    force = alignment_force(pos, vel, idx, active, kernel="fov_weighted", fov_min=0.0)
+    assert np.isfinite(force).all()
+    # Dead-ahead neighbour (bird 1) dominates -> steering has positive y pull
+    assert force[0, 1] > 0
+
+
+def test_alignment_force_circular_mean_2d_kernel_dispatch():
+    pos = np.array([[0, 0, 0], [10, 0, 0], [0, 10, 0]], dtype=np.float32)
+    vel = np.array([[1, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=np.float32)
+    idx = np.array([[1, 2], [0, 0], [0, 0]], dtype=np.int32)
+    active = np.ones(3, dtype=bool)
+    force = alignment_force(pos, vel, idx, active, kernel="circular_mean_2d")
+    assert np.isfinite(force).all()
+
+
+def test_alignment_force_unweighted_default_unchanged(known_positions, known_velocities):
+    """Default kernel="unweighted" must reproduce the pre-existing plain-mean
+    behavior byte-for-byte — new kernel param is opt-in."""
+    idx = np.array([[1], [0], [3], [2]], dtype=np.int32)
+    active = np.ones(4, dtype=bool)
+    explicit = alignment_force(known_positions, known_velocities, idx, active, kernel="unweighted")
+    implicit = alignment_force(known_positions, known_velocities, idx, active)
+    np.testing.assert_array_equal(explicit, implicit)
+
+
 def test_curl_flow_field_and_spatial_agree_up_to_gain():
     """S2.B11: FieldMode._compute_curl_flow and SpatialMode's flow_contrib
     both build on curl_flow() — for the same inputs, FieldMode's output

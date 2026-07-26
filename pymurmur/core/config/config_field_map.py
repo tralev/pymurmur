@@ -19,6 +19,7 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "dt_phys": ("_flock", "dt_phys"),  # P8.10
     "speed_min_factor": ("_flock", "speed_min_factor"),  # P11.5
     "n_predators": ("_flock", "n_predators"),  # C4
+    "velocity_damping": ("_flock", "velocity_damping"),
     # BoundaryConfig
     "boundary_mode": ("_boundary", "boundary_mode"),
     "boundary_sphere_radius": ("_boundary", "boundary_sphere_radius"),
@@ -53,6 +54,8 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "separation_kernel": ("_spatial", "separation_kernel"),
     "separation_kernel_radius": ("_spatial", "separation_kernel_radius"),
     "cohesion_kernel": ("_spatial", "cohesion_kernel"),
+    "alignment_kernel": ("_spatial", "alignment_kernel"),
+    "kernel_zone_width": ("_spatial", "kernel_zone_width"),
     "alignment_radius_ratio": ("_spatial", "alignment_radius_ratio"),
     "separation_distance": ("_spatial", "separation_distance"),
     "max_dist_sep": ("_spatial", "max_dist_sep"),

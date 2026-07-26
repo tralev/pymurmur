@@ -131,6 +131,130 @@ def kernel_cosine_zone(
     return np.sum(contrib, axis=-2)
 
 
+def kernel_linear(diffs: np.ndarray, dists: np.ndarray, close: np.ndarray) -> np.ndarray:
+    """Σ r̂/d — plain 1/d falloff (distinct from "sum"'s 1/d²)."""
+    dists_safe = _safe_dists(dists, close)
+    contrib = _unit_dirs(diffs, dists_safe) / dists_safe[..., np.newaxis]
+    contrib = np.where(close[..., np.newaxis], contrib, 0.0)
+    return np.sum(contrib, axis=-2)
+
+
+def kernel_nearest_only(diffs: np.ndarray, dists: np.ndarray, close: np.ndarray) -> np.ndarray:
+    """F_sep = r̂_nearest — only the single closest neighbor contributes,
+    at unit strength, regardless of how many other neighbors exist.
+    Ties (multiple neighbors at the exact same minimum distance) are
+    all included, an intentionally simple tie-break rather than an
+    arbitrary single winner."""
+    dists_safe = _safe_dists(dists, close)
+    dists_for_min = np.where(close, dists, np.inf)
+    min_dist = np.min(dists_for_min, axis=-1, keepdims=True)
+    is_nearest = close & (dists_for_min <= min_dist)
+    contrib = _unit_dirs(diffs, dists_safe)
+    contrib = np.where(is_nearest[..., np.newaxis], contrib, 0.0)
+    return np.sum(contrib, axis=-2)
+
+
+def _bell_weight(dists_safe: np.ndarray, zone_center: float, zone_width: float) -> np.ndarray:
+    """cos(π·clip(|d − center|/width, 0, 1))/2 + 0.5 — peaks at 1.0 when
+    d == zone_center, falls symmetrically to 0.0 at |d - center| >=
+    width on EITHER side (nearer than the zone AND farther than it both
+    reduce weight) — the one qualitative property distinguishing this
+    from every distance-monotonic kernel above."""
+    t = np.clip(np.abs(dists_safe - zone_center) / zone_width, 0.0, 1.0)
+    return np.cos(np.pi * t) / 2.0 + 0.5
+
+
+def kernel_bell_zone(
+    diffs: np.ndarray, dists: np.ndarray, close: np.ndarray,
+    zone_center: float, zone_width: float,
+) -> np.ndarray:
+    """Separation: cosine-bell weight (see _bell_weight) on unit
+    direction (push away)."""
+    dists_safe = _safe_dists(dists, close)
+    weight = _bell_weight(dists_safe, zone_center, zone_width)
+    contrib = _unit_dirs(diffs, dists_safe) * weight[..., np.newaxis]
+    contrib = np.where(close[..., np.newaxis], contrib, 0.0)
+    return np.sum(contrib, axis=-2)
+
+
+def kernel_bell_zone_cohesion(
+    diffs: np.ndarray, dists: np.ndarray, close: np.ndarray,
+    zone_center: float, zone_width: float,
+) -> np.ndarray:
+    """Cohesion: cosine-bell-weighted center of mass — unlike
+    inverse_distance's 1/d weight (which must apply to the *unit*
+    direction to avoid cancelling against diffs' own d-proportional
+    magnitude), the bell weight is not itself proportional to 1/d, so
+    weighting raw diffs directly is safe here (no cancellation trap)."""
+    dists_safe = _safe_dists(dists, close)
+    weight = np.where(close, _bell_weight(dists_safe, zone_center, zone_width), 0.0)
+    total_weight = np.sum(weight, axis=-1)
+    total_weight = np.where(total_weight == 0, 1.0, total_weight)
+    weighted = diffs * weight[..., np.newaxis]
+    return np.sum(weighted, axis=-2) / total_weight[..., np.newaxis]
+
+
+def kernel_fov_weighted(
+    diffs: np.ndarray, dists: np.ndarray, close: np.ndarray,
+    heading: np.ndarray, neighbor_vel: np.ndarray, fov_min: float,
+) -> np.ndarray:
+    """Alignment: InverseLerp(cos_theta, fov_min, 1.0)-weighted average
+    of neighbor velocities. Neighbors dead ahead (cos_theta -> 1) weight
+    fully; neighbors at the edge of the FOV cone (cos_theta -> fov_min)
+    weight toward zero. fov_min is typically config.angle_align (already
+    an existing cos(θ) alignment-cone threshold, reused here rather than
+    inventing a new field)."""
+    dists_safe = _safe_dists(dists, close)
+    bearing = diffs / dists_safe[..., np.newaxis]
+    heading_norm = np.linalg.norm(heading, axis=-1, keepdims=True)
+    heading_unit = heading / np.maximum(heading_norm, 1e-10)
+    cos_theta = np.sum(bearing * heading_unit[..., np.newaxis, :], axis=-1)
+    denom = max(1.0 - fov_min, 1e-6)
+    weight = np.clip((cos_theta - fov_min) / denom, 0.0, 1.0)
+    weight = np.where(close, weight, 0.0)
+    total_weight = np.sum(weight, axis=-1)
+    total_weight = np.where(total_weight == 0, 1.0, total_weight)
+    weighted = neighbor_vel * weight[..., np.newaxis]
+    return np.sum(weighted, axis=-2) / total_weight[..., np.newaxis]
+
+
+def kernel_circular_mean_2d(
+    diffs: np.ndarray, dists: np.ndarray, close: np.ndarray,
+    neighbor_vel: np.ndarray,
+) -> np.ndarray:
+    """Alignment: 2D circular mean of neighbor headings, projected onto
+    the XY plane (this engine's ground-plane convention — Z is "up").
+    theta_bar = atan2(Σsinθ, Σcosθ), a scalar-angle circular mean, not a
+    vector average — matches §16/17 exactly. Z has no circular/
+    wraparound semantics (altitude isn't an angle), so it's averaged
+    linearly instead. The XY part is scaled by the mean XY speed (not
+    left as a unit vector) so it's on the same physical velocity scale
+    as the linearly-averaged Z part, rather than one part being ~1 and
+    the other being a real speed."""
+    vx = neighbor_vel[..., 0]
+    vy = neighbor_vel[..., 1]
+    vz = neighbor_vel[..., 2]
+    xy_speed = np.sqrt(vx ** 2 + vy ** 2)
+    valid = close & (xy_speed > 1e-6)
+
+    theta = np.arctan2(np.where(valid, vy, 0.0), np.where(valid, vx, 1.0))
+    sin_sum = np.sum(np.where(valid, np.sin(theta), 0.0), axis=-1)
+    cos_sum = np.sum(np.where(valid, np.cos(theta), 0.0), axis=-1)
+    theta_bar = np.arctan2(sin_sum, cos_sum)
+
+    n_valid = np.sum(valid, axis=-1)
+    n_valid_safe = np.where(n_valid == 0, 1, n_valid)
+    mean_xy_speed = np.sum(np.where(valid, xy_speed, 0.0), axis=-1) / n_valid_safe
+
+    n_close = np.sum(close, axis=-1)
+    n_close_safe = np.where(n_close == 0, 1, n_close)
+    z_mean = np.sum(np.where(close, vz, 0.0), axis=-1) / n_close_safe
+
+    result_x = mean_xy_speed * np.cos(theta_bar)
+    result_y = mean_xy_speed * np.sin(theta_bar)
+    return np.stack([result_x, result_y, z_mean], axis=-1)
+
+
 def kernel_unweighted(diffs: np.ndarray) -> np.ndarray:
     """Cohesion default: plain mean of neighbor positions (no distance
     weighting, no closeness mask) — matches cohesion_force's pre-existing
@@ -158,10 +282,11 @@ def kernel_inverse_distance(diffs: np.ndarray, dists: np.ndarray, close: np.ndar
     return np.sum(contrib, axis=-2) / total_weight[..., np.newaxis]
 
 
-SEPARATION_KERNELS_NEEDING_RADIUS = frozenset({"exp", "linear_ramp", "asymptotic"})
+SEPARATION_KERNELS_NEEDING_RADIUS = frozenset({"exp", "linear_ramp", "asymptotic", "bell_zone"})
 SEPARATION_KERNELS_NEEDING_VELOCITY = frozenset({"velocity_weighted", "cosine_zone"})
 VALID_SEPARATION_KERNELS = frozenset({
     "sum", "mean", "unit", "exp", "linear_ramp", "asymptotic",
-    "velocity_weighted", "cosine_zone",
+    "velocity_weighted", "cosine_zone", "linear", "nearest_only", "bell_zone",
 })
-VALID_COHESION_KERNELS = frozenset({"unweighted", "inverse_distance"})
+VALID_COHESION_KERNELS = frozenset({"unweighted", "inverse_distance", "bell_zone"})
+VALID_ALIGNMENT_KERNELS = frozenset({"unweighted", "fov_weighted", "circular_mean_2d"})

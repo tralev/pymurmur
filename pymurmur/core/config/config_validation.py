@@ -102,8 +102,8 @@ _NUMERIC_FIELDS = (
     "predator_acceleration", "predator_vacuole_strength",
     "predator_blackening_gain",
     # New spatial leaves
-    "flow_weight", "w_fwd", "separation_kernel_radius",
-    "readout_smooth",
+    "flow_weight", "w_fwd", "separation_kernel_radius", "kernel_zone_width",
+    "readout_smooth", "velocity_damping",
     "max_dist_sep", "max_dist_align", "max_dist_coh",
     "angle_sep", "angle_align", "angle_coh", "coherence_factor",
     # New boundary leaves
@@ -175,6 +175,8 @@ def _validate_domain_flock_boundary(cfg, ok: _OkFn) -> list[str]:
         issues.append(f"max_force must be >= 0, got {cfg.max_force}")
     if ok("visual_range") and cfg.visual_range <= 0:
         issues.append(f"visual_range must be > 0, got {cfg.visual_range}")
+    if ok("velocity_damping") and cfg.velocity_damping < 0:
+        issues.append(f"velocity_damping must be >= 0, got {cfg.velocity_damping}")
 
     # ── Boundary ──────────────────────────────────────────
     if cfg.boundary_mode not in cfg._VALID_BOUNDARY_MODES:
@@ -260,6 +262,15 @@ def _validate_mode_specific_forces(cfg, ok: _OkFn) -> list[str]:
         if ok("separation_kernel_radius") and cfg.separation_kernel_radius <= 0:
             issues.append(
                 f"separation_kernel_radius must be > 0, got {cfg.separation_kernel_radius}"
+            )
+        if cfg.alignment_kernel not in cfg._VALID_ALIGNMENT_KERNELS:
+            issues.append(
+                f"alignment_kernel must be one of {cfg._VALID_ALIGNMENT_KERNELS}, "
+                f"got {cfg.alignment_kernel!r}"
+            )
+        if ok("kernel_zone_width") and cfg.kernel_zone_width <= 0:
+            issues.append(
+                f"kernel_zone_width must be > 0, got {cfg.kernel_zone_width}"
             )
 
     if cfg.mode == "vicsek":
