@@ -306,6 +306,62 @@ class TestD17HeadlessFBODepth:
             "Headless FBO depth renderbuffer must be stored as self._depth_rb"
         )
 
+    @pytest.mark.gpu
+    def test_nearer_bird_wins_depth_test(self, gpu_available):
+        """D17: with two birds on the camera's optical axis at different
+        depths, the pixel at their shared screen location shows the
+        nearer bird's colour — not the farther bird's, and not whichever
+        was submitted last in the instance buffer."""
+        if not gpu_available:
+            pytest.skip("GPU not available")
+        from pymurmur.core.config import SimConfig
+        from pymurmur.physics.flock import PhysicsFlock
+        from pymurmur.viz.camera import OrbitCamera
+        from pymurmur.viz.renderer import Renderer3D
+
+        # bird_mesh="tetra": forced opaque geometry, no distance-fade —
+        # the default "auto" mesh resolves to point-sprite impostors for
+        # small N, whose depth-cue opacity fade (P8.2) makes a sufficiently
+        # far bird nearly transparent and confounds a pure depth-test signal.
+        cfg = SimConfig(num_boids=2, boid_size=20.0, bird_mesh="tetra")
+        flock = PhysicsFlock(cfg)
+        # Both on the camera's optical axis (Y=Z=0) -> same screen pixel
+        # regardless of depth. far bird is index 1 (submitted after near
+        # in the single instanced draw call) so a broken depth test would
+        # show the far bird winning by draw order, not just coincidentally
+        # agreeing with the correct answer.
+        flock.positions[0] = [900.0, 0.0, 0.0]   # near
+        flock.velocities[0] = [0.0, 1.0, 0.0]    # heading-theme hue A
+        flock.positions[1] = [700.0, 0.0, 0.0]   # far
+        flock.velocities[1] = [1.0, 0.0, 0.0]    # heading-theme hue B
+
+        def render(active_mask):
+            flock.active[:] = active_mask
+            r = Renderer3D(width=200, height=200, headless=True,
+                           point_sprites=False, theme="heading", bird_mesh="tetra")
+            cam = OrbitCamera(target=(0.0, 0.0, 0.0))
+            cam.distance, cam.elevation, cam.azimuth = 1000.0, 0.0, 0.0
+            r.begin_frame(cam)
+            r.draw_birds(flock)
+            r.end_frame()
+            img = r.capture_frame()
+            pixel = img.getpixel((100, 100))
+            r.release()
+            return pixel
+
+        color_near_alone = render([True, False])
+        color_far_alone = render([False, True])
+        assert color_near_alone != color_far_alone, (
+            "sanity check: the two heading colours must be distinguishable"
+        )
+
+        color_combined = render([True, True])
+        assert color_combined == color_near_alone, (
+            f"D17: nearer bird must win the depth test at the shared pixel — "
+            f"got {color_combined}, expected the near bird's colour "
+            f"{color_near_alone} (far bird's was {color_far_alone})"
+        )
+
 
 # ── G6: GPU context loss → graceful degradation ───────────────
 
