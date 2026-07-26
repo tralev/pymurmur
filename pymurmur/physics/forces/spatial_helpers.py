@@ -53,7 +53,10 @@ def _query_neighbors(
 
     # ── P4.1: Hybrid filter knobs ──
     topological_cap = min(config.topological_cap, n_active - 1)
-    visual_range = config.visual_range
+    # DynamicVisionRange extension bridge (cfg._dynamic_visual_range_mult,
+    # mirrors Wander's cfg._wander_heading pattern) — absent/1.0 by default,
+    # so disabled runs are byte-identical to before this bridge existed.
+    visual_range = config.visual_range * getattr(config, '_dynamic_visual_range_mult', 1.0)
     influence_count = config.influence_count
     perception_boost = getattr(config, 'predator_perception_boost', 1.0)
     has_predators = (

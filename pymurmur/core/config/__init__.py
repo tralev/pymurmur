@@ -47,6 +47,7 @@ from .config_sections import (
     BoundaryConfig,
     CaptureConfig,
     DomainConfig,
+    DynamicVisionRangeConfig,
     EcologyConfig,
     ExtensionConfig,
     FieldConfig,
@@ -72,7 +73,7 @@ __all__ = [
     "SimConfig",
     "DomainConfig", "FlockConfig", "BoundaryConfig", "ProjectionConfig",
     "SpatialConfig", "FieldConfig", "WanderConfig", "SpeedNoiseConfig",
-    "NeighborAdaptiveSpeedConfig", "VicsekConfig",
+    "NeighborAdaptiveSpeedConfig", "DynamicVisionRangeConfig", "VicsekConfig",
     "InfluencerConfig", "AngleConfig", "MarlConfig", "IndexConfig",
     "RefinementConfig", "ExtensionConfig", "PredatorConfig", "RoostConfig",
     "EcologyConfig", "PerfConfig", "VizConfig", "CaptureConfig",
@@ -102,6 +103,7 @@ class SimConfig:
         object.__setattr__(self, "_wander", WanderConfig())
         object.__setattr__(self, "_speed_noise", SpeedNoiseConfig())
         object.__setattr__(self, "_neighbor_adaptive_speed", NeighborAdaptiveSpeedConfig())
+        object.__setattr__(self, "_dynamic_vision_range", DynamicVisionRangeConfig())
         object.__setattr__(self, "_vicsek", VicsekConfig())
         object.__setattr__(self, "_influencer", InfluencerConfig())
         object.__setattr__(self, "_angle", AngleConfig())
@@ -172,6 +174,10 @@ class SimConfig:
     @property
     def neighbor_adaptive_speed(self) -> NeighborAdaptiveSpeedConfig:
         return self._neighbor_adaptive_speed
+
+    @property
+    def dynamic_vision_range(self) -> DynamicVisionRangeConfig:
+        return self._dynamic_vision_range
 
     @property
     def vicsek(self) -> VicsekConfig:
@@ -321,7 +327,7 @@ class SimConfig:
         for sub_attr in (
             "_domain", "_flock", "_boundary", "_projection", "_spatial",
             "_field", "_wander", "_speed_noise", "_neighbor_adaptive_speed",
-            "_vicsek", "_influencer", "_angle", "_marl",
+            "_dynamic_vision_range", "_vicsek", "_influencer", "_angle", "_marl",
             "_index", "_refinement",
             "_extension", "_predator", "_ecology", "_roost", "_perf", "_viz", "_capture",
         ):
@@ -344,7 +350,7 @@ class SimConfig:
         for sub_attr in (
             "_domain", "_flock", "_boundary", "_projection", "_spatial",
             "_field", "_wander", "_speed_noise", "_neighbor_adaptive_speed",
-            "_vicsek", "_influencer", "_angle", "_marl",
+            "_dynamic_vision_range", "_vicsek", "_influencer", "_angle", "_marl",
             "_index", "_refinement", "_extension", "_predator", "_ecology", "_roost", "_perf", "_viz", "_capture",):
             if (object.__getattribute__(self, sub_attr)
                     != object.__getattribute__(other, sub_attr)):

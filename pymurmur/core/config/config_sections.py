@@ -172,6 +172,21 @@ class NeighborAdaptiveSpeedConfig:
 
 
 @dataclass
+class DynamicVisionRangeConfig:
+    """Dynamic vision-range extension parameters.
+
+    Flock-wide (not per-boid) visual_range multiplier, nudged toward a
+    target average neighbor count each frame. Only consumed by
+    spatial_helpers.py's _query_neighbors (spatial + projection modes).
+    """
+    dynamic_vision_range_ideal_count: float = 6.0   # target average neighbor count
+    dynamic_vision_range_step: float = 0.02          # multiplier nudge per frame
+    dynamic_vision_range_min_mult: float = 0.5
+    dynamic_vision_range_max_mult: float = 2.0
+    dynamic_vision_range_sample_k: int = 10          # k-NN sample size for counting
+
+
+@dataclass
 class VicsekConfig:
     """Vicsek mode parameters."""
     vicsek_couplage: float = 0.8       # alignment coupling η ∈ [0,1]
@@ -292,6 +307,7 @@ class ExtensionConfig:
     speed_noise_enabled: bool = False
     priority_stack_enabled: bool = False
     neighbor_adaptive_speed_enabled: bool = False
+    dynamic_vision_range_enabled: bool = False
 
 
 @dataclass

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ._base import StepContext  # noqa: F401  # used in type hints with annotations future
+from .dynamic_vision_range import DynamicVisionRange
 from .ecology import Ecology
 from .neighbor_adaptive_speed import NeighborAdaptiveSpeed
 from .predator import Predator
@@ -35,6 +36,7 @@ class ExtensionManager:
         self._ripple: Ripple | None = None
         self._speed_noise: SpeedNoise | None = None
         self._neighbor_adaptive_speed: NeighborAdaptiveSpeed | None = None
+        self._dynamic_vision_range: DynamicVisionRange | None = None
 
         # Lazy-init from initial config
         cfg = config
@@ -50,6 +52,8 @@ class ExtensionManager:
             self._speed_noise = SpeedNoise()
         if cfg.neighbor_adaptive_speed_enabled:
             self._neighbor_adaptive_speed = NeighborAdaptiveSpeed()
+        if cfg.dynamic_vision_range_enabled:
+            self._dynamic_vision_range = DynamicVisionRange()
 
     def pre_step(self, flock: PhysicsFlock, ctx: StepContext) -> None:
         """Run all enabled extensions before force computation.
@@ -110,6 +114,17 @@ class ExtensionManager:
             self._neighbor_adaptive_speed = None
             flock.neighbor_adaptive_speed_mult = None
 
+        if cfg.dynamic_vision_range_enabled:
+            if self._dynamic_vision_range is None:
+                self._dynamic_vision_range = DynamicVisionRange()
+        else:
+            self._dynamic_vision_range = None
+            # Explicit teardown of the config-bridge attribute (not a
+            # flock-level array like the others, but the same staleness
+            # risk applies — spatial_helpers.py would keep reading the
+            # last multiplier forever otherwise).
+            cfg._dynamic_visual_range_mult = 1.0
+
         eco = self._ecology
         pred = self._predator
 
@@ -137,12 +152,15 @@ class ExtensionManager:
             self._speed_noise.apply(flock, ctx)
         if self._neighbor_adaptive_speed is not None:
             self._neighbor_adaptive_speed.apply(flock, ctx)
+        if self._dynamic_vision_range is not None:
+            self._dynamic_vision_range.apply(flock, ctx)
 
     @property
     def count(self) -> int:
         return sum(1 for e in (self._ecology, self._predator,
                                 self._wander, self._ripple,
-                                self._speed_noise, self._neighbor_adaptive_speed)
+                                self._speed_noise, self._neighbor_adaptive_speed,
+                                self._dynamic_vision_range)
                     if e is not None)
 
     @property

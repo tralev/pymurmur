@@ -72,6 +72,9 @@ _NUMERIC_FIELDS = (
     "speed_noise_power", "speed_noise_time_scale",
     "neighbor_adaptive_speed_target", "neighbor_adaptive_speed_radius",
     "neighbor_adaptive_speed_linear_scale",
+    "dynamic_vision_range_ideal_count", "dynamic_vision_range_step",
+    "dynamic_vision_range_min_mult", "dynamic_vision_range_max_mult",
+    "dynamic_vision_range_sample_k",
     "boundary_avoidance_factor", "boundary_radius_factor",
     "acceleration_scale",
     "ecology_dusk_width", "ecology_seasonal_amplitude",
@@ -417,6 +420,29 @@ def _validate_refinements_angle_extensions(cfg, ok: _OkFn) -> list[str]:
                 f"neighbor_adaptive_speed_mode must be one of "
                 f"{cfg._VALID_ANGLE_SPEED_MODES}, "
                 f"got {cfg.neighbor_adaptive_speed_mode!r}"
+            )
+    if cfg.dynamic_vision_range_enabled:
+        if ok("dynamic_vision_range_ideal_count") and cfg.dynamic_vision_range_ideal_count <= 0:
+            issues.append(
+                "dynamic_vision_range_enabled=True but "
+                "dynamic_vision_range_ideal_count must be > 0"
+            )
+        if ok("dynamic_vision_range_step") and cfg.dynamic_vision_range_step <= 0:
+            issues.append(
+                "dynamic_vision_range_enabled=True but "
+                "dynamic_vision_range_step must be > 0"
+            )
+        if (
+            ok("dynamic_vision_range_min_mult") and ok("dynamic_vision_range_max_mult")
+            and cfg.dynamic_vision_range_min_mult > cfg.dynamic_vision_range_max_mult
+        ):
+            issues.append(
+                "dynamic_vision_range_min_mult must be <= dynamic_vision_range_max_mult"
+            )
+        if ok("dynamic_vision_range_sample_k") and cfg.dynamic_vision_range_sample_k < 1:
+            issues.append(
+                "dynamic_vision_range_enabled=True but "
+                "dynamic_vision_range_sample_k must be >= 1"
             )
 
     return issues

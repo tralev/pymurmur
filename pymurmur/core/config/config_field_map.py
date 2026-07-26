@@ -104,6 +104,12 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "neighbor_adaptive_speed_radius": ("_neighbor_adaptive_speed", "neighbor_adaptive_speed_radius"),
     "neighbor_adaptive_speed_mode": ("_neighbor_adaptive_speed", "neighbor_adaptive_speed_mode"),
     "neighbor_adaptive_speed_linear_scale": ("_neighbor_adaptive_speed", "neighbor_adaptive_speed_linear_scale"),
+    # DynamicVisionRangeConfig
+    "dynamic_vision_range_ideal_count": ("_dynamic_vision_range", "dynamic_vision_range_ideal_count"),
+    "dynamic_vision_range_step": ("_dynamic_vision_range", "dynamic_vision_range_step"),
+    "dynamic_vision_range_min_mult": ("_dynamic_vision_range", "dynamic_vision_range_min_mult"),
+    "dynamic_vision_range_max_mult": ("_dynamic_vision_range", "dynamic_vision_range_max_mult"),
+    "dynamic_vision_range_sample_k": ("_dynamic_vision_range", "dynamic_vision_range_sample_k"),
     # VicsekConfig
     "vicsek_couplage": ("_vicsek", "vicsek_couplage"),
     "vicsek_diffusion": ("_vicsek", "vicsek_diffusion"),
@@ -177,6 +183,7 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "ripple_enabled": ("_extension", "ripple_enabled"),
     "speed_noise_enabled": ("_extension", "speed_noise_enabled"),
     "neighbor_adaptive_speed_enabled": ("_extension", "neighbor_adaptive_speed_enabled"),
+    "dynamic_vision_range_enabled": ("_extension", "dynamic_vision_range_enabled"),
     "priority_stack_enabled": ("_extension", "priority_stack_enabled"),
     # PredatorConfig
     "predator_threat_radius": ("_predator", "predator_threat_radius"),

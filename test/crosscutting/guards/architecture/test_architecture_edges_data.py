@@ -243,6 +243,12 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.flock",
         "pymurmur.physics.extensions._base",
     },
+    "pymurmur.physics.extensions.dynamic_vision_range": {
+        "pymurmur.core.types",
+        "pymurmur.core.config",
+        "pymurmur.physics.flock",
+        "pymurmur.physics.extensions._base",
+    },
     "pymurmur.physics.extensions.__init__": {
         "pymurmur.core.types",
         "pymurmur.core.config",
@@ -254,6 +260,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.extensions.ripple",
         "pymurmur.physics.extensions.speed_noise",
         "pymurmur.physics.extensions.neighbor_adaptive_speed",
+        "pymurmur.physics.extensions.dynamic_vision_range",
     },
 
     # ── Tier 3: simulation/engine (L2) — core + physics + analysis ──
