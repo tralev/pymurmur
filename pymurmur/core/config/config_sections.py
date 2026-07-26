@@ -63,7 +63,10 @@ class SpatialConfig:
     speed_mode: str = "clamp"          # clamp | band | none — how speed is enforced
     flow_weight: float = 0.0           # P11.5: global flow contribution weight
     neighbor_filter: str = "hybrid"    # hybrid | metric | topological | global | none
-    separation_kernel: str = "sum"     # sum | mean | unit — how sep forces are combined
+    # sum | mean | unit | exp | linear_ramp | asymptotic | velocity_weighted | cosine_zone
+    separation_kernel: str = "sum"     # how sep forces are combined (kernels.py registry)
+    separation_kernel_radius: float = 20.0  # only used by exp/linear_ramp/asymptotic
+    cohesion_kernel: str = "unweighted"      # unweighted | inverse_distance
     # S2.B1: dual-radii — alignment sees a tighter subset than sep/coh.
     # 1.0 = no extra restriction beyond visual_range (back-compat default);
     # the starlings preset sets 0.75 per the source-parity table.

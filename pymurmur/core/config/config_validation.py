@@ -90,7 +90,7 @@ _NUMERIC_FIELDS = (
     "predator_acceleration", "predator_vacuole_strength",
     "predator_blackening_gain",
     # New spatial leaves
-    "flow_weight", "w_fwd",
+    "flow_weight", "w_fwd", "separation_kernel_radius",
     "readout_smooth",
     "max_dist_sep", "max_dist_align", "max_dist_coh",
     "angle_sep", "angle_align", "angle_coh", "coherence_factor",
@@ -227,6 +227,20 @@ def _validate_mode_specific_forces(cfg, ok: _OkFn) -> list[str]:
             issues.append(f"spatial.influence_count must be >= 1, got {cfg.influence_count}")
         if ok("noise_scale") and cfg.noise_scale < 0:
             issues.append(f"spatial.noise_scale >= 0, got {cfg.noise_scale}")
+        if cfg.separation_kernel not in cfg._VALID_SEPARATION_KERNELS:
+            issues.append(
+                f"separation_kernel must be one of {cfg._VALID_SEPARATION_KERNELS}, "
+                f"got {cfg.separation_kernel!r}"
+            )
+        if cfg.cohesion_kernel not in cfg._VALID_COHESION_KERNELS:
+            issues.append(
+                f"cohesion_kernel must be one of {cfg._VALID_COHESION_KERNELS}, "
+                f"got {cfg.cohesion_kernel!r}"
+            )
+        if ok("separation_kernel_radius") and cfg.separation_kernel_radius <= 0:
+            issues.append(
+                f"separation_kernel_radius must be > 0, got {cfg.separation_kernel_radius}"
+            )
 
     if cfg.mode == "vicsek":
         if ok("vicsek_couplage") and not (

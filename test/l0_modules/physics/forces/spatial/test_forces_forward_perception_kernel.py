@@ -439,3 +439,80 @@ class TestSeparationKernel:
         )
 
         assert np.allclose(force_default, force_unknown)
+
+
+class TestNewSeparationKernelsThroughSpatialConfig:
+    """S1.5/kernel registry: config.spatial.separation_kernel reaches
+    _base.py's new exp/linear_ramp/asymptotic/velocity_weighted/
+    cosine_zone options end-to-end through SpatialMode.compute()."""
+
+    @staticmethod
+    def _simple_neighbors(n_neighbors, at_distance):
+        return TestSeparationKernel._simple_neighbors(n_neighbors, at_distance)
+
+    def test_exp_kernel_via_spatial_config(self, default_config):
+        from copy import copy
+
+        from pymurmur.physics.flock import PhysicsFlock
+        from pymurmur.physics.forces.spatial import spatial_forces
+        from test.helpers import _call_force
+
+        cfg = copy(default_config)
+        cfg.mode = "spatial"
+        cfg.num_boids = 30
+        cfg.separation_kernel = "exp"
+        cfg.spatial.separation_kernel_radius = 30.0
+
+        flock = PhysicsFlock(cfg)
+        flock.accelerations[:] = 0.0
+        flock.get_index().rebuild(flock.positions, flock.active)
+        _call_force(spatial_forces, flock, cfg)
+        assert np.isfinite(flock.accelerations).all()
+
+    @pytest.mark.parametrize(
+        "kernel", ["linear_ramp", "asymptotic", "velocity_weighted", "cosine_zone"],
+    )
+    def test_new_kernels_run_without_crash(self, default_config, kernel):
+        from copy import copy
+
+        from pymurmur.physics.flock import PhysicsFlock
+        from pymurmur.physics.forces.spatial import spatial_forces
+        from test.helpers import _call_force
+
+        cfg = copy(default_config)
+        cfg.mode = "spatial"
+        cfg.num_boids = 30
+        cfg.separation_kernel = kernel
+        cfg.spatial.separation_kernel_radius = 30.0
+
+        flock = PhysicsFlock(cfg)
+        flock.accelerations[:] = 0.0
+        flock.get_index().rebuild(flock.positions, flock.active)
+        _call_force(spatial_forces, flock, cfg)
+        assert np.isfinite(flock.accelerations).all()
+
+
+class TestCohesionKernelThroughSpatialConfig:
+    """cohesion_kernel="inverse_distance" reaches cohesion_force() via
+    SpatialMode.compute()'s call site."""
+
+    def test_inverse_distance_via_spatial_config(self, default_config):
+        from copy import copy
+
+        from pymurmur.physics.flock import PhysicsFlock
+        from pymurmur.physics.forces.spatial import spatial_forces
+        from test.helpers import _call_force
+
+        cfg = copy(default_config)
+        cfg.mode = "spatial"
+        cfg.num_boids = 30
+        cfg.cohesion_kernel = "inverse_distance"
+
+        flock = PhysicsFlock(cfg)
+        flock.accelerations[:] = 0.0
+        flock.get_index().rebuild(flock.positions, flock.active)
+        _call_force(spatial_forces, flock, cfg)
+        assert np.isfinite(flock.accelerations).all()
+
+    def test_unweighted_is_default(self, default_config):
+        assert default_config.cohesion_kernel == "unweighted"

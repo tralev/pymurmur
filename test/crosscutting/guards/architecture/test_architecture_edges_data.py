@@ -90,7 +90,9 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.steric",
         "pymurmur.physics.flock",
         "pymurmur.physics.extensions._base",
+        "pymurmur.physics.forces.force_kernels",
     },
+    "pymurmur.physics.forces.force_kernels": set(),  # numpy only, zero pymurmur imports
     "pymurmur.physics.forces._kernels": {
         # S2.B3: min_image for toroidal-aware predator escape distances.
         "pymurmur.core.types",

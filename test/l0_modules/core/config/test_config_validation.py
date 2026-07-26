@@ -121,6 +121,31 @@ def test_spatial_defaults_valid():
     _assert_valid(SimConfig(mode="spatial"))
 
 
+def test_unknown_separation_kernel_rejected():
+    _assert_invalid(SimConfig(mode="spatial", separation_kernel="bogus"), "separation_kernel")
+
+
+def test_all_valid_separation_kernels_accepted():
+    for kernel in SimConfig._VALID_SEPARATION_KERNELS:
+        _assert_valid(SimConfig(mode="spatial", separation_kernel=kernel))
+
+
+def test_unknown_cohesion_kernel_rejected():
+    _assert_invalid(SimConfig(mode="spatial", cohesion_kernel="bogus"), "cohesion_kernel")
+
+
+def test_all_valid_cohesion_kernels_accepted():
+    for kernel in SimConfig._VALID_COHESION_KERNELS:
+        _assert_valid(SimConfig(mode="spatial", cohesion_kernel=kernel))
+
+
+def test_negative_separation_kernel_radius_rejected():
+    _assert_invalid(
+        SimConfig(mode="spatial", separation_kernel_radius=-1),
+        "separation_kernel_radius",
+    )
+
+
 # ── Mode-specific: vicsek ─────────────────────────────────────────
 
 def test_vicsek_couplage_out_of_range_rejected():

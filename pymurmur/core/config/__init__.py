@@ -265,6 +265,13 @@ class SimConfig:
     _VALID_MODES = {"projection", "spatial", "field", "vicsek", "influencer", "angle", "marl"}
     _VALID_BOUNDARY_MODES = {"toroidal", "open", "margin", "sphere", "sphere_soft"}
     _VALID_INDEX_TYPES = {"auto", "hash_grid", "kdtree", "none"}
+    # Mirror physics/forces/kernels.py's registry — kept as plain string
+    # constants there (Level 0, no config import) and validated here.
+    _VALID_SEPARATION_KERNELS = frozenset({
+        "sum", "mean", "unit", "exp", "linear_ramp", "asymptotic",
+        "velocity_weighted", "cosine_zone",
+    })
+    _VALID_COHESION_KERNELS = frozenset({"unweighted", "inverse_distance"})
     # S4.4a: Valid themes and mesh names — mirror mesh_registry.py values.
     # Defined here statically to avoid core→viz import (forbidden per arch.md).
     _VALID_THEMES = frozenset({"ink", "inverse", "paper", "graphite", "heading"})

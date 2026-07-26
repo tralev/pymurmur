@@ -50,6 +50,8 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "flow_weight": ("_spatial", "flow_weight"),
     "neighbor_filter": ("_spatial", "neighbor_filter"),
     "separation_kernel": ("_spatial", "separation_kernel"),
+    "separation_kernel_radius": ("_spatial", "separation_kernel_radius"),
+    "cohesion_kernel": ("_spatial", "cohesion_kernel"),
     "alignment_radius_ratio": ("_spatial", "alignment_radius_ratio"),
     "separation_distance": ("_spatial", "separation_distance"),
     "max_dist_sep": ("_spatial", "max_dist_sep"),

@@ -165,6 +165,8 @@ def save_config_to_file(cfg, path: str | Path) -> None:
                     "flow_weight": cfg.flow_weight,
                     "neighbor_filter": cfg.neighbor_filter,
                     "separation_kernel": cfg.separation_kernel,
+                    "separation_kernel_radius": cfg.separation_kernel_radius,
+                    "cohesion_kernel": cfg.cohesion_kernel,
                     "alignment_radius_ratio": cfg.alignment_radius_ratio,
                     "separation_distance": cfg.separation_distance,
                     "max_dist_sep": cfg.max_dist_sep,

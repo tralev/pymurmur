@@ -18,6 +18,8 @@ from typing import Any, Callable
 
 import numpy as np
 
+from . import force_kernels as _kernels
+
 # ── P2.10/S2.A5: ForceTerm composition infrastructure ─────────────
 
 @dataclass
@@ -86,23 +88,71 @@ def _is_ragged(neighbor_idx: np.ndarray) -> bool:
     return neighbor_idx.dtype == np.dtype('object')
 
 
+def _dispatch_separation_kernel(
+    kernel: str,
+    diffs: np.ndarray,
+    dists: np.ndarray,
+    close: np.ndarray,
+    radius: float | None = None,
+    closing_speed: np.ndarray | None = None,
+    heading: np.ndarray | None = None,
+) -> np.ndarray:
+    """Kernel-name -> kernels.py function dispatch, shared by the ragged
+    and dense paths below. Unrecognized kernel names silently fall back
+    to "sum" (matches pre-refactor behavior, explicitly tested by
+    test_invalid_kernel_ignored_by_code_structure)."""
+    if kernel == "mean":
+        return _kernels.kernel_mean(diffs, dists, close)
+    if kernel == "unit":
+        return _kernels.kernel_unit(diffs, dists, close)
+    if kernel == "exp":
+        return _kernels.kernel_exp(diffs, dists, close, radius)
+    if kernel == "linear_ramp":
+        return _kernels.kernel_linear_ramp(diffs, dists, close, radius)
+    if kernel == "asymptotic":
+        return _kernels.kernel_asymptotic(diffs, dists, close, radius)
+    if kernel == "velocity_weighted":
+        return _kernels.kernel_velocity_weighted(diffs, dists, close, closing_speed)
+    if kernel == "cosine_zone":
+        return _kernels.kernel_cosine_zone(diffs, dists, close, heading)
+    return _kernels.kernel_sum(diffs, dists, close)
+
+
+def _closing_speed(diffs: np.ndarray, dists: np.ndarray, v_i: np.ndarray, v_j: np.ndarray) -> np.ndarray:
+    """Rate of distance decrease between i and each neighbor j (positive
+    = approaching). unit = diffs/dist (points i -> j); closing speed is
+    the component of (v_i - v_j) along that direction."""
+    dists_safe = np.where(dists > 1e-6, dists, 1.0)
+    unit = diffs / dists_safe[..., np.newaxis]
+    return np.sum(unit * (v_i - v_j), axis=-1)
+
+
 def separation_force(
     positions: np.ndarray,
     velocities: np.ndarray,
     neighbor_idx: np.ndarray,
     active: np.ndarray,
     kernel: str = "sum",
+    kernel_radius: float = 20.0,
 ) -> np.ndarray:
     """Separation: push away from nearby neighbours.
 
-    S1.5: Kernel selector — how neighbour contributions are combined.
+    S1.5/kernel registry (pymurmur.physics.forces.kernels) — how
+    neighbour contributions are combined:
 
-    kernel="sum"  → F_sep[i] = Σ_j −d_ij / |d_ij|²  (Reynolds default)
-    kernel="mean" → F_sep[i] = (1/k) Σ_j −d_ij / |d_ij|²  (density-invariant)
-    kernel="unit" → F_sep[i] = Σ_j −û(d_ij)  (unit direction, distance-independent)
+    kernel="sum"    → Σ r̂/d² (Reynolds default; magnitude falls as 1/d²)
+    kernel="mean"   → (1/k) Σ r̂/d² (density-invariant)
+    kernel="unit"   → Σ −û(d_ij) (unit direction, distance-independent)
+    kernel="exp"          → exponential-decay weight on unit direction
+    kernel="linear_ramp"  → linear ramp weight on unit direction
+    kernel="asymptotic"   → r/d − 1 weight on unit direction
+    kernel="velocity_weighted" → "sum" base scaled by closing speed
+                                 (receding neighbours contribute nothing)
+    kernel="cosine_zone" → "sum" base scaled by a continuous (1+cosθ)/2
+                            weight on bearing vs. own heading (§08-style
+                            continuous zone, vs. a hard FOV cone cutoff)
 
-    Magnitude falls as 1/|d_ij| for "sum"/"mean" (d_ij is the raw difference vector,
-    not unit).  For "unit", all neighbours push with equal strength.
+    kernel_radius is only consulted by exp/linear_ramp/asymptotic.
     Returns (N, 3) float32.
     """
     N = len(positions)
@@ -112,39 +162,9 @@ def separation_force(
     if n_active == 0:
         return force
 
-    if kernel == "unit":
-        # Unit-direction kernel: Σ −û(d_ij) — all neighbours push equally
-        if _is_ragged(neighbor_idx):
-            for i in active_idx:
-                nbrs = neighbor_idx[i]
-                if len(nbrs) == 0:
-                    continue
-                diffs = positions[nbrs] - positions[i]
-                dists = np.linalg.norm(diffs, axis=1)
-                close = dists > 1e-6
-                if not close.any():
-                    continue
-                diffs = diffs[close]
-                dists = dists[close]
-                force[i] = np.sum(-diffs / dists[:, np.newaxis], axis=0)
-            return force
+    needs_closing_speed = kernel == "velocity_weighted"
+    needs_heading = kernel == "cosine_zone"
 
-        k = neighbor_idx.shape[1] if neighbor_idx.ndim == 2 else 0
-        if k == 0:
-            return force
-        nbr_idx = neighbor_idx[active_idx]
-        p_i = positions[active_idx]
-        p_j = positions[nbr_idx]
-        diffs = p_j - p_i[:, np.newaxis, :]
-        dists = np.linalg.norm(diffs, axis=2)
-        close = dists > 1e-6
-        dists_safe = np.where(close, dists, 1.0)
-        contrib = -diffs / dists_safe[:, :, np.newaxis]  # unit vectors
-        contrib[~close] = 0.0
-        force[active_idx] = np.sum(contrib, axis=1).astype(np.float32)
-        return force
-
-    # Shared dense path for "sum" and "mean" kernels
     if _is_ragged(neighbor_idx):
         # Ragged object array — per-bird fallback
         for i in active_idx:
@@ -156,13 +176,16 @@ def separation_force(
             close = dists > 1e-6
             if not close.any():
                 continue
-            diffs = diffs[close]
-            dists = dists[close]
-            # S1.5: Σ r̂/d² = unit-direction / squared-distance
-            contrib = -diffs / (dists[:, np.newaxis] ** 3)
-            force[i] = np.sum(contrib, axis=0)
-            if kernel == "mean" and len(contrib) > 0:
-                force[i] /= len(contrib)
+            closing_speed = (
+                _closing_speed(diffs, dists, velocities[i], velocities[nbrs])
+                if needs_closing_speed else None
+            )
+            heading = velocities[i] if needs_heading else None
+            force[i] = _dispatch_separation_kernel(
+                kernel, diffs, dists, close,
+                radius=kernel_radius, closing_speed=closing_speed,
+                heading=heading,
+            )
         return force
 
     # Dense 2D int array — vectorised gather+reduce
@@ -176,22 +199,22 @@ def separation_force(
 
     diffs = p_j - p_i[:, np.newaxis, :]           # (n_active, k, 3)
     dists = np.linalg.norm(diffs, axis=2)         # (n_active, k)
-
     close = dists > 1e-6
-    dists_safe = np.where(close, dists, 1.0)
-    # S1.5: Σ r̂/d² = Σ (−Δ/|Δ|) / d² = Σ −Δ / |Δ|³
-    # was −Δ/|Δ|² (1/d magnitude); correct is unit-direction / d².
-    contrib = -diffs / (dists_safe[:, :, np.newaxis] ** 3)
-    contrib[~close] = 0.0
 
-    force[active_idx] = np.sum(contrib, axis=1).astype(np.float32)
+    closing_speed = None
+    heading = None
+    if needs_closing_speed:
+        v_i = velocities[active_idx]              # (n_active, 3)
+        v_j = velocities[nbr_idx]                 # (n_active, k, 3)
+        closing_speed = _closing_speed(diffs, dists, v_i[:, np.newaxis, :], v_j)
+    if needs_heading:
+        heading = velocities[active_idx]          # (n_active, 3)
 
-    if kernel == "mean":
-        # Divide by neighbour count per bird (density-invariant)
-        n_neighbors = close.sum(axis=1).astype(np.float32)  # (n_active,)
-        n_neighbors[n_neighbors == 0] = 1.0
-        force[active_idx] /= n_neighbors[:, np.newaxis]
-
+    contrib = _dispatch_separation_kernel(
+        kernel, diffs, dists, close,
+        radius=kernel_radius, closing_speed=closing_speed, heading=heading,
+    )
+    force[active_idx] = contrib.astype(np.float32)
     return force
 
 
@@ -255,10 +278,15 @@ def cohesion_force(
     velocities: np.ndarray,
     neighbor_idx: np.ndarray,
     active: np.ndarray,
+    kernel: str = "unweighted",
 ) -> np.ndarray:
-    """Cohesion: steer toward average neighbour position.
+    """Cohesion: steer toward average (or 1/d-weighted) neighbour position.
 
-    F_coh[i] = û(p̄_j − p_i)  — bounded unit vector (P1.7 fix).
+    kernel="unweighted" (default) → F_coh[i] = û(mean(p_j) − p_i), bounded
+        unit vector (P1.7 fix) — pre-existing behavior, unchanged.
+    kernel="inverse_distance" → 1/d-weighted center of mass: nearer
+        neighbours pull more strongly than farther ones.
+
     Returns (N, 3) float32.
     """
     N = len(positions)
@@ -274,8 +302,13 @@ def cohesion_force(
             nbrs = neighbor_idx[i]
             if len(nbrs) == 0:
                 continue
-            center = np.mean(positions[nbrs], axis=0)
-            to_center = center - positions[i]
+            diffs = positions[nbrs] - positions[i]
+            if kernel == "inverse_distance":
+                dists = np.linalg.norm(diffs, axis=1)
+                close = dists > 1e-6
+                to_center = _kernels.kernel_inverse_distance(diffs, dists, close)
+            else:
+                to_center = _kernels.kernel_unweighted(diffs)
             length = np.linalg.norm(to_center)
             if length < 1e-10:
                 continue
@@ -293,9 +326,14 @@ def cohesion_force(
     nbr_idx = neighbor_idx[active_idx]           # (n_active, k)
     p_i = positions[active_idx]                  # (n_active, 3)
     p_j = positions[nbr_idx]                     # (n_active, k, 3)
+    diffs = p_j - p_i[:, np.newaxis, :]          # (n_active, k, 3)
 
-    center = np.mean(p_j, axis=1)                # (n_active, 3)
-    to_center = center - p_i                     # (n_active, 3)
+    if kernel == "inverse_distance":
+        dists = np.linalg.norm(diffs, axis=2)
+        close = dists > 1e-6
+        to_center = _kernels.kernel_inverse_distance(diffs, dists, close)
+    else:
+        to_center = _kernels.kernel_unweighted(diffs)
     lengths = np.linalg.norm(to_center, axis=1)  # (n_active,)
 
     # S1.5: limit3(to_center, 1.0) — cap at unit length.
@@ -304,7 +342,7 @@ def cohesion_force(
     long = lengths > 1.0
     if long.any():
         force_i[long] = to_center[long] / lengths[long, np.newaxis]
-    force[active_idx] = force_i
+    force[active_idx] = force_i.astype(np.float32)
 
     return force
 
