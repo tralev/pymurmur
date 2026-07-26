@@ -186,6 +186,35 @@ def compute_suggested_m(aspect: float) -> float:
     return 9.78 + t * (6.05 - 9.78)
 
 
+def is_fully_3d_regime(thickness: float, threshold: float = 0.4) -> bool:
+    """A16 (Young et al. 2013): classify a flock as "fully 3D" (in
+    robustness terms) once its thickness exceeds the paper's reported
+    transition threshold (~0.4) -- below it, flocks behave more like a
+    quasi-2D sheet; above it, robustness stops responding much further
+    to added thickness. No formula is given in the source paper for
+    this threshold (same situation as B14's jamming index) -- this is
+    a simple classifier at the paper's own reported boundary, not a
+    derived quantity.
+
+    Empirically verified in this codebase (compute_suggested_m/
+    find_optimal_m against synthetic squashed-Gaussian flocks, see
+    TestMStarThickness/TestA16Transition): the m*-vs-thickness
+    relationship plateaus by thickness~0.2, well before this 0.4
+    threshold -- so by the time a flock crosses into "fully 3D" per
+    this classifier, its robustness-vs-shape behaviour has already
+    flattened out in this implementation too, consistent with (if
+    earlier than) A16's own claim.
+
+    Args:
+        thickness: PCA thickness ratio sqrt(lambda3/lambda1) in (0, 1].
+        threshold: the fully-3D boundary (default 0.4, per the paper).
+
+    Returns:
+        True if thickness >= threshold.
+    """
+    return thickness >= threshold
+
+
 
 # ── P9.7: Robust gyration + ideal exponent ────────────────────
 

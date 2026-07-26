@@ -356,6 +356,33 @@ def find_optimal_m(positions: np.ndarray, tree=None) -> tuple[int, float]:
     return best_m, best_h2
 
 
+def find_connectivity_threshold(
+    positions: np.ndarray, m_max: int = 20, tree=None,
+) -> int | None:
+    """A9 (Young et al. 2013): the smallest m at which the m-nearest-
+    neighbour graph is connected (H₂ finite).
+
+    Young et al. report m≥5 as the empirical connectivity threshold
+    across 394 field-observed starling-flock snapshots (N=440-2600) --
+    almost always connected at m=5, and m=1,2 almost always disconnected.
+    This is the corresponding measurement on this codebase's own
+    positions (simulated or synthetic), mirroring find_optimal_m's/
+    find_m_star_by_sensing_cost's scan structure.
+
+    Args:
+        positions: (N, 3) float32 array.
+        m_max: largest m to try before giving up.
+        tree: optional pre-built cKDTree to avoid rebuild.
+
+    Returns:
+        The first m in [1, m_max] where compute_h2 reports a connected
+        graph (finite H₂), or None if nothing in range connects.
+    """
+    for m in range(1, min(m_max + 1, len(positions))):
+        _, h2 = compute_h2(positions, m, tree)
+        if np.isfinite(h2):
+            return m
+    return None
 
 
 # ── P9.6: η(m) Marginal efficiency ────────────────────────────

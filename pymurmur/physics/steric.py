@@ -3,6 +3,16 @@
 Level 0 — pure numpy. No project imports.
 F_steric = Σ_{d < threshold} r̂ / d² · strength.
 Clamped to max_force per P1.6.
+
+B2/B15 (Pearce et al. 2014): the paper's *base* projection model uses
+phantom particles — no volume exclusion, birds may overlap in 3D space.
+This steric force is an *optional* SI-Appendix refinement layered on
+top, not part of the core projection/alignment/noise dynamics —
+`strength=0.0` (the phantom-particle case) is a fully supported, tested
+configuration (see test_b15_marginal_opacity_emerges_without_steric).
+Marginal opacity self-regulation emerges from projection (φp/φa) alone;
+steric only prevents unphysical overlap, it does not drive the density
+regulation.
 """
 
 from __future__ import annotations

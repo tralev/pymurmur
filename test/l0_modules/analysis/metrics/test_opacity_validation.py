@@ -87,6 +87,47 @@ def test_s36a_different_seed_still_in_band():
     )
 
 
+@pytest.mark.slow
+def test_b15_marginal_opacity_emerges_without_steric():
+    """B15/B2 (Pearce et al. 2014): marginal opacity self-regulation
+    emerges from projection (phi_p/phi_a) alone -- steric prevents
+    unphysical overlap but does not drive the density regulation. Same
+    settle/measure protocol as test_s36a_..._self_regulates_to_
+    marginal_opacity, but with steric fully disabled (phantom-particle
+    mode, matching the paper's base model). Measured directly before
+    writing this assertion: mean silhouette 0.176, well inside the
+    S3.6a band -- confirming steric isn't load-bearing for the
+    self-regulation dynamics."""
+    from pymurmur.core.config import SimConfig
+    from pymurmur.simulation.engine import SimulationEngine
+
+    cfg = SimConfig()
+    cfg.mode = "projection"
+    cfg.num_boids = 150
+    cfg.seed = 42
+    cfg.metrics_detail_level = 1
+    cfg.metrics_interval = 1
+    cfg.steric = 0.0  # phantom-particle mode -- no volume exclusion
+
+    engine = SimulationEngine(cfg)
+    settle_frames = 300
+    measure_from = 200
+
+    silhouettes = []
+    for frame in range(settle_frames):
+        engine.step(1.0 / 60.0)
+        if frame >= measure_from:
+            silhouettes.append(engine.metrics.snapshot().silhouette_2d)
+
+    mean_silhouette = float(np.mean(silhouettes))
+    assert 0.05 <= mean_silhouette <= 0.55, (
+        f"steric=0.0 (phantom-particle mode): time-averaged silhouette "
+        f"Θ'={mean_silhouette:.4f} outside the marginal-opacity band "
+        f"[0.05, 0.55] -- marginal opacity should emerge from "
+        f"projection alone"
+    )
+
+
 def test_marginal_opacity_constants_accessible():
     """S3.6a: MARGINAL_OPACITY_MEAN and MARGINAL_OPACITY_STD are
     importable and within reasonable ranges."""

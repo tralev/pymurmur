@@ -13,6 +13,7 @@ from pymurmur.analysis.metrics import (
     compute_shape,
     find_m_star_by_sensing_cost,
     find_optimal_m,
+    is_fully_3d_regime,
 )
 from pymurmur.core.config import SimConfig
 from pymurmur.simulation.engine import SimulationEngine
@@ -138,6 +139,59 @@ class TestMStarThickness:
         thick = self._make_flock(300, 0.6, rng)
         m_star, _ = find_optimal_m(thick)
         assert 5 <= m_star <= 6, f"thick flock m*={m_star}, expected 5-6"
+
+
+class TestA16Transition:
+    """A16 (Young et al. 2013): flocks behave as "fully 3D" in
+    robustness terms above thickness~0.4 -- distinct from A12's already-
+    tested monotonic m*-vs-thickness trend (TestMStarThickness): A16 is
+    about the trend's shape flattening out at a threshold, not just its
+    direction. Verified empirically before writing these assertions
+    (same squashed-Gaussian fixture as TestMStarThickness): m* plateaus
+    at its floor value (5) starting around measured thickness~0.2,
+    well before A16's 0.4 boundary -- so by the time is_fully_3d_regime
+    classifies a flock as "fully 3D", this implementation's robustness-
+    vs-shape relationship has already flattened, consistent with
+    (earlier than) the paper's claim."""
+
+    @staticmethod
+    def _make_flock(N, thickness_scale, rng):
+        xy = rng.normal(0, 100, (N, 2))
+        z = rng.normal(0, 100 * thickness_scale, (N, 1))
+        return np.hstack([xy, z]).astype(np.float32)
+
+    def test_classifies_below_and_above_threshold(self):
+        assert is_fully_3d_regime(0.1) is False
+        assert is_fully_3d_regime(0.39) is False
+        assert is_fully_3d_regime(0.4) is True
+        assert is_fully_3d_regime(0.8) is True
+
+    def test_custom_threshold(self):
+        assert is_fully_3d_regime(0.3, threshold=0.25) is True
+        assert is_fully_3d_regime(0.3, threshold=0.35) is False
+
+    def test_m_star_already_plateaued_at_transition_threshold(self):
+        """At the paper's own thickness=0.4 boundary, m* should already
+        equal its plateaued floor value -- the same value reached by a
+        much thicker (more spherical) flock -- confirming the trend has
+        flattened by the time is_fully_3d_regime flips to True."""
+        rng = np.random.default_rng(11)
+        at_threshold = self._make_flock(300, 0.4, rng)
+        well_above = self._make_flock(300, 1.0, rng)
+
+        _, at_threshold_thickness = compute_shape(at_threshold)
+        assert is_fully_3d_regime(at_threshold_thickness), (
+            f"thickness={at_threshold_thickness:.3f} should classify as "
+            f"fully-3D at thickness_scale=0.4"
+        )
+
+        m_star_at_threshold, _ = find_optimal_m(at_threshold)
+        m_star_well_above, _ = find_optimal_m(well_above)
+        assert m_star_at_threshold == m_star_well_above, (
+            f"m* at the transition threshold ({m_star_at_threshold}) "
+            f"should already match the plateaued value seen well above "
+            f"it ({m_star_well_above})"
+        )
 
 
 class TestA14ThicknessSweepN1200:

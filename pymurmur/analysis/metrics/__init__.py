@@ -27,6 +27,7 @@ from .consensus_robustness import (
     compute_h2_lyapunov,
     compute_r_nodal,
     compute_r_per_m,
+    find_connectivity_threshold,
     find_m_star_by_sensing_cost,
     find_optimal_m,
 )
@@ -61,6 +62,7 @@ from .shape_motion import (
     compute_robust_density,
     compute_shape,
     compute_suggested_m,
+    is_fully_3d_regime,
 )
 
 __all__ = [
@@ -102,6 +104,8 @@ __all__ = [
     "compute_tau_rho_hull",
     "compute_theta_accel_correlation",
     "compute_theta_prime",
+    "find_connectivity_threshold",
     "find_m_star_by_sensing_cost",
     "find_optimal_m",
+    "is_fully_3d_regime",
 ]
