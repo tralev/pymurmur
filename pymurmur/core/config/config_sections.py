@@ -187,6 +187,32 @@ class DynamicVisionRangeConfig:
 
 
 @dataclass
+class BoidStateMachineConfig:
+    """Generic per-boid state machine — a small, fixed, config-driven
+    schema (not arbitrary user code, not hardcoded per-state Python)
+    covering the common patterns across reference implementations:
+    isolated boids speed up, crowded boids slow down, threatened boids
+    flee-speed. States evaluated in priority order — first match wins
+    (mirrors the priority_stack binary-cutoff precedent) — threatened >
+    isolated > crowded > normal.
+
+    "threatened" reads ctx.threat_prox (published by the Predator
+    extension, [0,1] proximity) rather than a literal distance, since
+    that's the signal already available without querying predator
+    position directly; it's simply 0 (never threatened) when Predator
+    is inactive.
+    """
+    boid_state_neighbor_radius: float = 70.0        # radius for counting neighbors
+    boid_state_sample_k: int = 10                   # k-NN sample size for counting
+    boid_state_isolated_neighbor_threshold: float = 2.0   # < this count -> isolated
+    boid_state_isolated_speed_mult: float = 1.3
+    boid_state_crowded_neighbor_threshold: float = 10.0   # > this count -> crowded
+    boid_state_crowded_speed_mult: float = 0.8
+    boid_state_threatened_proximity_threshold: float = 0.3  # ctx.threat_prox > this -> threatened
+    boid_state_threatened_speed_mult: float = 1.5
+
+
+@dataclass
 class VicsekConfig:
     """Vicsek mode parameters."""
     vicsek_couplage: float = 0.8       # alignment coupling η ∈ [0,1]
@@ -308,6 +334,7 @@ class ExtensionConfig:
     priority_stack_enabled: bool = False
     neighbor_adaptive_speed_enabled: bool = False
     dynamic_vision_range_enabled: bool = False
+    boid_state_machine_enabled: bool = False
 
 
 @dataclass

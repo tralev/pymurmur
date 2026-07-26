@@ -110,6 +110,15 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "dynamic_vision_range_min_mult": ("_dynamic_vision_range", "dynamic_vision_range_min_mult"),
     "dynamic_vision_range_max_mult": ("_dynamic_vision_range", "dynamic_vision_range_max_mult"),
     "dynamic_vision_range_sample_k": ("_dynamic_vision_range", "dynamic_vision_range_sample_k"),
+    # BoidStateMachineConfig
+    "boid_state_neighbor_radius": ("_boid_state_machine", "boid_state_neighbor_radius"),
+    "boid_state_sample_k": ("_boid_state_machine", "boid_state_sample_k"),
+    "boid_state_isolated_neighbor_threshold": ("_boid_state_machine", "boid_state_isolated_neighbor_threshold"),
+    "boid_state_isolated_speed_mult": ("_boid_state_machine", "boid_state_isolated_speed_mult"),
+    "boid_state_crowded_neighbor_threshold": ("_boid_state_machine", "boid_state_crowded_neighbor_threshold"),
+    "boid_state_crowded_speed_mult": ("_boid_state_machine", "boid_state_crowded_speed_mult"),
+    "boid_state_threatened_proximity_threshold": ("_boid_state_machine", "boid_state_threatened_proximity_threshold"),
+    "boid_state_threatened_speed_mult": ("_boid_state_machine", "boid_state_threatened_speed_mult"),
     # VicsekConfig
     "vicsek_couplage": ("_vicsek", "vicsek_couplage"),
     "vicsek_diffusion": ("_vicsek", "vicsek_diffusion"),
@@ -184,6 +193,7 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "speed_noise_enabled": ("_extension", "speed_noise_enabled"),
     "neighbor_adaptive_speed_enabled": ("_extension", "neighbor_adaptive_speed_enabled"),
     "dynamic_vision_range_enabled": ("_extension", "dynamic_vision_range_enabled"),
+    "boid_state_machine_enabled": ("_extension", "boid_state_machine_enabled"),
     "priority_stack_enabled": ("_extension", "priority_stack_enabled"),
     # PredatorConfig
     "predator_threat_radius": ("_predator", "predator_threat_radius"),

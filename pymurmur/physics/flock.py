@@ -72,6 +72,15 @@ class PhysicsFlock:
         if n_pred > 0:
             self.is_predator[:min(n_pred, N)] = True
 
+        # Generic per-boid behavioral state, written by the
+        # BoidStateMachine extension (0 = normal/unassigned when the
+        # extension is disabled — see boid_state_machine.py for the
+        # state-id constants). Eager, fixed-length, matching is_predator's
+        # convention rather than the lazy-None pattern used by optional
+        # per-boid multiplier arrays, since state is a persistent species-
+        # like property once the extension is active.
+        self.boid_state: np.ndarray = np.zeros(N, dtype=np.int8)
+
         # Previous-frame stash — render interpolation + MSD (P0.7)
         self.prev_positions: np.ndarray = np.zeros((N, 3), dtype=np.float32)
         self.last_accelerations: np.ndarray = np.zeros((N, 3), dtype=np.float32)
@@ -99,6 +108,11 @@ class PhysicsFlock:
         # speed_noise_mult/max_speed the same way, chained after
         # speed_noise_mult in integrate().
         self.neighbor_adaptive_speed_mult: np.ndarray | None = None
+
+        # Per-bird speed-cap multiplier from the BoidStateMachine
+        # extension — None when disabled. Same multiplicative
+        # composition, chained after neighbor_adaptive_speed_mult.
+        self.boid_state_speed_mult: np.ndarray | None = None
 
         # Per-bird predator-threat force, isolated from flock.accelerations
         # when priority_stack_enabled — lets the priority stack budget it
@@ -177,6 +191,14 @@ class PhysicsFlock:
                 len(self.positions), config.v0, dtype=np.float32,
             )
             max_speed = (base * self.neighbor_adaptive_speed_mult).astype(np.float32)
+
+        # BoidStateMachine extension: same multiplicative composition,
+        # chained after neighbor_adaptive_speed_mult.
+        if self.boid_state_speed_mult is not None:
+            base = max_speed if max_speed is not None else np.full(
+                len(self.positions), config.v0, dtype=np.float32,
+            )
+            max_speed = (base * self.boid_state_speed_mult).astype(np.float32)
 
         # 2. Integrate
         # C3: boundary_radius_factor — scales the effective sphere radius

@@ -51,7 +51,10 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     },
     "pymurmur.core.config.config_sections": set(),
     "pymurmur.core.config.config_field_map": set(),
-    "pymurmur.core.config.config_validation": set(),
+    "pymurmur.core.config.config_validation": {
+        "pymurmur.core.config.config_validation_extensions",
+    },
+    "pymurmur.core.config.config_validation_extensions": set(),
     "pymurmur.core.config.config_io": {"pymurmur.core.config.config_field_map"},
 
     # ── Tier 0: physics/obstacles (L0 atom, P0.14) — core only ──
@@ -249,6 +252,12 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.flock",
         "pymurmur.physics.extensions._base",
     },
+    "pymurmur.physics.extensions.boid_state_machine": {
+        "pymurmur.core.types",
+        "pymurmur.core.config",
+        "pymurmur.physics.flock",
+        "pymurmur.physics.extensions._base",
+    },
     "pymurmur.physics.extensions.__init__": {
         "pymurmur.core.types",
         "pymurmur.core.config",
@@ -261,6 +270,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.extensions.speed_noise",
         "pymurmur.physics.extensions.neighbor_adaptive_speed",
         "pymurmur.physics.extensions.dynamic_vision_range",
+        "pymurmur.physics.extensions.boid_state_machine",
     },
 
     # ── Tier 3: simulation/engine (L2) — core + physics + analysis ──

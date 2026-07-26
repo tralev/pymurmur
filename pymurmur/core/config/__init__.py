@@ -44,6 +44,7 @@ from .config_io import (
 )
 from .config_sections import (
     AngleConfig,
+    BoidStateMachineConfig,
     BoundaryConfig,
     CaptureConfig,
     DomainConfig,
@@ -73,7 +74,8 @@ __all__ = [
     "SimConfig",
     "DomainConfig", "FlockConfig", "BoundaryConfig", "ProjectionConfig",
     "SpatialConfig", "FieldConfig", "WanderConfig", "SpeedNoiseConfig",
-    "NeighborAdaptiveSpeedConfig", "DynamicVisionRangeConfig", "VicsekConfig",
+    "NeighborAdaptiveSpeedConfig", "DynamicVisionRangeConfig",
+    "BoidStateMachineConfig", "VicsekConfig",
     "InfluencerConfig", "AngleConfig", "MarlConfig", "IndexConfig",
     "RefinementConfig", "ExtensionConfig", "PredatorConfig", "RoostConfig",
     "EcologyConfig", "PerfConfig", "VizConfig", "CaptureConfig",
@@ -104,6 +106,7 @@ class SimConfig:
         object.__setattr__(self, "_speed_noise", SpeedNoiseConfig())
         object.__setattr__(self, "_neighbor_adaptive_speed", NeighborAdaptiveSpeedConfig())
         object.__setattr__(self, "_dynamic_vision_range", DynamicVisionRangeConfig())
+        object.__setattr__(self, "_boid_state_machine", BoidStateMachineConfig())
         object.__setattr__(self, "_vicsek", VicsekConfig())
         object.__setattr__(self, "_influencer", InfluencerConfig())
         object.__setattr__(self, "_angle", AngleConfig())
@@ -178,6 +181,10 @@ class SimConfig:
     @property
     def dynamic_vision_range(self) -> DynamicVisionRangeConfig:
         return self._dynamic_vision_range
+
+    @property
+    def boid_state_machine(self) -> BoidStateMachineConfig:
+        return self._boid_state_machine
 
     @property
     def vicsek(self) -> VicsekConfig:
@@ -327,7 +334,8 @@ class SimConfig:
         for sub_attr in (
             "_domain", "_flock", "_boundary", "_projection", "_spatial",
             "_field", "_wander", "_speed_noise", "_neighbor_adaptive_speed",
-            "_dynamic_vision_range", "_vicsek", "_influencer", "_angle", "_marl",
+            "_dynamic_vision_range", "_boid_state_machine",
+            "_vicsek", "_influencer", "_angle", "_marl",
             "_index", "_refinement",
             "_extension", "_predator", "_ecology", "_roost", "_perf", "_viz", "_capture",
         ):
@@ -350,7 +358,8 @@ class SimConfig:
         for sub_attr in (
             "_domain", "_flock", "_boundary", "_projection", "_spatial",
             "_field", "_wander", "_speed_noise", "_neighbor_adaptive_speed",
-            "_dynamic_vision_range", "_vicsek", "_influencer", "_angle", "_marl",
+            "_dynamic_vision_range", "_boid_state_machine",
+            "_vicsek", "_influencer", "_angle", "_marl",
             "_index", "_refinement", "_extension", "_predator", "_ecology", "_roost", "_perf", "_viz", "_capture",):
             if (object.__getattribute__(self, sub_attr)
                     != object.__getattribute__(other, sub_attr)):

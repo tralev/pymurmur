@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ._base import StepContext  # noqa: F401  # used in type hints with annotations future
+from .boid_state_machine import BoidStateMachine
 from .dynamic_vision_range import DynamicVisionRange
 from .ecology import Ecology
 from .neighbor_adaptive_speed import NeighborAdaptiveSpeed
@@ -37,6 +38,7 @@ class ExtensionManager:
         self._speed_noise: SpeedNoise | None = None
         self._neighbor_adaptive_speed: NeighborAdaptiveSpeed | None = None
         self._dynamic_vision_range: DynamicVisionRange | None = None
+        self._boid_state_machine: BoidStateMachine | None = None
 
         # Lazy-init from initial config
         cfg = config
@@ -54,6 +56,8 @@ class ExtensionManager:
             self._neighbor_adaptive_speed = NeighborAdaptiveSpeed()
         if cfg.dynamic_vision_range_enabled:
             self._dynamic_vision_range = DynamicVisionRange()
+        if cfg.boid_state_machine_enabled:
+            self._boid_state_machine = BoidStateMachine()
 
     def pre_step(self, flock: PhysicsFlock, ctx: StepContext) -> None:
         """Run all enabled extensions before force computation.
@@ -125,6 +129,14 @@ class ExtensionManager:
             # last multiplier forever otherwise).
             cfg._dynamic_visual_range_mult = 1.0
 
+        if cfg.boid_state_machine_enabled:
+            if self._boid_state_machine is None:
+                self._boid_state_machine = BoidStateMachine()
+        else:
+            self._boid_state_machine = None
+            flock.boid_state_speed_mult = None
+            flock.boid_state[:] = 0
+
         eco = self._ecology
         pred = self._predator
 
@@ -154,13 +166,15 @@ class ExtensionManager:
             self._neighbor_adaptive_speed.apply(flock, ctx)
         if self._dynamic_vision_range is not None:
             self._dynamic_vision_range.apply(flock, ctx)
+        if self._boid_state_machine is not None:
+            self._boid_state_machine.apply(flock, ctx)
 
     @property
     def count(self) -> int:
         return sum(1 for e in (self._ecology, self._predator,
                                 self._wander, self._ripple,
                                 self._speed_noise, self._neighbor_adaptive_speed,
-                                self._dynamic_vision_range)
+                                self._dynamic_vision_range, self._boid_state_machine)
                     if e is not None)
 
     @property
