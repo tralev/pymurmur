@@ -273,7 +273,9 @@ class SpatialMode(ForceMode):
             align = alignment_force(
                 positions, velocities, align_idx, active,
                 kernel=config.spatial.alignment_kernel,
-                fov_min=config.spatial.angle_align)
+                fov_min=config.spatial.angle_align,
+                kernel_radius=config.spatial.separation_kernel_radius,
+                kernel_zone_width=config.spatial.kernel_zone_width)
             coh = cohesion_force(
                 positions, velocities, coh_idx, active,
                 kernel=config.spatial.cohesion_kernel,

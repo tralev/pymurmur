@@ -302,6 +302,48 @@ class TestKernelCircularMean2d:
         assert out[2] == pytest.approx(4.0, rel=1e-4)  # plain mean of 2 and 6
 
 
+class TestKernelBellZoneAlignment:
+    def test_zone_center_neighbor_dominates(self):
+        # One neighbour at the zone center (full weight, moving +y), one
+        # far outside the zone (near-zero weight, moving -y) -> result
+        # should be dominated by the zone-center neighbour's velocity.
+        diffs = np.array([[10.0, 0, 0], [-40.0, 0, 0]], dtype=np.float32)
+        dists = np.linalg.norm(diffs, axis=1)
+        close = dists > 1e-6
+        neighbor_vel = np.array([[0.0, 1.0, 0.0], [0.0, -1.0, 0.0]], dtype=np.float32)
+        out = kernels.kernel_bell_zone_alignment(
+            diffs, dists, close, neighbor_vel, zone_center=10.0, zone_width=5.0,
+        )
+        assert out[1] > 0.5  # dominated by the +10 (zone-center) neighbour
+
+    def test_falls_off_on_both_sides(self):
+        # Symmetric fall-off: same qualitative property as separation's
+        # bell_zone. A single-neighbour probe can't show this directly
+        # (weighted-average normalizes away any single contributor's own
+        # weight), so pair the probe with a fixed zone-center anchor:
+        # as the probe's own weight rises (nearer the zone center), its
+        # velocity should pull the average further from the anchor's.
+        anchor_diff = np.array([10.0, 0.0, 0.0], dtype=np.float32)   # at zone center
+        anchor_vel = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+        probe_vel = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+
+        def _probe_x_contribution(probe_dist):
+            diffs = np.array([anchor_diff, [probe_dist, 0.1, 0.0]], dtype=np.float32)
+            dists = np.linalg.norm(diffs, axis=1)
+            close = dists > 1e-6
+            neighbor_vel = np.array([anchor_vel, probe_vel], dtype=np.float32)
+            out = kernels.kernel_bell_zone_alignment(
+                diffs, dists, close, neighbor_vel, zone_center=10.0, zone_width=5.0,
+            )
+            return out[0]  # x-component -> how much the probe pulled the average
+
+        at_center = _probe_x_contribution(10.0)
+        nearer = _probe_x_contribution(5.0)
+        farther = _probe_x_contribution(15.0)
+        assert at_center > nearer
+        assert at_center > farther
+
+
 class TestValidKernelSets:
     def test_separation_kernels_needing_radius(self):
         assert kernels.SEPARATION_KERNELS_NEEDING_RADIUS == {
@@ -323,5 +365,5 @@ class TestValidKernelSets:
 
     def test_valid_alignment_kernels(self):
         assert kernels.VALID_ALIGNMENT_KERNELS == {
-            "unweighted", "fov_weighted", "circular_mean_2d",
+            "unweighted", "fov_weighted", "circular_mean_2d", "bell_zone",
         }

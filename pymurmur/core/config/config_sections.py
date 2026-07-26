@@ -73,7 +73,7 @@ class SpatialConfig:
     separation_kernel: str = "sum"     # how sep forces are combined (kernels.py registry)
     separation_kernel_radius: float = 20.0  # exp/linear_ramp/asymptotic/bell_zone (zone center)
     cohesion_kernel: str = "unweighted"      # unweighted | inverse_distance | bell_zone
-    # unweighted | fov_weighted | circular_mean_2d
+    # unweighted | fov_weighted | circular_mean_2d | bell_zone
     alignment_kernel: str = "unweighted"     # how align forces are combined
     kernel_zone_width: float = 10.0    # bell_zone half-width (sep + cohesion)
     # S2.B1: dual-radii — alignment sees a tighter subset than sep/coh.

@@ -1,8 +1,8 @@
 """Engine-level tests for the Round-C gap-analysis additions: separation
 kernels "linear"/"nearest_only"/"bell_zone", cohesion kernel "bell_zone",
-alignment kernels "fov_weighted"/"circular_mean_2d", and the mode-agnostic
-velocity_damping friction term. All are opt-in — default config must
-reproduce current behavior byte-for-byte.
+alignment kernels "fov_weighted"/"circular_mean_2d"/"bell_zone", and the
+mode-agnostic velocity_damping friction term. All are opt-in — default
+config must reproduce current behavior byte-for-byte.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pymurmur.simulation.engine import SimulationEngine
 ALL_MODES = ["spatial", "field", "projection", "vicsek", "angle", "influencer", "marl"]
 
 NEW_SEPARATION_KERNELS = ["linear", "nearest_only", "bell_zone"]
-NEW_ALIGNMENT_KERNELS = ["fov_weighted", "circular_mean_2d"]
+NEW_ALIGNMENT_KERNELS = ["fov_weighted", "circular_mean_2d", "bell_zone"]
 
 
 class TestByteIdenticalWhenDefault:

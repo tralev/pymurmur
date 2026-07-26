@@ -255,6 +255,23 @@ def kernel_circular_mean_2d(
     return np.stack([result_x, result_y, z_mean], axis=-1)
 
 
+def kernel_bell_zone_alignment(
+    diffs: np.ndarray, dists: np.ndarray, close: np.ndarray,
+    neighbor_vel: np.ndarray, zone_center: float, zone_width: float,
+) -> np.ndarray:
+    """Alignment: cosine-bell-weighted average neighbor velocity (see
+    _bell_weight) — same distance-zone concept as separation/cohesion's
+    "bell_zone", applied to alignment: v̄ = Σ vⱼ × bell(dⱼ). Neighbors at
+    the configured zone center dominate; neighbors nearer OR farther than
+    the zone both weight toward zero."""
+    dists_safe = _safe_dists(dists, close)
+    weight = np.where(close, _bell_weight(dists_safe, zone_center, zone_width), 0.0)
+    total_weight = np.sum(weight, axis=-1)
+    total_weight = np.where(total_weight == 0, 1.0, total_weight)
+    weighted = neighbor_vel * weight[..., np.newaxis]
+    return np.sum(weighted, axis=-2) / total_weight[..., np.newaxis]
+
+
 def kernel_unweighted(diffs: np.ndarray) -> np.ndarray:
     """Cohesion default: plain mean of neighbor positions (no distance
     weighting, no closeness mask) — matches cohesion_force's pre-existing
@@ -289,4 +306,6 @@ VALID_SEPARATION_KERNELS = frozenset({
     "velocity_weighted", "cosine_zone", "linear", "nearest_only", "bell_zone",
 })
 VALID_COHESION_KERNELS = frozenset({"unweighted", "inverse_distance", "bell_zone"})
-VALID_ALIGNMENT_KERNELS = frozenset({"unweighted", "fov_weighted", "circular_mean_2d"})
+VALID_ALIGNMENT_KERNELS = frozenset({
+    "unweighted", "fov_weighted", "circular_mean_2d", "bell_zone",
+})

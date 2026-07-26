@@ -292,7 +292,9 @@ class SimConfig:
         "velocity_weighted", "cosine_zone", "linear", "nearest_only", "bell_zone",
     })
     _VALID_COHESION_KERNELS = frozenset({"unweighted", "inverse_distance", "bell_zone"})
-    _VALID_ALIGNMENT_KERNELS = frozenset({"unweighted", "fov_weighted", "circular_mean_2d"})
+    _VALID_ALIGNMENT_KERNELS = frozenset({
+        "unweighted", "fov_weighted", "circular_mean_2d", "bell_zone",
+    })
     # S4.4a: Valid themes and mesh names — mirror mesh_registry.py values.
     # Defined here statically to avoid core→viz import (forbidden per arch.md).
     _VALID_THEMES = frozenset({"ink", "inverse", "paper", "graphite", "heading"})

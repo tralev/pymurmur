@@ -277,6 +277,18 @@ def test_alignment_force_circular_mean_2d_kernel_dispatch():
     assert np.isfinite(force).all()
 
 
+def test_alignment_force_bell_zone_kernel_dispatch():
+    pos = np.array([[0, 0, 0], [10, 0, 0], [-10, 0, 0]], dtype=np.float32)
+    vel = np.array([[1, 0, 0], [0, 1, 0], [0, -1, 0]], dtype=np.float32)
+    idx = np.array([[1, 2], [0, 0], [0, 0]], dtype=np.int32)
+    active = np.ones(3, dtype=bool)
+    force = alignment_force(
+        pos, vel, idx, active,
+        kernel="bell_zone", kernel_radius=10.0, kernel_zone_width=5.0,
+    )
+    assert np.isfinite(force).all()
+
+
 def test_alignment_force_unweighted_default_unchanged(known_positions, known_velocities):
     """Default kernel="unweighted" must reproduce the pre-existing plain-mean
     behavior byte-for-byte — new kernel param is opt-in."""

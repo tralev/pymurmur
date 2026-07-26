@@ -242,6 +242,8 @@ def _weighted_avg_vel(
     neighbor_vel: np.ndarray,
     heading: np.ndarray,
     fov_min: float,
+    zone_center: float,
+    zone_width: float,
 ) -> np.ndarray:
     """Alignment kernel dispatch — mirrors _dispatch_separation_kernel.
     Returns the weighted-average neighbour velocity (..., 3), NOT yet
@@ -250,6 +252,10 @@ def _weighted_avg_vel(
         return _kernels.kernel_fov_weighted(diffs, dists, close, heading, neighbor_vel, fov_min)
     if kernel == "circular_mean_2d":
         return _kernels.kernel_circular_mean_2d(diffs, dists, close, neighbor_vel)
+    if kernel == "bell_zone":
+        return _kernels.kernel_bell_zone_alignment(
+            diffs, dists, close, neighbor_vel, zone_center, zone_width,
+        )
     return np.mean(neighbor_vel, axis=-2)
 
 
@@ -260,6 +266,8 @@ def alignment_force(
     active: np.ndarray,
     kernel: str = "unweighted",
     fov_min: float = -1.0,
+    kernel_radius: float = 20.0,
+    kernel_zone_width: float = 10.0,
 ) -> np.ndarray:
     """Alignment: steer toward average (or weighted) neighbour heading.
 
@@ -270,9 +278,14 @@ def alignment_force(
         neighbours near fov_min contribute ~0.
     kernel="circular_mean_2d" → 2D circular mean (atan2(Σsinθ,Σcosθ)) of
         neighbour headings projected onto the XY plane, Z averaged linearly.
+    kernel="bell_zone" → cosine-bell-weighted average velocity, peaking at
+        kernel_radius (zone center) and falling off symmetrically over
+        kernel_zone_width — same distance-zone concept as separation/
+        cohesion's "bell_zone".
 
     fov_min is only consulted by "fov_weighted" (reuses the same
     InverseLerp-lower-bound semantics as the existing angle_align field).
+    kernel_radius/kernel_zone_width are only consulted by "bell_zone".
     Returns (N, 3) float32.
     """
     N = len(positions)
@@ -282,7 +295,7 @@ def alignment_force(
     if n_active == 0:
         return force
 
-    needs_dists = kernel in ("fov_weighted", "circular_mean_2d")
+    needs_dists = kernel in ("fov_weighted", "circular_mean_2d", "bell_zone")
 
     if _is_ragged(neighbor_idx):
         # Ragged object array — per-bird fallback
@@ -299,6 +312,7 @@ def alignment_force(
                     continue
                 avg_vel = _weighted_avg_vel(
                     kernel, diffs, dists, close, neighbor_vel, velocities[i], fov_min,
+                    kernel_radius, kernel_zone_width,
                 )
             else:
                 avg_vel = np.mean(neighbor_vel, axis=0)
@@ -324,7 +338,10 @@ def alignment_force(
         diffs = p_j - p_i[:, np.newaxis, :]         # (n_active, k, 3)
         dists = np.linalg.norm(diffs, axis=2)       # (n_active, k)
         close = dists > 1e-6
-        avg_vel = _weighted_avg_vel(kernel, diffs, dists, close, v_j, v_i, fov_min)
+        avg_vel = _weighted_avg_vel(
+            kernel, diffs, dists, close, v_j, v_i, fov_min,
+            kernel_radius, kernel_zone_width,
+        )
     else:
         # S1.5: Reynolds steering — normalize(v̄ − v_i), not normalize(v̄) − normalize(v_i).
         # The subtract-then-normalize avoids unequal-speed vector distortion.
