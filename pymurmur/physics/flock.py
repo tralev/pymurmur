@@ -94,6 +94,12 @@ class PhysicsFlock:
         # clobbering the other; see integrate().
         self.speed_noise_mult: np.ndarray | None = None
 
+        # Per-bird speed-cap multiplier from the NeighborAdaptiveSpeed
+        # extension — None when disabled. Composes multiplicatively with
+        # speed_noise_mult/max_speed the same way, chained after
+        # speed_noise_mult in integrate().
+        self.neighbor_adaptive_speed_mult: np.ndarray | None = None
+
         # Per-bird predator-threat force, isolated from flock.accelerations
         # when priority_stack_enabled — lets the priority stack budget it
         # as its own tier rather than fusing it into the flocking term.
@@ -163,6 +169,14 @@ class PhysicsFlock:
                 len(self.positions), config.v0, dtype=np.float32,
             )
             max_speed = (base * self.speed_noise_mult).astype(np.float32)
+
+        # NeighborAdaptiveSpeed extension: same multiplicative composition,
+        # chained after speed_noise_mult.
+        if self.neighbor_adaptive_speed_mult is not None:
+            base = max_speed if max_speed is not None else np.full(
+                len(self.positions), config.v0, dtype=np.float32,
+            )
+            max_speed = (base * self.neighbor_adaptive_speed_mult).astype(np.float32)
 
         # 2. Integrate
         # C3: boundary_radius_factor — scales the effective sphere radius

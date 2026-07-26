@@ -62,6 +62,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     "pymurmur.physics.occlusion": {"pymurmur.core.types"},
     "pymurmur.physics.steric":    {"pymurmur.core.types"},
     "pymurmur.physics.priority_stack": set(),  # numpy only, zero pymurmur imports
+    "pymurmur.physics.adaptive_speed": set(),  # numpy only, zero pymurmur imports
 
     # ── Tier 2: physics/flock (L1) — core + boid only, NEVER forces ──
     "pymurmur.physics.flock": {
@@ -235,6 +236,13 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.flock",
         "pymurmur.physics.extensions._base",
     },
+    "pymurmur.physics.extensions.neighbor_adaptive_speed": {
+        "pymurmur.core.types",
+        "pymurmur.core.config",
+        "pymurmur.physics.adaptive_speed",
+        "pymurmur.physics.flock",
+        "pymurmur.physics.extensions._base",
+    },
     "pymurmur.physics.extensions.__init__": {
         "pymurmur.core.types",
         "pymurmur.core.config",
@@ -245,6 +253,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.extensions.wander",
         "pymurmur.physics.extensions.ripple",
         "pymurmur.physics.extensions.speed_noise",
+        "pymurmur.physics.extensions.neighbor_adaptive_speed",
     },
 
     # ── Tier 3: simulation/engine (L2) — core + physics + analysis ──

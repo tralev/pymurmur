@@ -99,6 +99,11 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "speed_noise_max_mult": ("_speed_noise", "speed_noise_max_mult"),
     "speed_noise_power": ("_speed_noise", "speed_noise_power"),
     "speed_noise_time_scale": ("_speed_noise", "speed_noise_time_scale"),
+    # NeighborAdaptiveSpeedConfig
+    "neighbor_adaptive_speed_target": ("_neighbor_adaptive_speed", "neighbor_adaptive_speed_target"),
+    "neighbor_adaptive_speed_radius": ("_neighbor_adaptive_speed", "neighbor_adaptive_speed_radius"),
+    "neighbor_adaptive_speed_mode": ("_neighbor_adaptive_speed", "neighbor_adaptive_speed_mode"),
+    "neighbor_adaptive_speed_linear_scale": ("_neighbor_adaptive_speed", "neighbor_adaptive_speed_linear_scale"),
     # VicsekConfig
     "vicsek_couplage": ("_vicsek", "vicsek_couplage"),
     "vicsek_diffusion": ("_vicsek", "vicsek_diffusion"),
@@ -171,6 +176,7 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "wander_enabled": ("_extension", "wander_enabled"),
     "ripple_enabled": ("_extension", "ripple_enabled"),
     "speed_noise_enabled": ("_extension", "speed_noise_enabled"),
+    "neighbor_adaptive_speed_enabled": ("_extension", "neighbor_adaptive_speed_enabled"),
     "priority_stack_enabled": ("_extension", "priority_stack_enabled"),
     # PredatorConfig
     "predator_threat_radius": ("_predator", "predator_threat_radius"),

@@ -157,6 +157,21 @@ class SpeedNoiseConfig:
 
 
 @dataclass
+class NeighborAdaptiveSpeedConfig:
+    """Neighbor-count adaptive speed extension parameters.
+
+    Generalizes angle.py's deficit-based speed law (isolated boids fly
+    faster) across all 7 modes. Reuses angle.py's speed_mode vocabulary
+    (linear/quadratic/softened) but is otherwise independent — angle.py
+    is not modified, it keeps its own separate config/implementation.
+    """
+    neighbor_adaptive_speed_target: int = 4        # desired neighbor count
+    neighbor_adaptive_speed_radius: float = 70.0    # query radius (~visual_range default)
+    neighbor_adaptive_speed_mode: str = "linear"    # linear | quadratic | softened
+    neighbor_adaptive_speed_linear_scale: float = 5.0  # only used by "linear"
+
+
+@dataclass
 class VicsekConfig:
     """Vicsek mode parameters."""
     vicsek_couplage: float = 0.8       # alignment coupling η ∈ [0,1]
@@ -276,6 +291,7 @@ class ExtensionConfig:
     ripple_enabled: bool = False
     speed_noise_enabled: bool = False
     priority_stack_enabled: bool = False
+    neighbor_adaptive_speed_enabled: bool = False
 
 
 @dataclass

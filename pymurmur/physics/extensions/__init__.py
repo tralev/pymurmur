@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from ._base import StepContext  # noqa: F401  # used in type hints with annotations future
 from .ecology import Ecology
+from .neighbor_adaptive_speed import NeighborAdaptiveSpeed
 from .predator import Predator
 from .ripple import Ripple
 from .speed_noise import SpeedNoise
@@ -33,6 +34,7 @@ class ExtensionManager:
         self._wander: Wander | None = None
         self._ripple: Ripple | None = None
         self._speed_noise: SpeedNoise | None = None
+        self._neighbor_adaptive_speed: NeighborAdaptiveSpeed | None = None
 
         # Lazy-init from initial config
         cfg = config
@@ -46,6 +48,8 @@ class ExtensionManager:
             self._ripple = Ripple()
         if cfg.speed_noise_enabled:
             self._speed_noise = SpeedNoise()
+        if cfg.neighbor_adaptive_speed_enabled:
+            self._neighbor_adaptive_speed = NeighborAdaptiveSpeed()
 
     def pre_step(self, flock: PhysicsFlock, ctx: StepContext) -> None:
         """Run all enabled extensions before force computation.
@@ -99,6 +103,13 @@ class ExtensionManager:
             # or the last multiplier stays applied forever.
             flock.speed_noise_mult = None
 
+        if cfg.neighbor_adaptive_speed_enabled:
+            if self._neighbor_adaptive_speed is None:
+                self._neighbor_adaptive_speed = NeighborAdaptiveSpeed()
+        else:
+            self._neighbor_adaptive_speed = None
+            flock.neighbor_adaptive_speed_mult = None
+
         eco = self._ecology
         pred = self._predator
 
@@ -124,12 +135,15 @@ class ExtensionManager:
             self._ripple.apply(flock, ctx)
         if self._speed_noise is not None:
             self._speed_noise.apply(flock, ctx)
+        if self._neighbor_adaptive_speed is not None:
+            self._neighbor_adaptive_speed.apply(flock, ctx)
 
     @property
     def count(self) -> int:
         return sum(1 for e in (self._ecology, self._predator,
                                 self._wander, self._ripple,
-                                self._speed_noise) if e is not None)
+                                self._speed_noise, self._neighbor_adaptive_speed)
+                    if e is not None)
 
     @property
     def predator_position(self):

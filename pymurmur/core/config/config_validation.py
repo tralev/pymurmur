@@ -70,6 +70,8 @@ _NUMERIC_FIELDS = (
     "wander_attractor_speed", "wander_attractor_radius",
     "speed_noise_frequency", "speed_noise_min_mult", "speed_noise_max_mult",
     "speed_noise_power", "speed_noise_time_scale",
+    "neighbor_adaptive_speed_target", "neighbor_adaptive_speed_radius",
+    "neighbor_adaptive_speed_linear_scale",
     "boundary_avoidance_factor", "boundary_radius_factor",
     "acceleration_scale",
     "ecology_dusk_width", "ecology_seasonal_amplitude",
@@ -390,6 +392,31 @@ def _validate_refinements_angle_extensions(cfg, ok: _OkFn) -> list[str]:
         ):
             issues.append(
                 "speed_noise_min_mult must be <= speed_noise_max_mult"
+            )
+    if cfg.neighbor_adaptive_speed_enabled:
+        if (
+            ok("neighbor_adaptive_speed_target")
+            and cfg.neighbor_adaptive_speed_target < 1
+        ):
+            issues.append(
+                "neighbor_adaptive_speed_enabled=True but "
+                "neighbor_adaptive_speed_target must be >= 1"
+            )
+        if (
+            ok("neighbor_adaptive_speed_radius")
+            and cfg.neighbor_adaptive_speed_radius <= 0
+        ):
+            issues.append(
+                "neighbor_adaptive_speed_enabled=True but "
+                "neighbor_adaptive_speed_radius must be > 0"
+            )
+        # Reuses angle.py's speed-mode vocabulary (_VALID_ANGLE_SPEED_MODES)
+        # since it's the same linear/quadratic/softened law.
+        if cfg.neighbor_adaptive_speed_mode not in cfg._VALID_ANGLE_SPEED_MODES:
+            issues.append(
+                f"neighbor_adaptive_speed_mode must be one of "
+                f"{cfg._VALID_ANGLE_SPEED_MODES}, "
+                f"got {cfg.neighbor_adaptive_speed_mode!r}"
             )
 
     return issues

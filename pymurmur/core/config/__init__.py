@@ -54,6 +54,7 @@ from .config_sections import (
     IndexConfig,
     InfluencerConfig,
     MarlConfig,
+    NeighborAdaptiveSpeedConfig,
     PerfConfig,
     PredatorConfig,
     ProjectionConfig,
@@ -70,7 +71,8 @@ from .config_validation import validate_config
 __all__ = [
     "SimConfig",
     "DomainConfig", "FlockConfig", "BoundaryConfig", "ProjectionConfig",
-    "SpatialConfig", "FieldConfig", "WanderConfig", "SpeedNoiseConfig", "VicsekConfig",
+    "SpatialConfig", "FieldConfig", "WanderConfig", "SpeedNoiseConfig",
+    "NeighborAdaptiveSpeedConfig", "VicsekConfig",
     "InfluencerConfig", "AngleConfig", "MarlConfig", "IndexConfig",
     "RefinementConfig", "ExtensionConfig", "PredatorConfig", "RoostConfig",
     "EcologyConfig", "PerfConfig", "VizConfig", "CaptureConfig",
@@ -99,6 +101,7 @@ class SimConfig:
         object.__setattr__(self, "_field", FieldConfig())
         object.__setattr__(self, "_wander", WanderConfig())
         object.__setattr__(self, "_speed_noise", SpeedNoiseConfig())
+        object.__setattr__(self, "_neighbor_adaptive_speed", NeighborAdaptiveSpeedConfig())
         object.__setattr__(self, "_vicsek", VicsekConfig())
         object.__setattr__(self, "_influencer", InfluencerConfig())
         object.__setattr__(self, "_angle", AngleConfig())
@@ -165,6 +168,10 @@ class SimConfig:
     @property
     def speed_noise(self) -> SpeedNoiseConfig:
         return self._speed_noise
+
+    @property
+    def neighbor_adaptive_speed(self) -> NeighborAdaptiveSpeedConfig:
+        return self._neighbor_adaptive_speed
 
     @property
     def vicsek(self) -> VicsekConfig:
@@ -313,7 +320,8 @@ class SimConfig:
         result = cls.__new__(cls)
         for sub_attr in (
             "_domain", "_flock", "_boundary", "_projection", "_spatial",
-            "_field", "_wander", "_speed_noise", "_vicsek", "_influencer", "_angle", "_marl",
+            "_field", "_wander", "_speed_noise", "_neighbor_adaptive_speed",
+            "_vicsek", "_influencer", "_angle", "_marl",
             "_index", "_refinement",
             "_extension", "_predator", "_ecology", "_roost", "_perf", "_viz", "_capture",
         ):
@@ -335,7 +343,8 @@ class SimConfig:
             return NotImplemented
         for sub_attr in (
             "_domain", "_flock", "_boundary", "_projection", "_spatial",
-            "_field", "_wander", "_speed_noise", "_vicsek", "_influencer", "_angle", "_marl",
+            "_field", "_wander", "_speed_noise", "_neighbor_adaptive_speed",
+            "_vicsek", "_influencer", "_angle", "_marl",
             "_index", "_refinement", "_extension", "_predator", "_ecology", "_roost", "_perf", "_viz", "_capture",):
             if (object.__getattribute__(self, sub_attr)
                     != object.__getattribute__(other, sub_attr)):
