@@ -38,6 +38,31 @@ def test_config_from_file_roundtrip():
         tmp.unlink()
 
 
+def test_config_from_file_roundtrip_speed_noise():
+    """SpeedNoiseConfig fields survive to_file() -> from_file()."""
+    cfg = SimConfig()
+    cfg.speed_noise_enabled = True
+    cfg.speed_noise_frequency = 0.01
+    cfg.speed_noise_min_mult = 0.25
+    cfg.speed_noise_max_mult = 3.0
+    cfg.speed_noise_power = 2.0
+    cfg.speed_noise_time_scale = 1.5
+
+    with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as f:
+        tmp = Path(f.name)
+    try:
+        cfg.to_file(tmp)
+        loaded = SimConfig.from_file(tmp)
+        assert loaded.speed_noise_enabled is True
+        assert loaded.speed_noise_frequency == 0.01
+        assert loaded.speed_noise_min_mult == 0.25
+        assert loaded.speed_noise_max_mult == 3.0
+        assert loaded.speed_noise_power == 2.0
+        assert loaded.speed_noise_time_scale == 1.5
+    finally:
+        tmp.unlink()
+
+
 def test_config_from_file_flattens_nested():
     """YAML with nested sections flattens to SimConfig fields."""
     import yaml

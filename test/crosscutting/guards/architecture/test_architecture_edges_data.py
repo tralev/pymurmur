@@ -38,6 +38,7 @@ THIRD_PARTY = {
 ALLOWED_EDGES: dict[str, set[str]] = {
     # ── Tier 0: core/ — numpy/stdlib only, zero pymurmur imports ──
     "pymurmur.core.types": set(),
+    "pymurmur.core.noise": set(),
     # File-size split: config.py is now a slim SimConfig class that
     # composes/re-exports the modules below. Logical-structure split:
     # config.py -> core/config/__init__.py, siblings moved alongside it
@@ -224,6 +225,13 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.flock",
         "pymurmur.physics.extensions._base",
     },
+    "pymurmur.physics.extensions.speed_noise": {
+        "pymurmur.core.types",
+        "pymurmur.core.config",
+        "pymurmur.core.noise",
+        "pymurmur.physics.flock",
+        "pymurmur.physics.extensions._base",
+    },
     "pymurmur.physics.extensions.__init__": {
         "pymurmur.core.types",
         "pymurmur.core.config",
@@ -233,6 +241,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.extensions.ecology",
         "pymurmur.physics.extensions.wander",
         "pymurmur.physics.extensions.ripple",
+        "pymurmur.physics.extensions.speed_noise",
     },
 
     # ── Tier 3: simulation/engine (L2) — core + physics + analysis ──

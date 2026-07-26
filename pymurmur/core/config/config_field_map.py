@@ -91,6 +91,12 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     # WanderConfig
     "wander_attractor_speed": ("_wander", "wander_attractor_speed"),
     "wander_attractor_radius": ("_wander", "wander_attractor_radius"),
+    # SpeedNoiseConfig
+    "speed_noise_frequency": ("_speed_noise", "speed_noise_frequency"),
+    "speed_noise_min_mult": ("_speed_noise", "speed_noise_min_mult"),
+    "speed_noise_max_mult": ("_speed_noise", "speed_noise_max_mult"),
+    "speed_noise_power": ("_speed_noise", "speed_noise_power"),
+    "speed_noise_time_scale": ("_speed_noise", "speed_noise_time_scale"),
     # VicsekConfig
     "vicsek_couplage": ("_vicsek", "vicsek_couplage"),
     "vicsek_diffusion": ("_vicsek", "vicsek_diffusion"),
@@ -160,6 +166,7 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "roosting_enabled": ("_extension", "roosting_enabled"),
     "wander_enabled": ("_extension", "wander_enabled"),
     "ripple_enabled": ("_extension", "ripple_enabled"),
+    "speed_noise_enabled": ("_extension", "speed_noise_enabled"),
     # PredatorConfig
     "predator_threat_radius": ("_predator", "predator_threat_radius"),
     "predator_strength": ("_predator", "predator_strength"),

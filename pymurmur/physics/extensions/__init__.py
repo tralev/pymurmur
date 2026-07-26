@@ -8,6 +8,7 @@ from ._base import StepContext  # noqa: F401  # used in type hints with annotati
 from .ecology import Ecology
 from .predator import Predator
 from .ripple import Ripple
+from .speed_noise import SpeedNoise
 from .wander import Wander
 
 if TYPE_CHECKING:
@@ -31,6 +32,7 @@ class ExtensionManager:
         self._ecology: Ecology | None = None
         self._wander: Wander | None = None
         self._ripple: Ripple | None = None
+        self._speed_noise: SpeedNoise | None = None
 
         # Lazy-init from initial config
         cfg = config
@@ -42,6 +44,8 @@ class ExtensionManager:
             self._wander = Wander()
         if cfg.ripple_enabled:
             self._ripple = Ripple()
+        if cfg.speed_noise_enabled:
+            self._speed_noise = SpeedNoise()
 
     def pre_step(self, flock: PhysicsFlock, ctx: StepContext) -> None:
         """Run all enabled extensions before force computation.
@@ -80,6 +84,17 @@ class ExtensionManager:
         else:
             self._ripple = None
 
+        if cfg.speed_noise_enabled:
+            if self._speed_noise is None:
+                self._speed_noise = SpeedNoise()
+        else:
+            self._speed_noise = None
+            # Explicit teardown: unlike wander/ripple, this extension
+            # writes a persistent flock-level array (speed_noise_mult)
+            # that nothing else clears — a mid-run disable must reset it
+            # or the last multiplier stays applied forever.
+            flock.speed_noise_mult = None
+
         eco = self._ecology
         pred = self._predator
 
@@ -103,11 +118,14 @@ class ExtensionManager:
             self._wander.apply(flock, ctx)
         if self._ripple is not None:
             self._ripple.apply(flock, ctx)
+        if self._speed_noise is not None:
+            self._speed_noise.apply(flock, ctx)
 
     @property
     def count(self) -> int:
         return sum(1 for e in (self._ecology, self._predator,
-                                self._wander, self._ripple) if e is not None)
+                                self._wander, self._ripple,
+                                self._speed_noise) if e is not None)
 
     @property
     def predator_position(self):

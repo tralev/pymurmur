@@ -136,6 +136,24 @@ class WanderConfig:
 
 
 @dataclass
+class SpeedNoiseConfig:
+    """Noise-modulated speed extension parameters.
+
+    Drives per-boid cruising speed continuously from a 3D value-noise
+    field sampled at position (pymurmur.core.noise.value_noise3),
+    producing organic slow/fast zones. Distinct from FieldConfig's
+    noise_scale, which feeds the unrelated sinusoidal "noise" field
+    term (seed_noise3) — kept name-prefixed speed_noise_* to avoid
+    confusion between the two.
+    """
+    speed_noise_frequency: float = 0.003    # spatial frequency (cycles/unit)
+    speed_noise_min_mult: float = 0.5       # multiplier at noise sample 0.0
+    speed_noise_max_mult: float = 2.0       # multiplier at noise sample 1.0
+    speed_noise_power: float = 1.0          # shaping exponent before lerp
+    speed_noise_time_scale: float = 0.0     # 0 = static field; >0 = drifts over time
+
+
+@dataclass
 class VicsekConfig:
     """Vicsek mode parameters."""
     vicsek_couplage: float = 0.8       # alignment coupling η ∈ [0,1]
@@ -247,6 +265,7 @@ class ExtensionConfig:
     roosting_enabled: bool = False
     wander_enabled: bool = False
     ripple_enabled: bool = False
+    speed_noise_enabled: bool = False
 
 
 @dataclass

@@ -68,6 +68,8 @@ _NUMERIC_FIELDS = (
     "field_inner_radius_factor", "field_leader_fraction",
     "field_num_groups",
     "wander_attractor_speed", "wander_attractor_radius",
+    "speed_noise_frequency", "speed_noise_min_mult", "speed_noise_max_mult",
+    "speed_noise_power", "speed_noise_time_scale",
     "boundary_avoidance_factor", "boundary_radius_factor",
     "acceleration_scale",
     "ecology_dusk_width", "ecology_seasonal_amplitude",
@@ -356,6 +358,22 @@ def _validate_refinements_angle_extensions(cfg, ok: _OkFn) -> list[str]:
         if ok("predator_strength") and cfg.predator_strength <= 0:
             issues.append(
                 "predator_enabled=True but predator_strength must be > 0"
+            )
+    if cfg.speed_noise_enabled:
+        if ok("speed_noise_frequency") and cfg.speed_noise_frequency <= 0:
+            issues.append(
+                "speed_noise_enabled=True but speed_noise_frequency must be > 0"
+            )
+        if ok("speed_noise_min_mult") and cfg.speed_noise_min_mult < 0:
+            issues.append(
+                "speed_noise_enabled=True but speed_noise_min_mult must be >= 0"
+            )
+        if (
+            ok("speed_noise_min_mult") and ok("speed_noise_max_mult")
+            and cfg.speed_noise_min_mult > cfg.speed_noise_max_mult
+        ):
+            issues.append(
+                "speed_noise_min_mult must be <= speed_noise_max_mult"
             )
 
     return issues

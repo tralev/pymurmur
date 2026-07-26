@@ -88,6 +88,12 @@ class PhysicsFlock:
         # Per-bird max speed — None uses scalar v0 (P0.8)
         self.max_speed: np.ndarray | None = None
 
+        # Per-bird speed-cap multiplier from the SpeedNoise extension —
+        # None when disabled. Separate from max_speed (Predator's boost
+        # array) so the two compose multiplicatively rather than one
+        # clobbering the other; see integrate().
+        self.speed_noise_mult: np.ndarray | None = None
+
         # Spatial index selection — honor explicit config, fall back to N heuristic
         self._index: SpatialIndex | None
         self._spatial_index_mode = config.spatial_index
@@ -142,6 +148,14 @@ class PhysicsFlock:
             max_speed = np.where(
                 self.is_predator, base * predator_boost, base,
             ).astype(np.float32)
+
+        # SpeedNoise extension: multiplicative per-boid cap modulation,
+        # composes with the predator boost above rather than replacing it.
+        if self.speed_noise_mult is not None:
+            base = max_speed if max_speed is not None else np.full(
+                len(self.positions), config.v0, dtype=np.float32,
+            )
+            max_speed = (base * self.speed_noise_mult).astype(np.float32)
 
         # 2. Integrate
         # C3: boundary_radius_factor — scales the effective sphere radius
