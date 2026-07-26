@@ -34,7 +34,7 @@ _NUMERIC_FIELDS = (
     "predator_escape_factor", "predator_speed_boost",
     "predator_perception_boost",            "predator_accel_boost",
     "jitter_separation", "jitter_cohesion", "jitter_alignment",
-    "steric", "blind_deg", "anisotropy",
+    "steric", "blind_deg", "anisotropy", "steric_radius",
     "parallel_workers", "metrics_interval", "metrics_detail_level",
     "bird_mass_kg", "cruise_speed_ms", "acc_peak_ms2",
     "topological_cap",
@@ -333,6 +333,8 @@ def _validate_refinements_angle_extensions(cfg, ok: _OkFn) -> list[str]:
         )
     if ok("steric") and cfg.steric < 0:
         issues.append(f"steric must be >= 0, got {cfg.steric}")
+    if ok("steric_radius") and cfg.steric_radius <= 0:
+        issues.append(f"steric_radius must be > 0, got {cfg.steric_radius}")
 
     # ── Angle mode ──────────────────────────────────────────
     if cfg.angle_speed_mode not in cfg._VALID_ANGLE_SPEED_MODES:

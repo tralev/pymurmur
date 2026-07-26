@@ -143,11 +143,17 @@ class ProjectionMode(ForceMode):
 
         # --- Stage 6: steric repulsion (per-bird, lightweight) ---
         if config.refinements and config.steric > 0:
+            steric_visible_only = config.refinement.steric_visible_only
             for j, i in enumerate(active_idx):
-                valid_nbrs = nbr_idx[j][nbr_idx[j] >= 0]
+                if steric_visible_only:
+                    nbr_mask = (nbr_idx[j] >= 0) & visible_mask[j]
+                else:
+                    nbr_mask = nbr_idx[j] >= 0
+                valid_nbrs = nbr_idx[j][nbr_mask]
                 if len(valid_nbrs) > 0:
                     accelerations[i] += steric_force(
                         positions[i], positions[valid_nbrs], config.steric,
+                        threshold=config.refinement.steric_radius,
                         max_force=config.max_force,
                     )
 

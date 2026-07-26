@@ -256,6 +256,12 @@ class RefinementConfig:
     steric: float = 0.6               # φ_s: 1/d² repulsion strength (0 = off)
     blind_deg: float = 60.0           # rear blind cone full angle (degrees)
     anisotropy: float = 2.0           # body axis ratio a/b (1.0 = isotropic)
+    # steric_radius default (10.0) matches steric_force()'s prior hardcoded
+    # threshold — zero behavior change out of the box. boid_size * 4.0 is
+    # the Pearce-SI-faithful value (sim_new.md STERIC_RADIUS); opt in
+    # explicitly rather than changing the default and altering existing runs.
+    steric_radius: float = 10.0
+    steric_visible_only: bool = False  # restrict steric to occlusion-visible neighbors only
 
 
 @dataclass

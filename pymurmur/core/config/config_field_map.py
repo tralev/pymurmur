@@ -161,6 +161,8 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "steric": ("_refinement", "steric"),
     "blind_deg": ("_refinement", "blind_deg"),
     "anisotropy": ("_refinement", "anisotropy"),
+    "steric_radius": ("_refinement", "steric_radius"),
+    "steric_visible_only": ("_refinement", "steric_visible_only"),
     # ExtensionConfig
     "predator_enabled": ("_extension", "predator_enabled"),
     "roosting_enabled": ("_extension", "roosting_enabled"),

@@ -132,6 +132,53 @@ def test_projection_mode_steric_enabled(default_config):
     assert np.isfinite(flock.accelerations).all()
 
 
+def _steric_visible_only_scenario(default_config, steric_visible_only):
+    """Observer at origin heading +x, one neighbour behind (invisible via
+    blind_deg=180's rear-hemisphere cutoff) and one in front (visible),
+    both at the same distance so their steric contributions would exactly
+    cancel if both counted — isolates the visible-only filter's effect."""
+    from pymurmur.physics.flock import PhysicsFlock
+    from pymurmur.physics.forces.projection import projection_forces
+
+    cfg = copy(default_config)
+    cfg.mode = "projection"
+    cfg.num_boids = 3
+    cfg.seed = 1
+    cfg.refinements = True
+    cfg.steric = 1.0
+    cfg.blind_deg = 180.0
+    cfg.refinement.steric_visible_only = steric_visible_only
+
+    flock = PhysicsFlock(cfg)
+    flock.positions[0] = [0.0, 0.0, 0.0]
+    flock.velocities[0] = [1.0, 0.0, 0.0]
+    flock.positions[1] = [-5.0, 0.0, 0.0]  # behind -> invisible (blind cone)
+    flock.velocities[1] = [1.0, 0.0, 0.0]
+    flock.positions[2] = [5.0, 0.0, 0.0]   # in front -> visible
+    flock.velocities[2] = [1.0, 0.0, 0.0]
+    flock.accelerations[:] = 0.0
+    flock.get_index().rebuild(flock.positions, flock.active)
+
+    _call_force(projection_forces, flock, cfg)
+    return flock.accelerations[0].copy()
+
+
+def test_projection_mode_steric_visible_only_excludes_occluded_neighbor(default_config):
+    """steric_visible_only=True: the occluded rear neighbour no longer
+    contributes, so the net repulsion from the visible front neighbour is
+    stronger (not partially cancelled by the invisible one behind)."""
+    acc_all = _steric_visible_only_scenario(default_config, steric_visible_only=False)
+    acc_vis = _steric_visible_only_scenario(default_config, steric_visible_only=True)
+
+    # Same seed, same call sequence up to the steric stage -> the
+    # steering/noise contribution (everything except steric) is bit-
+    # identical between the two runs, isolating steric's y/z components.
+    np.testing.assert_allclose(acc_all[1:], acc_vis[1:], atol=1e-6)
+    # Visible-only removes the invisible rear neighbour's opposing push,
+    # leaving a stronger net repulsion away from the front neighbour (-x).
+    assert acc_vis[0] < acc_all[0]
+
+
 def test_projection_mode_sigma_effect(default_config):
     """Changing sigma changes the number of neighbours considered."""
     from pymurmur.physics.flock import PhysicsFlock
