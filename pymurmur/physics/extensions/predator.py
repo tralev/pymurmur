@@ -117,6 +117,17 @@ class Predator(Extension):
         active = flock.active
         n_active = active.sum()
         cfg = ctx.config
+
+        # Priority stack: isolate this tick's threat force into its own
+        # buffer instead of flock.accelerations, so it can be budgeted as
+        # its own tier. Zeroed unconditionally before every early return
+        # below, so "no threat nearby this tick" correctly leaves tier 2
+        # at zero rather than carrying over a stale value.
+        if cfg.priority_stack_enabled:
+            flock.predator_priority_accel = np.zeros(
+                (flock.N_capacity, 3), dtype=np.float32,
+            )
+
         if n_active == 0:
             ctx.threat_prox = np.zeros(flock.N_capacity, dtype=np.float32)
             cfg._threat_present = False
@@ -291,9 +302,13 @@ class Predator(Extension):
 
         # ── Accumulate ──
         force_mask = active_idx[within]
-        flock.accelerations[force_mask] += (
-            push[within] + wake[within] + split[within] + wave[within]
-        )
+        threat_force = push[within] + wake[within] + split[within] + wave[within]
+        if cfg.priority_stack_enabled:
+            # Isolated into its own tier (see top-of-apply comment) rather
+            # than fused into flock.accelerations.
+            flock.predator_priority_accel[force_mask] += threat_force
+        else:
+            flock.accelerations[force_mask] += threat_force
 
         # ── P3.8: Panic ceiling (ceiling raise, NOT compound multiply) ──
         panic = prox * threat_strength

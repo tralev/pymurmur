@@ -94,6 +94,13 @@ class PhysicsFlock:
         # clobbering the other; see integrate().
         self.speed_noise_mult: np.ndarray | None = None
 
+        # Per-bird predator-threat force, isolated from flock.accelerations
+        # when priority_stack_enabled — lets the priority stack budget it
+        # as its own tier rather than fusing it into the flocking term.
+        # None when the Predator extension is inactive or the priority
+        # stack is disabled (default path unaffected).
+        self.predator_priority_accel: np.ndarray | None = None
+
         # Spatial index selection — honor explicit config, fall back to N heuristic
         self._index: SpatialIndex | None
         self._spatial_index_mode = config.spatial_index

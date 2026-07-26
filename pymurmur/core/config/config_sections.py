@@ -266,6 +266,7 @@ class ExtensionConfig:
     wander_enabled: bool = False
     ripple_enabled: bool = False
     speed_noise_enabled: bool = False
+    priority_stack_enabled: bool = False
 
 
 @dataclass

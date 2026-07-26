@@ -167,6 +167,7 @@ _FIELD_MAP: dict[str, tuple[str, str]] = {
     "wander_enabled": ("_extension", "wander_enabled"),
     "ripple_enabled": ("_extension", "ripple_enabled"),
     "speed_noise_enabled": ("_extension", "speed_noise_enabled"),
+    "priority_stack_enabled": ("_extension", "priority_stack_enabled"),
     # PredatorConfig
     "predator_threat_radius": ("_predator", "predator_threat_radius"),
     "predator_strength": ("_predator", "predator_strength"),

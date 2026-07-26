@@ -22,6 +22,7 @@ from ..physics.forces import (
     compute_all_forces,
     mode_needs_index,
 )
+from ..physics.priority_stack import allocate_priority_budget
 
 if TYPE_CHECKING:
     from ..core.config import SimConfig
@@ -329,6 +330,56 @@ class SimulationEngine:
             ms = (time.perf_counter() - t0) * 1000.0
             self._perf.record_physics(ms)
 
+    def _priority_obstacle_accel(
+        self, positions: np.ndarray, velocities: np.ndarray,
+    ) -> np.ndarray:
+        """priority_stack_enabled: obstacle-avoidance steering force
+        (tier 1), computed pre-integrate from this tick's *starting*
+        state — not the post-move, post-resolve positions the default
+        post-integrate path (4c below) uses. This is a deliberate,
+        documented predictive-vs-reactive semantic shift, consistent
+        with every other force in the tick being computed from
+        tick-start state. Intentionally NOT a refactor of the default
+        4c block (no code shared) — duplicating this is a smaller risk
+        than touching that proven-stable path via extraction.
+        """
+        n = len(positions)
+        result = np.zeros((n, 3), dtype=np.float32)
+        scene = self._obstacle_scene
+        if scene is None or scene.n_shapes == 0:
+            return result
+        active_mask = self.flock.active
+        if not active_mask.any():
+            return result
+        act_idx = np.where(active_mask)[0]
+        avoid = scene.avoidance_accel(
+            positions[act_idx], velocities[act_idx],
+            static_weight=self.config.spatial.static_avoid_weight,
+            predictive_weight=self.config.spatial.predictive_avoid_weight,
+            fly_away_max_dist=self.config.spatial.fly_away_max_dist,
+            min_time_to_collide=self.config.spatial.min_time_to_collide,
+        )
+        result[act_idx] = avoid
+        return result
+
+    def _resolve_priority_budget(self, mode_cls, config: SimConfig) -> float:
+        """priority_stack_enabled: max_force (0.15) is only the correct
+        budget scale for accel-based modes that already self-clamp to
+        it (spatial/field/projection). Velocity-direct "fixed"-speed
+        modes (vicsek/angle/influencer) turn on a v0-relative scale
+        instead. marl explicitly avoids both max_force and v0 — its own
+        code notes v0 would be a scale mismatch — using
+        marl_velocity_cap * U instead; mirrored here for the same
+        reason.
+        """
+        speed_mode = getattr(mode_cls, 'speed_mode', None)
+        if speed_mode == "fixed":
+            return config.v0
+        if speed_mode == "none":
+            U = min(config.width, config.height, config.depth) / 6.0
+            return config.marl.marl_velocity_cap * U
+        return config.max_force
+
     def _step_physics(self, dt: float) -> None:
         """Fixed-timestep physics tick (P8.10).
 
@@ -346,6 +397,17 @@ class SimulationEngine:
             * self.config.influencer_substeps
         )
 
+        # priority_stack_enabled: snapshot velocities before pre_step so
+        # tier 3 can be derived as a delta after compute_all_forces runs.
+        # flock.accelerations is provably zero at this point (integrate()
+        # zeroed it at the end of the previous tick, and nothing else
+        # touches it before pre_step) — capturing v_before here (not
+        # after pre_step) means Wander/Ecology/Ripple's pre_step
+        # contributions correctly fold into tier 3 via the delta below,
+        # rather than being silently dropped.
+        priority_stack_on = self.config.priority_stack_enabled
+        v_before = self.flock.velocities.copy() if priority_stack_on else None
+
         # 1. Extensions — pass per-frame context (I5)
         ctx = StepContext(
             frame=self.frame,
@@ -360,8 +422,41 @@ class SimulationEngine:
         if self.flock._index is not None and mode_needs_index(self.config.mode):
             self.flock._index.rebuild(self.flock.positions, self.flock.active)
 
+        # priority_stack_enabled: tier 1 (obstacle avoidance), computed
+        # pre-integrate from this tick's starting state — see
+        # _priority_obstacle_accel().
+        tier1 = (
+            self._priority_obstacle_accel(self.flock.positions, self.flock.velocities)
+            if priority_stack_on else None
+        )
+
         # 3. Compute forces
         compute_all_forces(self.flock, self.config)
+
+        if priority_stack_on:
+            # tier 3: whatever the active mode produced this tick,
+            # whether via accelerations (spatial/field/projection) or a
+            # direct velocity write (vicsek/angle/influencer/marl) — both
+            # are one-frame velocity deltas in this engine's Euler
+            # integration convention, so one formula captures either
+            # uniformly with no per-mode branching.
+            #
+            # Known limitation: for owns_positions modes (influencer),
+            # compute_all_forces() has already committed this tick's
+            # position move by the time we get here — the priority stack
+            # can only reallocate the exit velocity carried into next
+            # tick, not protect this tick's movement into an obstacle.
+            tier3 = self.flock.accelerations + (self.flock.velocities - v_before)
+            tier2 = (
+                self.flock.predator_priority_accel
+                if self.flock.predator_priority_accel is not None
+                else np.zeros_like(tier3)
+            )
+            budget_mode_cls = MODE_REGISTRY.get(self.config.mode)
+            budget = self._resolve_priority_budget(budget_mode_cls, self.config)
+            allocated = allocate_priority_budget(tier1, tier2, tier3, budget)
+            self.flock.velocities[:] = v_before
+            self.flock.accelerations[:] = allocated
 
         # 4. Integrate (stash + physics + centre update)
         # D11: honour owns_positions — if the mode claims ownership
@@ -427,16 +522,20 @@ class SimulationEngine:
                     collisions_this_step = scene.collision_count - prev_collisions
                     self.flock.positions[act_idx] = corrected
 
-                    # S6.4: Obstacle avoidance steering (applied to velocities)
-                    avoid = scene.avoidance_accel(
-                        self.flock.positions[act_idx],
-                        self.flock.velocities[act_idx],
-                        static_weight=self.config.spatial.static_avoid_weight,
-                        predictive_weight=self.config.spatial.predictive_avoid_weight,
-                        fly_away_max_dist=self.config.spatial.fly_away_max_dist,
-                        min_time_to_collide=self.config.spatial.min_time_to_collide,
-                    )
-                    self.flock.velocities[act_idx] += avoid
+                    if not priority_stack_on:
+                        # S6.4: Obstacle avoidance steering (applied to
+                        # velocities). Skipped when priority_stack_on —
+                        # tier 1 already applied this tick's avoidance
+                        # pre-integrate; re-applying here would double it.
+                        avoid = scene.avoidance_accel(
+                            self.flock.positions[act_idx],
+                            self.flock.velocities[act_idx],
+                            static_weight=self.config.spatial.static_avoid_weight,
+                            predictive_weight=self.config.spatial.predictive_avoid_weight,
+                            fly_away_max_dist=self.config.spatial.fly_away_max_dist,
+                            min_time_to_collide=self.config.spatial.min_time_to_collide,
+                        )
+                        self.flock.velocities[act_idx] += avoid
 
         # 5. Metrics
         self.metrics.collect(self.flock, self.frame,

@@ -61,6 +61,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     "pymurmur.physics.boid":      {"pymurmur.core.types"},
     "pymurmur.physics.occlusion": {"pymurmur.core.types"},
     "pymurmur.physics.steric":    {"pymurmur.core.types"},
+    "pymurmur.physics.priority_stack": set(),  # numpy only, zero pymurmur imports
 
     # ── Tier 2: physics/flock (L1) — core + boid only, NEVER forces ──
     "pymurmur.physics.flock": {
@@ -252,6 +253,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.forces",
         "pymurmur.physics.extensions",
         "pymurmur.physics.obstacles",  # S6.4: ObstacleScene
+        "pymurmur.physics.priority_stack",
         "pymurmur.analysis.metrics",
         "pymurmur.analysis.perf",      # S4.10: PerfDiagnostics
     },

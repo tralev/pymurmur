@@ -71,6 +71,10 @@ class ExtensionManager:
                 self._predator = Predator(cfg)
         else:
             self._predator = None
+            # Mirrors the speed_noise_mult teardown below — a mid-run
+            # disable must reset the isolated tier-2 buffer or the last
+            # threat force stays applied forever under priority_stack.
+            flock.predator_priority_accel = None
 
         if cfg.wander_enabled:
             if self._wander is None:
