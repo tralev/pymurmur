@@ -64,8 +64,17 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     "pymurmur.physics.boid":      {
         "pymurmur.core.types",
         "pymurmur.physics.boid_init",  # re-exports init helpers (file-size split)
+        "pymurmur.physics.boundary",  # boundary-strategy registry dispatch
     },
     "pymurmur.physics.boid_init": set(),  # numpy only, zero pymurmur imports
+    "pymurmur.physics.boundary": {
+        "pymurmur.physics.boundary._mode",
+        "pymurmur.physics.boundary.strategies",
+    },
+    "pymurmur.physics.boundary._mode": set(),  # numpy only (TYPE_CHECKING), zero pymurmur imports
+    "pymurmur.physics.boundary.strategies": {
+        "pymurmur.physics.boundary._mode",
+    },
     "pymurmur.physics.occlusion": {"pymurmur.core.types"},
     "pymurmur.physics.steric":    {"pymurmur.core.types"},
     "pymurmur.physics.priority_stack": set(),  # numpy only, zero pymurmur imports

@@ -26,6 +26,7 @@ from .boid_init import (  # noqa: F401 — re-exported for back-compat
     random_positions,
     random_unit_sphere,
 )
+from .boundary import BOUNDARY_REGISTRY
 
 # ── Integration kernel ────────────────────────────────────────────
 
@@ -193,117 +194,12 @@ def _apply_boundary(
     avoidance_factor: float,
     center: np.ndarray | None = None,
 ) -> None:
-    """Enforce boundary conditions on active birds."""
-    if mode == "toroidal":
-        mask = active
-        positions[mask, 0] %= width
-        positions[mask, 1] %= height
-        positions[mask, 2] %= depth
+    """Enforce boundary conditions on active birds.
 
-    elif mode == "open":
-        pass  # birds may leave freely
-
-    elif mode == "margin":
-        _margin_push(positions, velocities, active, width, height, depth,
-                     avoidance_factor)
-
-    elif mode == "sphere":
-        _sphere_soft(positions, velocities, active, sphere_radius,
-                     avoidance_factor, center=center)
-
-    elif mode == "sphere_soft":
-        _sphere_soft_asymptotic(positions, velocities, active, sphere_radius,
-                                avoidance_factor, center=center)
-
-
-def _margin_push(
-    positions: np.ndarray,
-    velocities: np.ndarray,
-    active: np.ndarray,
-    width: float,
-    height: float,
-    depth: float,
-    factor: float,
-    margin: float = 50.0,
-) -> None:
-    """Nudge velocity away from domain walls when within margin."""
-    for axis, size in enumerate([width, height, depth]):
-        v = velocities[:, axis]
-        p = positions[:, axis]
-
-        lo = (p < margin) & active
-        hi = (p > size - margin) & active
-
-        v[lo] += factor * (margin - p[lo]) / margin
-        v[hi] -= factor * (p[hi] - (size - margin)) / margin
-
-        p[lo] = np.maximum(p[lo], 0.0)
-        p[hi] = np.minimum(p[hi], size)
-
-
-def _sphere_soft(
-    positions: np.ndarray,
-    velocities: np.ndarray,
-    active: np.ndarray,
-    radius: float,
-    factor: float,
-    center: np.ndarray | None = None,
-) -> None:
-    """Hard sphere boundary at radius from centre C.
-
-    Birds outside radius are projected back onto the sphere surface
-    and given an inward velocity correction proportional to overshoot.
-
-    Uses ‖p−C‖ (not ‖p‖) — the sphere is centred on the domain centre.
-    """
-    if center is None:
-        center = np.zeros(3, dtype=np.float32)
-
-    offsets = positions - center
-    dists = np.linalg.norm(offsets, axis=1)
-    outside = (dists > radius) & active
-
-    if not outside.any():
-        return
-
-    radial = offsets[outside] / dists[outside, np.newaxis]
-    positions[outside] = center + radial * radius
-    velocities[outside] -= radial * factor * (dists[outside, np.newaxis] - radius)
-
-
-def _sphere_soft_asymptotic(
-    positions: np.ndarray,
-    velocities: np.ndarray,
-    active: np.ndarray,
-    radius: float,
-    factor: float,
-    center: np.ndarray | None = None,
-) -> None:
-    """Asymptotic soft sphere boundary — never hard-projects positions.
-
-    Birds near the boundary get a gentle inward velocity push:
-        Δv = −factor · r̂ / max(R−r, 0.05·R)
-    No position clamping — birds can briefly overshoot and are pushed back
-    smoothly. Uses ‖p−C‖ (sphere centred on domain centre).
-    """
-    if center is None:
-        center = np.zeros(3, dtype=np.float32)
-
-    offsets = positions - center
-    dists = np.linalg.norm(offsets, axis=1)
-
-    # Apply to birds near or outside the boundary
-    near = (dists > radius * 0.9) & active
-    if not near.any():
-        return
-
-    # Soft margin: 10% of radius for asymptotic kick
-    gap = radius - dists[near]
-    # Clamp gap to avoid divide-by-zero; max push when r → R
-    safe_gap = np.maximum(gap, 0.05 * radius)
-
-    radial = offsets[near] / dists[near, np.newaxis]
-    # Push grows as 1/gap — stronger near the boundary
-    push_strength = factor * radius / safe_gap
-    velocities[near] -= radial * push_strength[:, np.newaxis]
+    Dispatches through BOUNDARY_REGISTRY (physics/boundary/) — an
+    unrecognized mode string falls back to "toroidal" (explicit default,
+    replacing the pre-registry code's silent full no-op)."""
+    strategy = BOUNDARY_REGISTRY.get(mode, BOUNDARY_REGISTRY["toroidal"])
+    strategy.apply(positions, velocities, active, width, height, depth,
+                    sphere_radius, avoidance_factor, center=center)
 

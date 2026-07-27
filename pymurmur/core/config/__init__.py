@@ -283,6 +283,10 @@ class SimConfig:
     # ── Validation ───────────────────────────────────────────
 
     _VALID_MODES = {"projection", "spatial", "field", "vicsek", "influencer", "angle", "marl"}
+    # Mirror physics/boundary's BOUNDARY_REGISTRY keys — kept as a plain set
+    # here (core must never import physics; see FORBIDDEN_EDGES) and
+    # validated in config_validation.py, same pattern as
+    # _VALID_SEPARATION_KERNELS below.
     _VALID_BOUNDARY_MODES = {"toroidal", "open", "margin", "sphere", "sphere_soft"}
     _VALID_INDEX_TYPES = {"auto", "hash_grid", "kdtree", "none"}
     # Mirror physics/forces/kernels.py's registry — kept as plain string
