@@ -59,6 +59,10 @@ ALLOWED_EDGES: dict[str, set[str]] = {
 
     # ── Tier 0: physics/obstacles (L0 atom, P0.14) — core only ──
     "pymurmur.physics.obstacles": {"pymurmur.core.types"},
+    # Modularity pass 3: wraps ObstacleScene.avoidance_accel() unchanged
+    # behind a registry, mirroring boundary/neighbor_selection. Imports
+    # ObstacleScene only under TYPE_CHECKING (for typing, not at runtime).
+    "pymurmur.physics.obstacle_avoidance": {"pymurmur.physics.obstacles"},
 
     # ── Tier 1: physics L0 atoms — core only ──
     "pymurmur.physics.boid":      {
@@ -314,6 +318,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.forces",
         "pymurmur.physics.extensions",
         "pymurmur.physics.obstacles",  # S6.4: ObstacleScene
+        "pymurmur.physics.obstacle_avoidance",  # modularity pass 3
         "pymurmur.physics.priority_stack",
         "pymurmur.analysis.metrics",
         "pymurmur.analysis.perf",      # S4.10: PerfDiagnostics

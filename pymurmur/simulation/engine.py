@@ -22,6 +22,7 @@ from ..physics.forces import (
     compute_all_forces,
     mode_needs_index,
 )
+from ..physics.obstacle_avoidance import OBSTACLE_AVOIDANCE_REGISTRY
 from ..physics.priority_stack import allocate_priority_budget
 
 if TYPE_CHECKING:
@@ -352,8 +353,8 @@ class SimulationEngine:
         if not active_mask.any():
             return result
         act_idx = np.where(active_mask)[0]
-        avoid = scene.avoidance_accel(
-            positions[act_idx], velocities[act_idx],
+        avoid = OBSTACLE_AVOIDANCE_REGISTRY["sdf_ttc"].compute_accel(
+            scene, positions[act_idx], velocities[act_idx],
             static_weight=self.config.spatial.static_avoid_weight,
             predictive_weight=self.config.spatial.predictive_avoid_weight,
             fly_away_max_dist=self.config.spatial.fly_away_max_dist,
@@ -527,7 +528,8 @@ class SimulationEngine:
                         # velocities). Skipped when priority_stack_on —
                         # tier 1 already applied this tick's avoidance
                         # pre-integrate; re-applying here would double it.
-                        avoid = scene.avoidance_accel(
+                        avoid = OBSTACLE_AVOIDANCE_REGISTRY["sdf_ttc"].compute_accel(
+                            scene,
                             self.flock.positions[act_idx],
                             self.flock.velocities[act_idx],
                             static_weight=self.config.spatial.static_avoid_weight,
