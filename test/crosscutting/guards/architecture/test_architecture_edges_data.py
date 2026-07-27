@@ -120,10 +120,27 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.forces._base",
         "pymurmur.physics.forces._kernels",
         "pymurmur.physics.forces.spatial_helpers",
+        "pymurmur.physics.forces.neighbor_selection",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
         "pymurmur.physics.flock",
         "pymurmur.core.config",
+    },
+    # File-size split from spatial.py/projection.py/vicsek.py (modularity
+    # pass 2): NeighborSelector ABC + registry, formalising the 3 modes'
+    # neighbor-query strategies. Lazy-imports .spatial_helpers/.projection
+    # inside select() method bodies (not at module level) to avoid a
+    # module-level circular import with spatial.py/projection.py, which
+    # both import this module at module level in turn — still counted as
+    # edges by the AST walker (it walks function bodies too), so both are
+    # listed as allowed targets below. AngleMode's neighbor banding is
+    # deliberately NOT included (fused into its own per-bird steering
+    # loop, not safely extractable — see the modularity-pass-2 plan).
+    "pymurmur.physics.forces.neighbor_selection": {
+        "pymurmur.core.config",
+        "pymurmur.core.types",
+        "pymurmur.physics.forces.spatial_helpers",
+        "pymurmur.physics.forces.projection",
     },
     # File-size split from spatial.py: neighbour-query/filter helpers
     # (_query_neighbors, _apply_hybrid_filter, _maybe_perception_filter,
@@ -139,6 +156,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.core.types",
         "pymurmur.physics.forces._mode",
         "pymurmur.physics.forces._base",
+        "pymurmur.physics.forces.neighbor_selection",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
         "pymurmur.physics.flock",
@@ -173,6 +191,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.forces._mode",
         "pymurmur.physics.forces._base",
         "pymurmur.physics.forces._kernels",
+        "pymurmur.physics.forces.neighbor_selection",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
         "pymurmur.physics.flock",
@@ -212,6 +231,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.forces.influencer",
         "pymurmur.physics.forces.angle",
         "pymurmur.physics.forces.marl",  # P12.1
+        "pymurmur.physics.forces.neighbor_selection",
     },
 
     # ── Tier 2: physics/extensions (L1) — core + read flock ──
@@ -508,92 +528,14 @@ KNOWN_VIOLATIONS: list[tuple[str, str, str]] = [
 ]
 
 # ── Per-Phase Edge Sets ──────────────────────────────────────────────
-# Each phase boundary extends ALLOWED_EDGES with the new edges introduced
-# by that phase. The full matrix (P14) matches arch.md §5 exactly.
-# No edge is ever removed from ALLOWED_EDGES once added.
-
-PHASE_EDGES = {
-    "P0": {
-        "pymurmur.core.types": set(),
-        "pymurmur.physics.boid": {"pymurmur.core.types"},
-        "pymurmur.physics.obstacles": {"pymurmur.core.types"},
-    },
-    "P1": {
-        "pymurmur.physics.occlusion": {"pymurmur.core.types"},
-        "pymurmur.physics.steric": {"pymurmur.core.types"},
-        "pymurmur.physics.forces._base": {"pymurmur.core.types"},
-        "pymurmur.physics.forces.vicsek": {"pymurmur.core.types"},
-        "pymurmur.analysis.metrics": {"pymurmur.core.types", "pymurmur.physics.flock"},
-    },
-    "P2": {
-        "pymurmur.core.config": {"pymurmur.core.types"},
-        "pymurmur.physics.flock": {"pymurmur.core.types"},
-        "pymurmur.physics.forces._mode": {"pymurmur.core.types"},
-        "pymurmur.physics.forces.projection": {"pymurmur.core.types", "pymurmur.physics.occlusion", "pymurmur.physics.steric", "pymurmur.physics.forces._base", "pymurmur.physics.flock"},
-        "pymurmur.physics.forces.spatial": {"pymurmur.core.types", "pymurmur.physics.forces._base", "pymurmur.physics.forces._kernels", "pymurmur.physics.flock"},
-        "pymurmur.physics.extensions._base": {"pymurmur.core.types", "pymurmur.physics.flock"},
-        "pymurmur.simulation.engine": {"pymurmur.core.types", "pymurmur.physics.flock", "pymurmur.physics.forces._mode", "pymurmur.physics.extensions._base", "pymurmur.analysis.metrics"},
-    },
-    "P3": {
-        "pymurmur.physics.forces.field": {"pymurmur.core.types", "pymurmur.physics.flock"},
-        "pymurmur.physics.extensions.predator": {"pymurmur.core.types", "pymurmur.physics.flock", "pymurmur.physics.forces"},
-        "pymurmur.physics.extensions.wander": {"pymurmur.core.types"},
-        "pymurmur.physics.extensions.ripple": {"pymurmur.core.types", "pymurmur.physics.flock"},
-    },
-    "P4": {
-        "pymurmur.physics.forces._kernels": {"pymurmur.core.types"},
-        "pymurmur.physics.extensions.ecology": {"pymurmur.core.types", "pymurmur.physics.flock"},
-    },
-    "P5": {
-        "pymurmur.physics.forces.angle": {"pymurmur.core.types", "pymurmur.physics.flock"},
-    },
-    "P6": set(),
-    "P7": {
-        "pymurmur.physics.forces.influencer": {"pymurmur.core.types", "pymurmur.physics.flock"},
-        "pymurmur.viz.input_control": {"pymurmur.core.types"},
-    },
-    "P8": {
-        "pymurmur.viz.renderer": {"pymurmur.core.types", "pymurmur.physics.flock", "pymurmur.analysis.presets"},
-        "pymurmur.viz.shaders": set(),
-        "pymurmur.viz.camera": set(),
-        "pymurmur.viz.visualizer": {"pymurmur.core.types", "pymurmur.viz.trails", "pymurmur.analysis.perf"},
-        "pymurmur.viz.trails": {"pymurmur.core.types", "pymurmur.physics.flock", "pymurmur.viz.renderer", "pymurmur.viz.shaders", "pymurmur.viz.camera"},
-        "pymurmur.capture.recorder": {"pymurmur.simulation.engine", "pymurmur.viz.visualizer", "pymurmur.core.types"},
-        "pymurmur.capture.mpl_recorder": {
-            "pymurmur.core.config",          # P8.9: TYPE_CHECKING
-            "pymurmur.simulation.engine",    # P8.9: TYPE_CHECKING
-            "pymurmur.core.types",
-        },
-        "pymurmur.analysis.perf": {"pymurmur.core.types", "pymurmur.core.config"},
-    },
-    "P9": {
-        "pymurmur.analysis.rewards": {"pymurmur.core.types", "pymurmur.analysis.metrics"},
-        "pymurmur.analysis.phase_diagram": {"pymurmur.core.types", "pymurmur.physics.flock"},
-        "pymurmur.analysis.density_scaling": {"pymurmur.core.types", "pymurmur.physics.flock"},
-    },
-    "P10": {
-        "pymurmur.viz.hud": {"pymurmur.core.types", "pymurmur.core.config"},
-        "pymurmur.viz.visualizer": {"pymurmur.viz.hud"},
-        "pymurmur.__init__": {"pymurmur.core.config", "pymurmur.simulation.engine"},
-        "pymurmur.__main__": set(),
-    },
-    "P11": {
-        "pymurmur.analysis.evoflock": {"pymurmur.simulation.engine", "pymurmur.core.types"},
-    },
-    "P12": {
-        "pymurmur.physics.forces.marl": {"pymurmur.core.types", "pymurmur.physics.flock"},
-        "pymurmur.analysis.gym_env": {"pymurmur.simulation.engine", "pymurmur.core.types"},
-    },
-}
-
-# ── Phase-Gated Violation Removal ───────────────────────────────────
-# At each phase boundary, certain KNOWN_VIOLATIONS are removed because
-# the phase resolves the underlying issue.
-
-PHASE_VIOLATION_REMOVALS = {
-    "P8": [
-        ("pymurmur.viz.visualizer", "pymurmur.simulation.engine"),
-    ],
-}
+# Historical P0-P12 snapshots + phase-gated violation removals now live
+# in test_architecture_phase_data.py (file-size split, pure extraction)
+# — re-imported/re-exported here so existing
+# `from test_architecture_edges_data import PHASE_EDGES` call sites
+# keep working.
+from .test_architecture_phase_data import (  # noqa: E402, F401
+    PHASE_EDGES,
+    PHASE_VIOLATION_REMOVALS,
+)
 
 

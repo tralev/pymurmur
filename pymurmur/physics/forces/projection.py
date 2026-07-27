@@ -17,6 +17,7 @@ import numpy as np
 from ..occlusion import spherical_cap_occlusion_batched
 from ..steric import steric_force  # P1.10: L0 atom import at module top (no cycle risk)
 from ._mode import ForceFn, ForceMode, register
+from .neighbor_selection import NEIGHBOR_SELECTOR_REGISTRY
 
 if TYPE_CHECKING:
     from ...core.config import SimConfig
@@ -60,7 +61,9 @@ class ProjectionMode(ForceMode):
             blind_cos = np.cos(np.radians(config.blind_deg / 2))
 
         # --- Stage 1: collect neighbour indices for all active birds ---
-        nbr_idx = _topological_neighbors_batch(positions, index, active_idx, sigma)
+        nbr_idx = NEIGHBOR_SELECTOR_REGISTRY["topological_visibility"].select(
+            positions, velocities, active, index, config, sigma=sigma,
+        )
         # nbr_idx: (n_active, sigma) int32 — some rows may have -1 sentinels
 
         # Find birds with at least one valid neighbour

@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ._mode import ForceFn, ForceMode, register
+from .neighbor_selection import NEIGHBOR_SELECTOR_REGISTRY
 
 if TYPE_CHECKING:
     from ...core.config import SimConfig
@@ -110,8 +111,6 @@ class VicsekMode(ForceMode):
         if n_active == 0:
             return
 
-        from scipy.spatial import cKDTree
-
         eta = config.vicsek_couplage
         D = config.vicsek_diffusion
         dt = config.vicsek_time_step
@@ -177,12 +176,6 @@ class VicsekMode(ForceMode):
             return
 
         # ── Neighbour alignment (standard Vicsek) ─────────────
-        tree = getattr(index, 'tree', None) if index is not None else None
-        if tree is None:
-            tree = cKDTree(active_pos)
-
-        all_nbrs = tree.query_ball_tree(tree, radius)
-
         neighbour_dirs = np.zeros((n_active, 3), dtype=np.float32)
 
         vel_norms = np.linalg.norm(velocities[active_idx], axis=1)
@@ -195,23 +188,10 @@ class VicsekMode(ForceMode):
                 / vel_norms[valid_mask, np.newaxis]
             )
 
-        rows: list[int] = []
-        cols: list[int] = []
-        for i, nbrs in enumerate(all_nbrs):
-            for j in nbrs:
-                if valid_mask[j]:
-                    rows.append(i)
-                    cols.append(j)
-
-        nbr_counts = np.zeros(n_active, dtype=np.float32)
-        if rows:
-            from scipy.sparse import coo_matrix
-
-            adj = coo_matrix(
-                (np.ones(len(rows), dtype=np.float32), (rows, cols)),
-                shape=(n_active, n_active),
-            ).tocsr()
-            nbr_counts = np.array(adj.sum(axis=1)).flatten()
+        adj, nbr_counts = NEIGHBOR_SELECTOR_REGISTRY["ball_tree_radius"].select(
+            positions, velocities, active, index, config, radius=radius,
+        )
+        if adj is not None:
             sums = adj @ unit_dirs
             mask = nbr_counts > 1
             neighbour_dirs[mask] = (sums[mask] / nbr_counts[mask, np.newaxis]).astype(np.float32)

@@ -36,6 +36,11 @@ from .angle import angle_forces  # noqa: F401  # re-export
 from .field import field_forces  # noqa: F401  # re-export
 from .influencer import influencer_forces  # noqa: F401  # re-export
 from .marl import marl_forces  # noqa: F401  # P12.1 re-export
+from .neighbor_selection import (  # noqa: F401 — public API
+    NEIGHBOR_SELECTOR_REGISTRY,
+    NeighborSelector,
+)
+from .neighbor_selection import register as register_neighbor_selector  # noqa: F401
 
 # Backward-compatible exports — tests import these names directly
 from .projection import projection_forces  # noqa: F401  # re-export

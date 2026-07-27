@@ -55,8 +55,10 @@ def test_no_cKDTree_in_forces():
     known = {
         "pymurmur/physics/forces/spatial.py",
         "pymurmur/physics/forces/spatial_helpers.py",  # extracted from spatial.py
-        "pymurmur/physics/forces/vicsek.py",
         "pymurmur/physics/forces/angle.py",
+        # neighbor_selection.py's BallTreeRadiusSelector — extracted verbatim
+        # from vicsek.py's former inline cKDTree fallback (modularity pass 2).
+        "pymurmur/physics/forces/neighbor_selection.py",
     }
     failures: list[str] = []
 

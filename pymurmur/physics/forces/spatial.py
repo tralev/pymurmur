@@ -28,6 +28,7 @@ from ._base import (
     separation_force,
 )
 from ._mode import ForceFn, ForceMode, register
+from .neighbor_selection import NEIGHBOR_SELECTOR_REGISTRY
 from .spatial_helpers import (
     _apply_hybrid_filter,  # noqa: F401  # re-export
     _maybe_perception_filter,
@@ -190,8 +191,8 @@ class SpatialMode(ForceMode):
         # query so predator rows can use a boosted visual_range.
         is_predator = getattr(config, '_is_predator', None)
 
-        neighbor_idx = _query_neighbors(
-            positions, active, index, config,
+        neighbor_idx = NEIGHBOR_SELECTOR_REGISTRY["hybrid"].select(
+            positions, velocities, active, index, config,
             filter_mode=config.spatial.neighbor_filter,
             is_predator=is_predator,
         )
