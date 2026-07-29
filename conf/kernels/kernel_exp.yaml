@@ -1,0 +1,80 @@
+# conf/kernels/kernel_exp.yaml — kernel-coverage reference
+#
+# One of 9 small presets in conf/kernels/ closing out
+# SEPARATION_KERNEL_REGISTRY / ALIGNMENT_KERNEL_REGISTRY /
+# COHESION_KERNEL_REGISTRY coverage (arch.md's "Other Computational
+# Plugins" table) -- kernel_registry.py has 11 separation, 4
+# alignment, and 3 cohesion kernel variants; before this family only
+# sum/unweighted (implicit defaults), bell_zone
+# (murmuration_showcase.yaml), and unit separation
+# (murmuration_boids.yaml) were ever exercised by a runnable preset.
+#
+# This file demonstrates: separation_kernel=exp, alignment_kernel=circular_mean_2d,
+# cohesion_kernel=inverse_distance.
+#
+# Coverage/reference fixture, not tuned for visual character. Kept out
+# of top-level conf/ (and so out of --list-configs) since these are
+# narrow technical fixtures, not exploration-worthy presets -- unlike
+# conf/examples/murmuration_nested.yaml, these ARE fully loadable and
+# validated (see test/l4_system/test_config_files.py).
+
+domain:
+  width: 1000.0
+  height: 700.0
+  depth: 400.0
+
+flock:
+  num_boids: 100
+  boid_size: 9.0
+  v0: 4.0
+  max_force: 0.15
+  visual_range: 70.0
+
+mode: spatial
+
+spatial:
+  separation_weight: 4.5
+  alignment_weight: 0.65
+  cohesion_weight: 0.75
+  separation_kernel: exp
+  alignment_kernel: circular_mean_2d
+  cohesion_kernel: inverse_distance
+  separation_kernel_radius: 20.0   # only consulted by exp/linear_ramp/asymptotic/bell_zone
+  kernel_zone_width: 10.0           # only consulted by bell_zone (sep/align/coh)
+
+boundary_mode: toroidal
+
+extensions:
+  predator_enabled: false
+  roosting_enabled: false
+  wander_enabled: false
+  ripple_enabled: false
+
+performance:
+  spatial_index: auto
+  instance_buffer_chunk: 50000
+
+metrics:
+  detail_level: 1
+  interval: 60
+
+seed: 42
+
+visual:
+  fps: 60
+  window_width: 1200
+  window_height: 800
+  show_grid: false
+  auto_rotate: false
+  theme: ink
+
+capture:
+  width: 800
+  height: 600
+  frames: 240
+  every: 3
+  fps: 20
+  output: output/kernel_exp.gif
+  metrics_csv: output/metrics_kernel_exp.csv
+  metrics_json: output/metrics_kernel_exp.json
+  with_viz: true

@@ -8,6 +8,12 @@ from pathlib import Path
 
 CONF_DIR = Path("conf")
 ALL_CONFIGS = sorted(CONF_DIR.glob("*.yaml"))
+# Narrow kernel-coverage fixtures — real/loadable/validated, but kept
+# out of the top-level conf/*.yaml glob (and so out of --list-configs)
+# since they're technical coverage fixtures, not exploration-worthy
+# presets. See conf/kernels/kernel_sum.yaml for why they exist.
+KERNEL_CONF_DIR = CONF_DIR / "kernels"
+ALL_KERNEL_CONFIGS = sorted(KERNEL_CONF_DIR.glob("*.yaml"))
 
 
 def _load_config(path: Path):
@@ -110,6 +116,56 @@ class TestConfigFileValidation:
             f"Extensions with zero preset coverage (enabled=true in no "
             f"conf/*.yaml): {uncovered}. Add extensions.{{config_attr}}: "
             f"true to at least one preset, e.g. conf/murmuration_showcase.yaml."
+        )
+
+    def test_kernel_configs_parse_and_validate(self):
+        """Every conf/kernels/*.yaml loads and validates via SimConfig."""
+        from pymurmur.core.config import SimConfig
+
+        assert len(ALL_KERNEL_CONFIGS) >= 9, (
+            f"Expected >= 9 kernel-coverage configs, found {len(ALL_KERNEL_CONFIGS)}"
+        )
+        for path in ALL_KERNEL_CONFIGS:
+            cfg = SimConfig.from_file(str(path))
+            cfg.validate()
+
+    def test_every_kernel_has_example_coverage(self):
+        """Every registered separation/alignment/cohesion kernel appears
+        as a spatial.{kernel}_kernel value in at least one shipped
+        preset (conf/*.yaml or conf/kernels/*.yaml) — mirrors
+        test_every_extension_has_example_coverage's closure of the
+        analogous gap. Before conf/kernels/ was added, 8 of 11
+        separation kernels, 2 of 4 alignment kernels, and 1 of 3
+        cohesion kernels had zero preset coverage — only named in
+        conf/examples/murmuration_nested.yaml's comments. Derived from
+        the live kernel registries, not a hardcoded list."""
+        from pymurmur.physics.plugins.kernel_registry import (
+            ALIGNMENT_KERNEL_REGISTRY,
+            COHESION_KERNEL_REGISTRY,
+            SEPARATION_KERNEL_REGISTRY,
+        )
+
+        all_data = [_load_config(path) for path in ALL_CONFIGS + ALL_KERNEL_CONFIGS]
+
+        def covered(field_name: str, value: str) -> bool:
+            return any(
+                data.get("spatial", {}).get(field_name) == value
+                for data in all_data
+            )
+
+        uncovered = []
+        for registry, field_name in (
+            (SEPARATION_KERNEL_REGISTRY, "separation_kernel"),
+            (ALIGNMENT_KERNEL_REGISTRY, "alignment_kernel"),
+            (COHESION_KERNEL_REGISTRY, "cohesion_kernel"),
+        ):
+            for name in registry:
+                if not covered(field_name, name):
+                    uncovered.append(f"{field_name}={name}")
+
+        assert not uncovered, (
+            f"Kernels with zero preset coverage: {uncovered}. Add a "
+            f"spatial.{{field}}: {{name}} preset, e.g. under conf/kernels/."
         )
 
     def test_300k_config_kdtree(self):
