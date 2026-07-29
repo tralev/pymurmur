@@ -13,6 +13,8 @@ was merged into `test.md` §Continuous Integration & Docker the same day.
 """
 
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -394,3 +396,97 @@ def test_test_md_contains_all_guard_jobs():
             f"topology doc has rotted.  Add it to the guard-rail job "
             f"table or remove it from GUARD_RAIL_JOB_NAMES."
         )
+
+
+# ── G2: test.md headline collected-test counts stay in sync ──────
+#
+# test.md's headline states "N,NNN tests collected; N,NNN run in the
+# fast suite" — this drifted silently for a long stretch (stated 3,263
+# / 2,854 vs. an actual 3,613 / 3,188, an ~11% gap) because nothing
+# checked it: test_docs.py verifies link integrity/Force-Modes-table/
+# module-map/guard-job-list, and test_collection_count.py only enforces
+# floor minimums well below the real counts, so neither would notice
+# the headline number itself going stale. This mirrors the
+# Force-Mode-table-vs-MODE_REGISTRY check above: parse the doc, compare
+# against live ground truth.
+
+TEST_COUNTS_FILE = "test.md"
+
+
+def _extract_test_md_counts(md_file: str = TEST_COUNTS_FILE) -> tuple[int, int]:
+    """Parse the "N,NNN tests collected; N,NNN run in the fast suite"
+    headline out of test.md and return (total, fast) as ints."""
+    content = Path(md_file).read_text()
+    m = re.search(
+        r"([\d,]+)\s+tests collected;\s+([\d,]+)\s+run in the fast suite",
+        content,
+    )
+    assert m, (
+        f"{md_file} is missing the 'N tests collected; N run in the fast "
+        f"suite' headline — expected in the STATUS blockquote near the top"
+    )
+    return int(m.group(1).replace(",", "")), int(m.group(2).replace(",", ""))
+
+
+def _actual_collection_counts() -> tuple[int, int]:
+    """Run pytest --collect-only twice (all tests, then the fast-suite
+    marker subset) and parse each run's summary line for the real
+    collected count. Mirrors test_collection_count.py's subprocess
+    pattern, kept independent so this guard doesn't depend on that
+    file's fixture internals."""
+
+    def _collect(extra_args: list[str]) -> int:
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "test", "--collect-only", "-q",
+             "-p", "no:cacheprovider", *extra_args],
+            capture_output=True, text=True, timeout=300,
+        )
+        summary = next(
+            (line for line in reversed(result.stdout.splitlines()) if line.strip()),
+            "",
+        )
+        m = re.match(r"(\d+)/(\d+) tests? collected", summary)
+        if m:
+            return int(m.group(1))
+        m = re.match(r"(\d+) tests? collected", summary)
+        assert m, f"Could not parse collection summary line: {summary!r}"
+        return int(m.group(1))
+
+    total = _collect([])
+    fast = _collect(["-m", "not slow and not gl and not gpu"])
+    return total, fast
+
+
+def test_test_md_collection_counts_match_actual():
+    """G2: test.md's headline "N tests collected; N run in the fast
+    suite" matches the real, live-collected counts — no more, no less.
+    Adding/removing/deselecting tests without updating the headline
+    fails this guard."""
+    doc_total, doc_fast = _extract_test_md_counts()
+    actual_total, actual_fast = _actual_collection_counts()
+
+    assert (doc_total, doc_fast) == (actual_total, actual_fast), (
+        f"test.md headline says '{doc_total} tests collected; {doc_fast} "
+        f"run in the fast suite' but the live count is "
+        f"'{actual_total} tests collected; {actual_fast} run in the fast "
+        f"suite' — update the headline in {TEST_COUNTS_FILE}."
+    )
+
+
+def test_extract_test_md_counts_parses_headline():
+    """G2: The extraction regex itself works against a synthetic
+    headline — not just 'the real file happens to parse today.'"""
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".md", delete=False,
+    ) as f:
+        f.write("> **1,234 tests collected; 5,678 run in the fast suite** "
+                "(some marker).\n")
+        scratch = f.name
+
+    try:
+        total, fast = _extract_test_md_counts(scratch)
+        assert (total, fast) == (1234, 5678)
+    finally:
+        Path(scratch).unlink()

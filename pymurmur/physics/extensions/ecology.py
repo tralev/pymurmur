@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ._base import Extension
+from .extension_registry import register_extension
 
 if TYPE_CHECKING:
     from ...core.config import SimConfig
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
     from ._base import StepContext
 
 
+@register_extension("roosting_enabled", None)
 class Ecology(Extension):
     """Day/night cycle with logistic dusk roosting behaviour.
 

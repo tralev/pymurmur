@@ -19,6 +19,12 @@ from typing import Any, Callable
 import numpy as np
 
 from . import force_kernels as _kernels
+from .kernel_registry import (
+    ALIGNMENT_KERNEL_REGISTRY,
+    COHESION_KERNEL_REGISTRY,
+    KernelInfo,
+    SEPARATION_KERNEL_REGISTRY,
+)
 
 # ── P2.10/S2.A5: ForceTerm composition infrastructure ─────────────
 
@@ -98,31 +104,24 @@ def _dispatch_separation_kernel(
     closing_speed: np.ndarray | None = None,
     heading: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Kernel-name -> kernels.py function dispatch, shared by the ragged
-    and dense paths below. Unrecognized kernel names silently fall back
-    to "sum" (matches pre-refactor behavior, explicitly tested by
-    test_invalid_kernel_ignored_by_code_structure)."""
-    if kernel == "mean":
-        return _kernels.kernel_mean(diffs, dists, close)
-    if kernel == "unit":
-        return _kernels.kernel_unit(diffs, dists, close)
-    if kernel == "exp":
-        return _kernels.kernel_exp(diffs, dists, close, radius)
-    if kernel == "linear_ramp":
-        return _kernels.kernel_linear_ramp(diffs, dists, close, radius)
-    if kernel == "asymptotic":
-        return _kernels.kernel_asymptotic(diffs, dists, close, radius)
-    if kernel == "velocity_weighted":
-        return _kernels.kernel_velocity_weighted(diffs, dists, close, closing_speed)
-    if kernel == "cosine_zone":
-        return _kernels.kernel_cosine_zone(diffs, dists, close, heading)
-    if kernel == "linear":
-        return _kernels.kernel_linear(diffs, dists, close)
-    if kernel == "nearest_only":
-        return _kernels.kernel_nearest_only(diffs, dists, close)
-    if kernel == "bell_zone":
-        return _kernels.kernel_bell_zone(diffs, dists, close, radius, zone_width)
-    return _kernels.kernel_sum(diffs, dists, close)
+    """Kernel-name -> kernels.py function dispatch via SEPARATION_KERNEL_REGISTRY.
+    Unrecognized kernel names silently fall back to "sum" (matches pre-refactor
+    behavior, explicitly tested by test_invalid_kernel_ignored_by_code_structure)."""
+    info: KernelInfo | None = SEPARATION_KERNEL_REGISTRY.get(kernel)
+    if info is None:
+        info = SEPARATION_KERNEL_REGISTRY["sum"]
+
+    kwargs: dict[str, Any] = {}
+    if info.needs_radius:
+        kwargs["radius"] = radius
+    if info.needs_zone_width:
+        kwargs["zone_width"] = zone_width
+    if info.needs_closing_speed:
+        kwargs["closing_speed"] = closing_speed
+    if info.needs_heading:
+        kwargs["heading"] = heading
+
+    return info.fn(diffs, dists, close, **kwargs)
 
 
 def _closing_speed(diffs: np.ndarray, dists: np.ndarray, v_i: np.ndarray, v_j: np.ndarray) -> np.ndarray:
@@ -245,18 +244,22 @@ def _weighted_avg_vel(
     zone_center: float,
     zone_width: float,
 ) -> np.ndarray:
-    """Alignment kernel dispatch — mirrors _dispatch_separation_kernel.
-    Returns the weighted-average neighbour velocity (..., 3), NOT yet
-    turned into a normalized steering vector (caller does that)."""
-    if kernel == "fov_weighted":
-        return _kernels.kernel_fov_weighted(diffs, dists, close, heading, neighbor_vel, fov_min)
-    if kernel == "circular_mean_2d":
-        return _kernels.kernel_circular_mean_2d(diffs, dists, close, neighbor_vel)
-    if kernel == "bell_zone":
-        return _kernels.kernel_bell_zone_alignment(
-            diffs, dists, close, neighbor_vel, zone_center, zone_width,
-        )
-    return np.mean(neighbor_vel, axis=-2)
+    """Alignment kernel dispatch via ALIGNMENT_KERNEL_REGISTRY."""
+    info: KernelInfo | None = ALIGNMENT_KERNEL_REGISTRY.get(kernel)
+    if info is None:
+        info = ALIGNMENT_KERNEL_REGISTRY["unweighted"]
+
+    kwargs: dict[str, Any] = {"neighbor_vel": neighbor_vel}
+    if info.needs_heading:
+        kwargs["heading"] = heading
+        kwargs["fov_min"] = fov_min
+    if info.needs_radius:
+        kwargs["radius"] = zone_center
+    if info.needs_zone_width:
+        kwargs["zone_width"] = zone_width
+
+    result = info.fn(diffs, dists, close, **kwargs)
+    return result
 
 
 def alignment_force(

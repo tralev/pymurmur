@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ._base import Extension
+from .extension_registry import register_extension
 
 if TYPE_CHECKING:
     from ..flock import PhysicsFlock
@@ -77,6 +78,7 @@ def wander_heading(t: float) -> np.ndarray:
 
 # ── Wander extension ──────────────────────────────────────────────
 
+@register_extension("wander_enabled", None)
 class Wander(Extension):
     """Bounded flock-centre wander using boundedUnitTravel.
 

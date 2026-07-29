@@ -27,6 +27,7 @@ from .boid_init import (  # noqa: F401 — re-exported for back-compat
     random_unit_sphere,
 )
 from .boundary import BOUNDARY_REGISTRY
+from .speed_model import SPEED_MODEL_REGISTRY
 
 # ── Integration kernel ────────────────────────────────────────────
 
@@ -101,44 +102,13 @@ def integrate(
         caps = np.full(N, v0, dtype=np.float32)
     min_speed = caps * speed_min_factor
 
-    # 3. Speed clamp — save raw velocity for inertia
+    # 3. Speed clamp — dispatch through SPEED_MODEL_REGISTRY
     speeds = np.linalg.norm(velocities, axis=1, keepdims=True)
     raw_vel = velocities.copy() if inertia > 0 else None
 
-    if speed_mode in ("band", "clamp"):
-        too_fast = (speeds.ravel() > caps).ravel() & active
-        too_slow = (speeds.ravel() < min_speed).ravel() & active
-        if too_fast.any():
-            velocities[too_fast] = (
-                velocities[too_fast] / speeds[too_fast]
-            ) * caps[too_fast, np.newaxis]
-        if too_slow.any():
-            velocities[too_slow] = (
-                velocities[too_slow] / (speeds[too_slow] + 1e-10)
-            ) * min_speed[too_slow, np.newaxis]
-
-    elif speed_mode == "fixed":
-        # Exact renormalisation to cap, 0-safe: zero-velocity
-        # birds get deterministic direction (1, 0, 0) to avoid NaN.
-        safe_speeds = speeds + 1e-10
-        dirs = velocities / safe_speeds
-        zero_mask = (speeds.ravel() < 1e-6) & active
-        if zero_mask.any():
-            dirs[zero_mask.ravel(), 0] = 1.0
-            dirs[zero_mask.ravel(), 1] = 0.0
-            dirs[zero_mask.ravel(), 2] = 0.0
-        velocities[active] = dirs[active] * caps[active, np.newaxis]
-
-    elif speed_mode == "ceiling":
-        too_fast = (speeds.ravel() > caps).ravel() & active
-        if too_fast.any():
-            velocities[too_fast] = (
-                velocities[too_fast] / speeds[too_fast]
-            ) * caps[too_fast, np.newaxis]
-        # No lower bound — slow speeds left as-is
-
-    elif speed_mode == "none":
-        pass  # no speed clamp
+    # Resolve strategy — unrecognised modes fall back to "band" (safe default)
+    strategy = SPEED_MODEL_REGISTRY.get(speed_mode, SPEED_MODEL_REGISTRY["band"])
+    strategy.apply(velocities, active, caps, min_speed, speeds)
 
     # 4. Inertia: lerp between raw and clamped velocity
     if inertia > 0 and raw_vel is not None:

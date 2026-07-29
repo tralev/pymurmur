@@ -16,12 +16,14 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ._base import Extension
+from .extension_registry import register_extension
 
 if TYPE_CHECKING:
     from ..flock import PhysicsFlock
     from ._base import StepContext
 
 
+@register_extension("dynamic_vision_range_enabled", None)
 class DynamicVisionRange(Extension):
     """Nudges a flock-wide visual_range multiplier up when boids see too
     few neighbors on average, down when they see too many — a §11-style

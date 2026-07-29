@@ -22,12 +22,14 @@ import numpy as np
 
 from ...core.noise import value_noise3
 from ._base import Extension
+from .extension_registry import register_extension
 
 if TYPE_CHECKING:
     from ..flock import PhysicsFlock
     from ._base import StepContext
 
 
+@register_extension("speed_noise_enabled", "speed_noise_mult")
 class SpeedNoise(Extension):
     """Noise-modulated per-boid speed cap.
 

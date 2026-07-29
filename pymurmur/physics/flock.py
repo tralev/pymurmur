@@ -17,6 +17,10 @@ from .boid import (
     integrate,
 )
 from .spatial_index import KDTreeIndex, SpatialHashGrid
+from .spatial_index_strategy import (
+    AUTO_INDEX_THRESHOLD,
+    SPATIAL_INDEX_STRATEGY_REGISTRY,
+)
 
 if TYPE_CHECKING:
     from ..core.config import SimConfig
@@ -121,30 +125,22 @@ class PhysicsFlock:
         # stack is disabled (default path unaffected).
         self.predator_priority_accel: np.ndarray | None = None
 
-        # Spatial index selection — honor explicit config, fall back to N heuristic
+        # Spatial index selection — dispatch through registry
         self._index: SpatialIndex | None
         self._spatial_index_mode = config.spatial_index
         self._visual_range = config.visual_range
-        self._index_threshold = 5000
-        index_choice = config.spatial_index
-        # C3: use_toroidal_distance — periodic boxsize for KDTreeIndex,
-        # mirroring SpatialHashGrid's min-image wrapping. None unless
-        # the boundary is actually toroidal.
+
+        # C3: toroidal-distance box for KDTreeIndex
         kdtree_box: tuple[float, float, float] | None = None
         if config.use_toroidal_distance and config.boundary_mode == "toroidal":
             kdtree_box = (float(config.width), float(config.height), float(config.depth))
-        if index_choice == "kdtree":
-            self._index = KDTreeIndex(box=kdtree_box)
-        elif index_choice == "hash_grid":
-            self._index = SpatialHashGrid(config)
-        elif index_choice == "none":
-            # No spatial index — modes that need it must build their own
-            self._index = None
-        else:  # "auto"
-            if N >= self._index_threshold:
-                self._index = KDTreeIndex(box=kdtree_box)
-            else:
-                self._index = SpatialHashGrid(config)
+
+        # Dispatch: unrecognised modes fall back to "auto"
+        strategy = SPATIAL_INDEX_STRATEGY_REGISTRY.get(
+            config.spatial_index,
+            SPATIAL_INDEX_STRATEGY_REGISTRY["auto"],
+        )
+        self._index = strategy(config, N, kdtree_box)
 
     def integrate(self, config: SimConfig, dt: float,
                   speed_mode: str = "band", move: bool = True,
@@ -250,11 +246,11 @@ class PhysicsFlock:
         n = self.N_active
         is_kdtree = isinstance(self._index, KDTreeIndex)
 
-        if n >= self._index_threshold and not is_kdtree:
+        if n >= AUTO_INDEX_THRESHOLD and not is_kdtree:
             self._index = KDTreeIndex()
-        elif n < self._index_threshold and is_kdtree:
-            # Need config-like object for SpatialHashGrid — fake it
+        elif n < AUTO_INDEX_THRESHOLD and is_kdtree:
             from ..core.config import SimConfig
+
             cfg = SimConfig()
             cfg.visual_range = self._visual_range
             self._index = SpatialHashGrid(cfg)

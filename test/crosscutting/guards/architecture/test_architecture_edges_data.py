@@ -7,9 +7,16 @@ test functions (0 tests collected from this file is expected).
 ALLOWED_EDGES grows at each phase acceptance boundary; FORBIDDEN_EDGES
 is permanent. See test_architecture_edges.py for the enforcement
 logic/tests that consume this data.
+
+Physics-tier (core/physics) ALLOWED_EDGES entries live here as
+ALLOWED_EDGES_CORE; system-tier (simulation/analysis/viz/capture)
+entries live in test_architecture_edges_data_system.py (file-size
+split of this file) as ALLOWED_EDGES_SYSTEM, dict-spread back into
+ALLOWED_EDGES below.
 """
 
 from __future__ import annotations
+
 
 STDLIB = {
     "abc", "ast", "builtins", "collections", "colorsys", "concurrent", "copy",
@@ -35,7 +42,7 @@ THIRD_PARTY = {
 # TYPE_CHECKING imports ARE subject to ALLOWED_EDGES — they're part of the
 # architecture contract (types flow along allowed edges).
 
-ALLOWED_EDGES: dict[str, set[str]] = {
+ALLOWED_EDGES_CORE: dict[str, set[str]] = {
     # ── Tier 0: core/ — numpy/stdlib only, zero pymurmur imports ──
     "pymurmur.core.types": set(),
     "pymurmur.core.noise": set(),
@@ -69,6 +76,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.core.types",
         "pymurmur.physics.boid_init",  # re-exports init helpers (file-size split)
         "pymurmur.physics.boundary",  # boundary-strategy registry dispatch
+        "pymurmur.physics.speed_model",  # modularity pass 4: speed-model registry dispatch
     },
     "pymurmur.physics.boid_init": set(),  # numpy only, zero pymurmur imports
     "pymurmur.physics.boundary": {
@@ -90,6 +98,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.core.config",
         "pymurmur.physics.boid",
         "pymurmur.physics.spatial_index",
+        "pymurmur.physics.spatial_index_strategy",  # modularity pass 5: index selection dispatch
     },
 
     # ── Tier 1: physics/spatial_index (L1 atom, extracted from flock.py
@@ -97,6 +106,16 @@ ALLOWED_EDGES: dict[str, set[str]] = {
     "pymurmur.physics.spatial_index": {
         "pymurmur.core.types",
         "pymurmur.core.config",  # TYPE_CHECKING only
+    },
+
+    # Modularity pass 4: SpeedModel ABC + SPEED_MODEL_REGISTRY (L0 atom).
+    "pymurmur.physics.speed_model": set(),  # numpy only, zero pymurmur imports
+
+    # Modularity pass 5: SpatialIndexStrategy registry (L1 — depends on spatial_index).
+    "pymurmur.physics.spatial_index_strategy": {
+        "pymurmur.core.types",
+        "pymurmur.core.config",
+        "pymurmur.physics.spatial_index",
     },
 
     # ── Tier 2: physics/forces (L1, L0) ──
@@ -112,8 +131,13 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.flock",
         "pymurmur.physics.extensions._base",
         "pymurmur.physics.forces.force_kernels",
+        "pymurmur.physics.forces.kernel_registry",  # modularity pass 7: kernel dispatch
     },
     "pymurmur.physics.forces.force_kernels": set(),  # numpy only, zero pymurmur imports
+    # Modularity pass 7: kernel registry — imports force_kernels for dispatch.
+    "pymurmur.physics.forces.kernel_registry": {
+        "pymurmur.physics.forces.force_kernels",
+    },
     "pymurmur.physics.forces._kernels": {
         # S2.B3: min_image for toroidal-aware predator escape distances.
         "pymurmur.core.types",
@@ -244,17 +268,25 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.core.config",
         "pymurmur.physics.flock",
     },
+    # Modularity pass 6: Extension registry — TYPE_CHECKING core + _base.
+    "pymurmur.physics.extensions.extension_registry": {
+        "pymurmur.core.types",
+        "pymurmur.core.config",
+        "pymurmur.physics.extensions._base",
+    },
     "pymurmur.physics.extensions.predator": {
         "pymurmur.core.types",
         "pymurmur.core.config",
         "pymurmur.physics.flock",
         "pymurmur.physics.extensions._base",
+        "pymurmur.physics.extensions.extension_registry",  # modularity pass 6
     },
     "pymurmur.physics.extensions.ecology": {
         "pymurmur.core.types",
         "pymurmur.core.config",
         "pymurmur.physics.flock",
         "pymurmur.physics.extensions._base",
+        "pymurmur.physics.extensions.extension_registry",  # modularity pass 6
     },
     "pymurmur.physics.extensions.wander": {
         "pymurmur.core.types",
@@ -262,12 +294,14 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.flock",
         "pymurmur.physics.boid",
         "pymurmur.physics.extensions._base",
+        "pymurmur.physics.extensions.extension_registry",  # modularity pass 6
     },
     "pymurmur.physics.extensions.ripple": {
         "pymurmur.core.types",
         "pymurmur.core.config",
         "pymurmur.physics.flock",
         "pymurmur.physics.extensions._base",
+        "pymurmur.physics.extensions.extension_registry",  # modularity pass 6
     },
     "pymurmur.physics.extensions.speed_noise": {
         "pymurmur.core.types",
@@ -275,6 +309,7 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.core.noise",
         "pymurmur.physics.flock",
         "pymurmur.physics.extensions._base",
+        "pymurmur.physics.extensions.extension_registry",  # modularity pass 6
     },
     "pymurmur.physics.extensions.neighbor_adaptive_speed": {
         "pymurmur.core.types",
@@ -282,24 +317,28 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.adaptive_speed",
         "pymurmur.physics.flock",
         "pymurmur.physics.extensions._base",
+        "pymurmur.physics.extensions.extension_registry",  # modularity pass 6
     },
     "pymurmur.physics.extensions.dynamic_vision_range": {
         "pymurmur.core.types",
         "pymurmur.core.config",
         "pymurmur.physics.flock",
         "pymurmur.physics.extensions._base",
+        "pymurmur.physics.extensions.extension_registry",  # modularity pass 6
     },
     "pymurmur.physics.extensions.boid_state_machine": {
         "pymurmur.core.types",
         "pymurmur.core.config",
         "pymurmur.physics.flock",
         "pymurmur.physics.extensions._base",
+        "pymurmur.physics.extensions.extension_registry",  # modularity pass 6
     },
     "pymurmur.physics.extensions.__init__": {
         "pymurmur.core.types",
         "pymurmur.core.config",
         "pymurmur.physics.flock",
         "pymurmur.physics.extensions._base",
+        "pymurmur.physics.extensions.extension_registry",  # modularity pass 6
         "pymurmur.physics.extensions.predator",
         "pymurmur.physics.extensions.ecology",
         "pymurmur.physics.extensions.wander",
@@ -310,197 +349,11 @@ ALLOWED_EDGES: dict[str, set[str]] = {
         "pymurmur.physics.extensions.boid_state_machine",
     },
 
-    # ── Tier 3: simulation/engine (L2) — core + physics + analysis ──
-    "pymurmur.simulation.engine": {
-        "pymurmur.core.types",
-        "pymurmur.core.config",
-        "pymurmur.physics.flock",
-        "pymurmur.physics.forces",
-        "pymurmur.physics.extensions",
-        "pymurmur.physics.obstacles",  # S6.4: ObstacleScene
-        "pymurmur.physics.obstacle_avoidance",  # modularity pass 3
-        "pymurmur.physics.priority_stack",
-        "pymurmur.analysis.metrics",
-        "pymurmur.analysis.perf",      # S4.10: PerfDiagnostics
-    },
-
-    # ── Tier F1: Observables — core + read flock ──
-    # metrics.py is now a thin re-export shim (file-size split), moved
-    # into analysis/metrics/__init__.py (logical-structure split) —
-    # dotted path "pymurmur.analysis.metrics" unchanged. The
-    # implementation lives in the nested sibling modules below.
-    "pymurmur.analysis.metrics": {
-        "pymurmur.analysis.metrics.collector",
-        "pymurmur.analysis.metrics.consensus_robustness",
-        "pymurmur.analysis.metrics.dynamics_curves",
-        "pymurmur.analysis.metrics.flock_metrics",
-        "pymurmur.analysis.metrics.opacity",
-        "pymurmur.analysis.metrics.shape_motion",
-    },
-    "pymurmur.analysis.metrics.flock_metrics": {"pymurmur.core.types"},
-    "pymurmur.analysis.metrics.consensus_robustness": set(),
-    "pymurmur.analysis.metrics.opacity": set(),
-    "pymurmur.analysis.metrics.shape_motion": set(),
-    "pymurmur.analysis.metrics.dynamics_curves": set(),
-    "pymurmur.analysis.metrics.collector": {
-        "pymurmur.core.types",
-        "pymurmur.core.config",
-        "pymurmur.physics.flock",
-        "pymurmur.physics.boid",
-        "pymurmur.analysis.metrics.consensus_robustness",
-        "pymurmur.analysis.metrics.dynamics_curves",
-        "pymurmur.analysis.metrics.flock_metrics",
-        "pymurmur.analysis.metrics.opacity",
-        "pymurmur.analysis.metrics.shape_motion",
-    },
-    "pymurmur.analysis.presets": {
-        "pymurmur.core.types",
-        "pymurmur.core.config",
-    },
-    "pymurmur.analysis.perf": {
-        "pymurmur.core.types",
-        "pymurmur.core.config",          # P8.6: PerfConfig.target_fps
-    },
-
-    # ── Tier F2: Drivers — core + simulation ──
-    # Logical-structure split: evoflock.py -> analysis/evoflock/__init__.py
-    # (dotted path "pymurmur.analysis.evoflock" unchanged, it's still the
-    # package root); evoflock_objectives.py moved alongside it.
-    "pymurmur.analysis.evoflock": {
-        "pymurmur.core.types",
-        "pymurmur.core.config",
-        "pymurmur.simulation.engine",
-        "pymurmur.physics.flock",
-        "pymurmur.physics.boid",
-        "pymurmur.physics.obstacles",  # P11.4: ObstacleScene evaluation
-        "pymurmur.analysis.evoflock.evoflock_objectives",
-    },
-    # File-size split from evoflock.py: per-step objective collector +
-    # objective-function helpers (_ObjectiveCollector, load_obstacle_scene,
-    # _trapezoid, _linear_ramp, _pareto_front).
-    "pymurmur.analysis.evoflock.evoflock_objectives": {
-        "pymurmur.core.types",
-        "pymurmur.physics.obstacles",
-        "pymurmur.analysis.evoflock",  # TYPE_CHECKING only (Genome)
-    },
-    # Logical-structure split: phase_diagram.py/density_scaling.py/
-    # point_clouds.py/topological_range.py moved from flush in analysis/
-    # into a new analysis/research/ subpackage (independent Young-et-al-
-    # 2013 validation scripts, no shared API so research/__init__.py is
-    # empty). point_clouds.py and topological_range.py have no entries
-    # here since they import nothing from pymurmur.
-    "pymurmur.analysis.research.phase_diagram": {
-        "pymurmur.core.types",
-        "pymurmur.core.config",
-        "pymurmur.simulation.engine",
-    },
-    # Logical-structure split: gym_env.py + rewards.py moved from flush in
-    # analysis/ into a new analysis/rl/ subpackage (RL bridge). Both
-    # dotted paths change; rl/__init__.py re-exports MurmurationEnv/
-    # RewardConfig/compute_reward for ergonomics.
-    "pymurmur.analysis.rl": {
-        "pymurmur.analysis.rl.gym_env",
-        "pymurmur.analysis.rl.rewards",
-    },
-    "pymurmur.analysis.rl.rewards": {
-        "pymurmur.core.types",
-        "pymurmur.analysis.metrics",
-    },
-    "pymurmur.analysis.rl.gym_env": {  # P12.2: MurmurationEnv
-        "pymurmur.core.types",
-        "pymurmur.core.config",
-        "pymurmur.simulation.engine",
-        "pymurmur.analysis.rl.rewards",
-        "pymurmur.analysis.metrics",
-    },
-    "pymurmur.analysis.research.density_scaling": {
-        "pymurmur.core.types",
-        "pymurmur.core.config",
-        "pymurmur.simulation.engine",
-    },
-
-    # ── Viz (L2) — core + physics/flock(read) + analysis/presets ──
-    "pymurmur.viz.renderer": {
-        "pymurmur.core.types",
-        "pymurmur.core.config",
-        "pymurmur.physics.flock",
-        "pymurmur.viz.shaders",
-        "pymurmur.viz.camera",
-        "pymurmur.viz.trails",
-        "pymurmur.viz.mesh_registry",  # S4.4a
-        "pymurmur.viz.renderer_vao",
-        "pymurmur.viz.renderer_draw",
-    },
-    # File-size split from renderer.py: VAO-building mixin.
-    "pymurmur.viz.renderer_vao": {"pymurmur.viz.mesh_registry"},
-    # File-size split from renderer.py: drawing mixin.
-    "pymurmur.viz.renderer_draw": {
-        "pymurmur.core.types",
-        "pymurmur.viz.mesh_registry",
-        "pymurmur.physics.flock",  # TYPE_CHECKING only
-    },
-    "pymurmur.viz.shaders": {
-        "pymurmur.core.types",
-    },
-    "pymurmur.viz.camera": {
-        "pymurmur.core.types",
-        "pymurmur.core.config",
-    },
-    "pymurmur.viz.visualizer": {
-        "pymurmur.core.types",
-        "pymurmur.core.config",
-        "pymurmur.viz.renderer",
-        "pymurmur.viz.camera",
-        "pymurmur.viz.input_control",
-        "pymurmur.viz.hud",              # P10.3: SliderHUD
-        "pymurmur.viz.trails",           # P8.6: trail re-creation on recovery
-        "pymurmur.analysis.metrics",
-        "pymurmur.analysis.perf",        # P8.6: QualityGovernor
-    },
-    "pymurmur.viz.hud": {
-        "pymurmur.core.types",
-        "pymurmur.core.config",          # P10.3: TYPE_CHECKING — reads config fields
-    },
-    "pymurmur.viz.input_control": {
-        "pymurmur.core.types",
-        "pymurmur.core.config",
-        "pymurmur.core.logging",        # S5.6: cli_out/cli_err
-        "pymurmur.analysis.presets",
-        "pymurmur.viz.camera",
-    },
-
-    "pymurmur.viz.trails": {
-        "pymurmur.core.types",
-        "pymurmur.physics.flock",
-        "pymurmur.viz.renderer",
-        "pymurmur.viz.shaders",
-        "pymurmur.viz.camera",
-    },
-
-    # ── Viz __init__ (re-exports) ──
-    "pymurmur.viz.__init__": {
-        "pymurmur.viz.visualizer",
-        "pymurmur.viz.renderer",
-        "pymurmur.viz.camera",
-    },
-
-    # ── Capture (L2) — core + simulation + viz ──
-    "pymurmur.capture.recorder": {
-        "pymurmur.core.types",
-        "pymurmur.core.config",
-        "pymurmur.analysis.metrics",
-        "pymurmur.simulation.engine",
-        "pymurmur.viz.visualizer",
-        "pymurmur.viz.renderer",
-        "pymurmur.capture.mpl_recorder",  # P8.9 fallback
-        "pymurmur.viz.camera",
-    },
-    "pymurmur.capture.mpl_recorder": {       # P8.9: GPU-free fallback
-        "pymurmur.core.types",
-        "pymurmur.core.config",
-        "pymurmur.simulation.engine",
-    },
 }
+
+from .test_architecture_edges_data_system import ALLOWED_EDGES_SYSTEM
+
+ALLOWED_EDGES: dict[str, set[str]] = {**ALLOWED_EDGES_CORE, **ALLOWED_EDGES_SYSTEM}
 
 # ── FORBIDDEN_EDGES — never-allowed import pairs ──────────────────
 

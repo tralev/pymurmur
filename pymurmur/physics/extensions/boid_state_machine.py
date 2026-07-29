@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ._base import Extension
+from .extension_registry import register_extension
 
 if TYPE_CHECKING:
     from ..flock import PhysicsFlock
@@ -37,6 +38,7 @@ STATE_CROWDED = 2
 STATE_THREATENED = 3
 
 
+@register_extension("boid_state_machine_enabled", "boid_state_speed_mult")
 class BoidStateMachine(Extension):
     """Assigns each active boid one of 4 states based on local neighbor
     count and (if the Predator extension is active) threat proximity,

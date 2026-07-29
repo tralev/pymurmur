@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ._base import Extension
+from .extension_registry import register_extension
 
 if TYPE_CHECKING:
     from ..flock import PhysicsFlock
@@ -29,6 +30,7 @@ def _smoothstep(e0: float, e1: float, x: np.ndarray) -> np.ndarray:
 
 # ── Ripple extension (P3.7) ────────────────────────────────────────
 
+@register_extension("ripple_enabled", None)
 class Ripple(Extension):
     """3-train enveloped travelling pulses (P3.7).
 

@@ -18,12 +18,14 @@ import numpy as np
 
 from ..adaptive_speed import adaptive_speed_bonus
 from ._base import Extension
+from .extension_registry import register_extension
 
 if TYPE_CHECKING:
     from ..flock import PhysicsFlock
     from ._base import StepContext
 
 
+@register_extension("neighbor_adaptive_speed_enabled", "neighbor_adaptive_speed_mult")
 class NeighborAdaptiveSpeed(Extension):
     """Noise-free, deterministic per-boid speed cap driven by local
     neighbor count: boids with fewer neighbors than the configured

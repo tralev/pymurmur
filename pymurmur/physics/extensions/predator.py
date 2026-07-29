@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ._base import Extension
+from .extension_registry import register_extension
 
 if TYPE_CHECKING:
     from ...core.config import SimConfig
@@ -76,6 +77,7 @@ def _rotate_toward(
     return (v_rot / max(np.linalg.norm(v_rot), 1e-10)).astype(np.float32)
 
 
+@register_extension("predator_enabled", "predator_priority_accel")
 class Predator(Extension):
     """Autonomous threat agent with full approach/egress FSM (P3.8–P3.9).
 
