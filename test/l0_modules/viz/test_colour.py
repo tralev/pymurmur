@@ -25,7 +25,7 @@ class TestThemeMaterials:
 
     def test_all_themes_have_ambient(self):
         """P8.5: Each theme dict has an 'ambient' key."""
-        from pymurmur.viz.shaders import THEMES
+        from pymurmur.viz.shaders_themes import THEMES
         for name, theme in THEMES.items():
             assert "ambient" in theme, f"Theme '{name}' missing 'ambient'"
             assert isinstance(theme["ambient"], tuple), "ambient must be tuple"
@@ -33,7 +33,7 @@ class TestThemeMaterials:
 
     def test_all_themes_have_diffuse(self):
         """P8.5: Each theme dict has a 'diffuse' key."""
-        from pymurmur.viz.shaders import THEMES
+        from pymurmur.viz.shaders_themes import THEMES
         for name, theme in THEMES.items():
             assert "diffuse" in theme, f"Theme '{name}' missing 'diffuse'"
             assert isinstance(theme["diffuse"], tuple), "diffuse must be tuple"
@@ -41,21 +41,21 @@ class TestThemeMaterials:
 
     def test_ambient_values_in_range(self):
         """P8.5: Ambient RGB values are in [0, 1]."""
-        from pymurmur.viz.shaders import THEMES
+        from pymurmur.viz.shaders_themes import THEMES
         for theme in THEMES.values():
             for c in theme["ambient"]:
                 assert 0.0 <= c <= 1.0, f"ambient value {c} out of range"
 
     def test_diffuse_values_in_range(self):
         """P8.5: Diffuse RGB values are in [0, 1]."""
-        from pymurmur.viz.shaders import THEMES
+        from pymurmur.viz.shaders_themes import THEMES
         for theme in THEMES.values():
             for c in theme["diffuse"]:
                 assert 0.0 <= c <= 1.0, f"diffuse value {c} out of range"
 
     def test_themes_keep_legacy_keys(self):
         """P8.5: Legacy keys (slow, fast, spec, clear, trail, paper, ink) remain."""
-        from pymurmur.viz.shaders import THEMES
+        from pymurmur.viz.shaders_themes import THEMES
         legacy = {"slow", "fast", "spec", "clear", "trail", "paper", "ink"}
         for name, theme in THEMES.items():
             missing = legacy - set(theme.keys())
@@ -63,7 +63,7 @@ class TestThemeMaterials:
 
     def test_five_themes_exist(self):
         """P8.5/S4.6: Five themes: ink, inverse, paper, graphite, heading."""
-        from pymurmur.viz.shaders import THEMES
+        from pymurmur.viz.shaders_themes import THEMES
         assert set(THEMES.keys()) == {
             "ink", "inverse", "paper", "graphite", "heading",
         }

@@ -87,7 +87,12 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
     "pymurmur.physics.plugins.boundary.strategies": {
         "pymurmur.physics.plugins.boundary._mode",
     },
-    "pymurmur.physics.occlusion": {"pymurmur.core.types"},
+    "pymurmur.physics.occlusion": {
+        "pymurmur.core.types",
+        "pymurmur.physics.occlusion_culling",  # file-size split
+    },
+    # File-size split from occlusion.py: P4.6 culling-strategy dispatch.
+    "pymurmur.physics.occlusion_culling": set(),  # numpy/stdlib only
     "pymurmur.physics.steric":    {"pymurmur.core.types"},
     "pymurmur.physics.priority_stack": set(),  # numpy only, zero pymurmur imports
     "pymurmur.physics.adaptive_speed": set(),  # numpy only, zero pymurmur imports
@@ -132,6 +137,14 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
         "pymurmur.physics.extensions._base",
         "pymurmur.physics.forces.force_kernels",
         "pymurmur.physics.plugins.kernel_registry",  # modularity pass 7: kernel dispatch
+        "pymurmur.physics.forces.separation_primitives",  # file-size split
+    },
+    # File-size split from _base.py: separation-specific kernel dispatch
+    # (11 kernel variants — the most complex of the three primitives)
+    # and separation_force. Also hosts _is_ragged (shared by alignment/
+    # cohesion too) to avoid a circular import back into _base.py.
+    "pymurmur.physics.forces.separation_primitives": {
+        "pymurmur.physics.plugins.kernel_registry",
     },
     "pymurmur.physics.forces.force_kernels": set(),  # numpy only, zero pymurmur imports
     # Modularity pass 7: kernel registry — imports force_kernels for dispatch.
@@ -218,12 +231,19 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
         "pymurmur.core.types",
         "pymurmur.physics.plugins.force_mode",
         "pymurmur.physics.forces._base",
-        "pymurmur.physics.forces._kernels",
+        "pymurmur.physics.forces.vicsek_predator",  # file-size split
         "pymurmur.physics.plugins.neighbor_selection",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
         "pymurmur.physics.flock",
         "pymurmur.core.config",
+    },
+    # File-size split from vicsek.py: Phase 6 predator-prey helpers +
+    # resolve_species_collisions (also called externally by
+    # simulation/engine.py's P6.3 step).
+    "pymurmur.physics.forces.vicsek_predator": {
+        "pymurmur.core.config",
+        "pymurmur.physics.forces._kernels",
     },
     "pymurmur.physics.forces.influencer": {
         "pymurmur.core.types",

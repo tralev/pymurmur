@@ -24,14 +24,14 @@ class TestShaders:
 
     def test_tetrahedron_vertices_shape(self):
         """Tetrahedron mesh has 4 vertices."""
-        from pymurmur.viz.shaders import TETRA_VERTICES
+        from pymurmur.viz.shaders_meshes import TETRA_VERTICES
         assert len(TETRA_VERTICES) == 4
         for v in TETRA_VERTICES:
             assert len(v) == 3  # (x, y, z)
 
     def test_tetrahedron_faces_shape(self):
         """Tetrahedron mesh has 4 faces."""
-        from pymurmur.viz.shaders import TETRA_INDICES
+        from pymurmur.viz.shaders_meshes import TETRA_INDICES
         assert len(TETRA_INDICES) == 4
         for f in TETRA_INDICES:
             assert len(f) == 3  # 3 vertex indices
@@ -47,14 +47,14 @@ class TestShaders:
 
     def test_themes_has_five_palettes(self):
         """THEMES dict contains exactly 5 named palettes (S4.6 added "heading")."""
-        from pymurmur.viz.shaders import THEMES
+        from pymurmur.viz.shaders_themes import THEMES
         assert set(THEMES.keys()) == {
             "ink", "inverse", "paper", "graphite", "heading",
         }
 
     def test_theme_keys_all_present(self):
         """Each theme has slow, fast, spec, clear, trail colour keys."""
-        from pymurmur.viz.shaders import THEMES
+        from pymurmur.viz.shaders_themes import THEMES
         required = {"slow", "fast", "spec", "clear", "trail"}
         for name, theme in THEMES.items():
             missing = required - set(theme.keys())
@@ -62,7 +62,7 @@ class TestShaders:
 
     def test_theme_rgb_values_in_range(self):
         """All theme colour channels are floats in [0, 1]."""
-        from pymurmur.viz.shaders import THEMES
+        from pymurmur.viz.shaders_themes import THEMES
         for name, theme in THEMES.items():
             for key, colour in theme.items():
                 assert len(colour) == 3, f"{name}.{key}: expected 3 channels"
@@ -71,13 +71,13 @@ class TestShaders:
 
     def test_theme_fallback_to_ink(self):
         """Invalid theme name falls back to 'ink' via THEMES.get()."""
-        from pymurmur.viz.shaders import THEMES
+        from pymurmur.viz.shaders_themes import THEMES
         result = THEMES.get("nonexistent_theme", THEMES["ink"])
         assert result is THEMES["ink"]
 
     def test_themes_consistent_across_accesses(self):
         """Repeated THEMES access returns stable values (not mutated)."""
-        from pymurmur.viz.shaders import THEMES
+        from pymurmur.viz.shaders_themes import THEMES
         t1 = THEMES["ink"]
         t2 = THEMES["ink"]
         assert t1["slow"] == t2["slow"]
@@ -122,7 +122,7 @@ class TestShaders:
 
     def test_grid_vertices_is_valid(self):
         """GRID_VERTICES is a non-empty float32 array with shape (N, 3)."""
-        from pymurmur.viz.shaders import GRID_VERTICES
+        from pymurmur.viz.shaders_meshes import GRID_VERTICES
         assert GRID_VERTICES is not None
         assert GRID_VERTICES.ndim == 2
         assert GRID_VERTICES.shape[1] == 3

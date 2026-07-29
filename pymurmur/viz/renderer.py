@@ -41,26 +41,28 @@ from .renderer_draw import _RendererDrawMixin
 from .renderer_vao import _RendererVAOMixin
 from .shaders import (
     FRAGMENT_SHADER,
-    GRID_VERTICES,
     HUD_FRAGMENT_SHADER,
-    HUD_QUAD,
     HUD_VERTEX_SHADER,
     IMPOSTOR_FRAGMENT_SHADER,
-    IMPOSTOR_QUAD,
-    IMPOSTOR_QUAD_INDICES,
     IMPOSTOR_VERTEX_SHADER,
     SKY_FRAGMENT_SHADER,
+    SKY_VERTEX_SHADER,
+    VERTEX_SHADER,
+    WINGED_VERTEX_SHADER,
+)
+from .shaders_meshes import (
+    GRID_VERTICES,
+    HUD_QUAD,
+    IMPOSTOR_QUAD,
+    IMPOSTOR_QUAD_INDICES,
     SKY_QUAD,
     SKY_QUAD_INDICES,
-    SKY_VERTEX_SHADER,
     TETRA_INDICES,
     TETRA_VERTICES,
-    THEMES,
-    VERTEX_SHADER,
     WINGED_INDICES,
-    WINGED_VERTEX_SHADER,
     WINGED_VERTICES,
 )
+from .shaders_themes import THEMES
 from .trails import TrailRenderer
 
 if TYPE_CHECKING:

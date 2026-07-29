@@ -1,6 +1,6 @@
-"""GLSL shaders and tetrahedron mesh data for 3D rendering.
+"""GLSL shader program strings for 3D rendering.
 
-Level 2 — static data, no project imports. Only numpy for mesh arrays.
+Level 2 — static data, no project imports.
 
 P8.1: Sphere impostors — camera-facing billboard quads with a disc fragment
 shader, speed-stretched ellipsoids, and paper/ink theme colours.
@@ -8,76 +8,17 @@ shader, speed-stretched ellipsoids, and paper/ink theme colours.
 P8.2: Depth cues + Fresnel rim — depth-based quad scaling, per-fragment
 alpha fading (depth/speed/rim), and Fresnel rim highlight on impostors.
 
-P8.4: Winged flapping mesh (7-vertex bird, 6 triangles) + gradient sky.
+P8.4: Winged flapping mesh shader (7-vertex bird, 6 triangles) + gradient sky.
 
 P8.5: Per-bird colour channels — hue from seeds, predator red,
 theme ambient/diffuse material tables forwarded to shaders.
+
+Mesh vertex/index data (tetrahedron/winged/sky-quad/impostor-quad/grid/
+HUD-quad) moved to shaders_meshes.py; theme palettes moved to
+shaders_themes.py (both file-size splits of this file).
 """
 
 from __future__ import annotations
-
-import numpy as np
-
-# ── Tetrahedron mesh (4 vertices, 4 triangular faces) ────────────
-# Asymmetric: front tip at +Z for visible orientation.
-TETRA_VERTICES = np.array([
-    [ 0.0,  0.0,  1.0],  # front tip
-    [ 0.0,  0.943, -0.333],  # top
-    [-0.816, -0.471, -0.333],  # bottom-left
-    [ 0.816, -0.471, -0.333],  # bottom-right
-], dtype=np.float32)
-
-TETRA_INDICES = np.array([
-    [0, 1, 2],
-    [0, 2, 3],
-    [0, 3, 1],
-    [1, 3, 2],
-], dtype=np.uint32)
-
-# ── P8.4: Winged mesh — 7 vertices, 6 triangles (body + wings + tail) ──
-# Each vertex is (x, y, z, flap_weight).  flap_weight = 0 for body/tail,
-# ±0.5 for wing tips — the shader uses this as the oscillation amplitude.
-WINGED_VERTICES = np.array([
-    # 0: nose tip
-    [ 0.0,  0.0,  1.0,  0.0],
-    # 1: body top
-    [ 0.0,  0.25, -0.2,  0.0],
-    # 2: body bottom
-    [ 0.0, -0.15, -0.2,  0.0],
-    # 3: right wing tip (flaps up/down)
-    [ 0.65,  0.05,  0.0,  0.5],
-    # 4: left wing tip (flaps opposite)
-    [-0.65,  0.05,  0.0, -0.5],
-    # 5: tail upper
-    [ 0.0,  0.1, -0.7,  0.0],
-    # 6: tail lower
-    [ 0.0, -0.05, -0.7,  0.0],
-], dtype=np.float32)
-
-WINGED_INDICES = np.array([
-    # Body (2 triangles)
-    [0, 1, 2],   # right body panel
-    [0, 2, 1],   # left body panel (opposite winding)
-    # Wings (2 triangles)
-    [1, 3, 2],   # right wing
-    [1, 2, 4],   # left wing
-    # Tail (2 triangles)
-    [2, 1, 5],   # tail upper
-    [1, 2, 6],   # tail lower
-], dtype=np.uint32)
-
-# ── Fullscreen quad for gradient sky (2 triangles, clip-space) ────
-SKY_QUAD = np.array([
-    [-1.0, -1.0],
-    [ 1.0, -1.0],
-    [ 1.0,  1.0],
-    [-1.0,  1.0],
-], dtype=np.float32)
-
-SKY_QUAD_INDICES = np.array([
-    [0, 1, 2],
-    [0, 2, 3],
-], dtype=np.uint32)
 
 # ── Vertex shader — instanced, per-bird LookAt rotation ──────────
 VERTEX_SHADER = """
@@ -328,20 +269,6 @@ void main() {
 }
 """
 
-# ── P8.1: Sphere impostor quad mesh ──────────────────────────────
-# Camera-facing unit quad, centred at origin, 2 triangles.
-IMPOSTOR_QUAD = np.array([
-    [-0.5, -0.5],   # bottom-left
-    [ 0.5, -0.5],   # bottom-right
-    [ 0.5,  0.5],   # top-right
-    [-0.5,  0.5],   # top-left
-], dtype=np.float32)
-
-IMPOSTOR_QUAD_INDICES = np.array([
-    [0, 1, 2],
-    [0, 2, 3],
-], dtype=np.uint32)
-
 # ── P8.1+P8.2: Impostor vertex shader — billboard + speed stretch + depth ──
 IMPOSTOR_VERTEX_SHADER = """
 #version 330 core
@@ -445,99 +372,7 @@ void main() {
 }
 """
 
-# ── Theme palettes (4 monochrome) + P8.5 material tables ──────────────────
-THEMES: dict[str, dict[str, tuple[float, float, float]]] = {
-    "ink": {
-        "ambient": (0.02, 0.04, 0.10),
-        "diffuse": (0.06, 0.12, 0.40),
-        "slow": (0.1, 0.2, 0.5),
-        "fast": (0.4, 0.8, 1.0),
-        "spec": (1.0, 1.0, 1.0),
-        "clear": (0.05, 0.05, 0.1),
-        "trail": (0.3, 0.6, 0.9),
-        "paper": (0.15, 0.25, 0.55),
-        "ink": (0.02, 0.04, 0.12),
-    },
-    "inverse": {
-        "ambient": (0.25, 0.23, 0.20),
-        "diffuse": (0.30, 0.28, 0.22),
-        "slow": (0.8, 0.75, 0.7),
-        "fast": (0.2, 0.15, 0.1),
-        "spec": (0.1, 0.1, 0.1),
-        "clear": (0.9, 0.88, 0.85),
-        "trail": (0.4, 0.35, 0.3),
-        "paper": (0.85, 0.82, 0.78),
-        "ink": (0.05, 0.05, 0.06),
-    },
-    "paper": {
-        "ambient": (0.18, 0.16, 0.12),
-        "diffuse": (0.35, 0.28, 0.16),
-        "slow": (0.25, 0.2, 0.15),
-        "fast": (0.45, 0.35, 0.2),
-        "spec": (1.0, 0.95, 0.8),
-        "clear": (0.95, 0.92, 0.85),
-        "trail": (0.5, 0.4, 0.25),
-        "paper": (0.92, 0.88, 0.82),
-        "ink": (0.15, 0.12, 0.10),
-    },
-    "graphite": {
-        "ambient": (0.08, 0.08, 0.08),
-        "diffuse": (0.45, 0.45, 0.45),
-        "slow": (0.15, 0.15, 0.15),
-        "fast": (0.85, 0.85, 0.85),
-        "spec": (0.3, 0.3, 0.3),
-        "clear": (0.1, 0.1, 0.1),
-        "trail": (0.5, 0.5, 0.5),
-        "paper": (0.25, 0.25, 0.25),
-        "ink": (0.05, 0.05, 0.05),
-    },
-    # S4.6: heading-hue debug theme — same lighting as "ink"; per-bird
-    # hue source (velocity azimuth vs seed) is a renderer-level decision,
-    # not a lighting decision.
-    "heading": {
-        "ambient": (0.02, 0.04, 0.10),
-        "diffuse": (0.06, 0.12, 0.40),
-        "slow": (0.1, 0.2, 0.5),
-        "fast": (0.4, 0.8, 1.0),
-        "spec": (1.0, 1.0, 1.0),
-        "clear": (0.05, 0.05, 0.1),
-        "trail": (0.3, 0.6, 0.9),
-        "paper": (0.15, 0.25, 0.55),
-        "ink": (0.02, 0.04, 0.12),
-    },
-}
-
-# ── Grid line vertices (XY plane, centered on origin) ────────────
-GRID_VERTICES = np.array([
-    # X-axis lines
-    [-1000, -1000, 0], [-1000, 1000, 0],
-    [-750, -1000, 0], [-750, 1000, 0],
-    [-500, -1000, 0], [-500, 1000, 0],
-    [-250, -1000, 0], [-250, 1000, 0],
-    [0, -1000, 0], [0, 1000, 0],
-    [250, -1000, 0], [250, 1000, 0],
-    [500, -1000, 0], [500, 1000, 0],
-    [750, -1000, 0], [750, 1000, 0],
-    [1000, -1000, 0], [1000, 1000, 0],
-    # Y-axis lines
-    [-1000, -1000, 0], [1000, -1000, 0],
-    [-1000, -750, 0], [1000, -750, 0],
-    [-1000, -500, 0], [1000, -500, 0],
-    [-1000, -250, 0], [1000, -250, 0],
-    [-1000, 0, 0], [1000, 0, 0],
-    [-1000, 250, 0], [1000, 250, 0],
-    [-1000, 500, 0], [1000, 500, 0],
-    [-1000, 750, 0], [1000, 750, 0],
-    [-1000, 1000, 0], [1000, 1000, 0],
-], dtype=np.float32)
-
 # ── P10.3: HUD shaders — 2D orthographic rendering ───────────────
-
-# Simple unit quad (0,0)→(1,1) in 2D for HUD rect rendering
-HUD_QUAD = np.array([
-    0.0, 0.0,  1.0, 0.0,  1.0, 1.0,  # tri 1
-    0.0, 0.0,  1.0, 1.0,  0.0, 1.0,  # tri 2
-], dtype=np.float32)
 
 HUD_VERTEX_SHADER = """
 #version 330 core

@@ -24,6 +24,7 @@ from ..physics.forces import (
 )
 from ..physics.plugins.obstacle_avoidance import OBSTACLE_AVOIDANCE_REGISTRY
 from ..physics.priority_stack import allocate_priority_budget
+from .command_queue import CommandQueue, _CommandQueueMixin
 
 if TYPE_CHECKING:
     from ..core.config import SimConfig
@@ -67,29 +68,15 @@ def _apply_influencer_density_init(flock: PhysicsFlock, config: SimConfig) -> No
         flock.velocities[:] = 0.0
 
 
-class CommandQueue:
-    """Pending live mutations — drained by engine.step() before integration."""
-
-    def __init__(self) -> None:
-        self.pending_add: int = 0
-        self.pending_remove: int = 0
-        self.pending_reset: bool = False
-        # P10.4: Cursor-ray spawning
-        self.pending_spawn_bird: list[tuple[float, float, float]] = []
-        self.pending_spawn_predator: list[tuple[float, float, float]] = []
-        self.pending_clear: bool = False
-        # S2.E6: pilotable-flock — accumulated per-axis move directions
-        # (camera-frame or world-frame, caller's choice) since the last drain.
-        self.pending_pilot_move: list[tuple[float, float, float]] = []
-        self.pending_pilot_toggle: bool | None = None  # None = no change queued
-
-
-class SimulationEngine:
+class SimulationEngine(_CommandQueueMixin):
     """Orchestrates one simulation timestep.
 
     Owns the flock, extensions, metrics, and a CommandQueue for live
     mutations. step() is the atomic unit — drains commands, then runs
     extensions → index → forces → integrate → metrics.
+
+    enqueue_*/drain_commands (the command-queue API) are provided by
+    _CommandQueueMixin (file-size split — see .command_queue).
     """
 
     def __init__(self, config: SimConfig) -> None:
@@ -145,90 +132,16 @@ class SimulationEngine:
     def obstacle_scene(self, value) -> None:
         self._obstacle_scene = value
 
-    # ── Command queue ─────────────────────────────────────────
+    def _drain_pilot_commands(self) -> None:
+        """S2.E6: Pilotable flock — drain toggle + accumulated move commands.
 
-    def enqueue_add(self, count: int) -> None:
-        """Queue boids to be added on the next step()."""
-        self.commands.pending_add += count
-
-    def enqueue_remove(self, count: int) -> None:
-        """Queue boids to be removed on the next step()."""
-        self.commands.pending_remove += count
-
-    def enqueue_reset(self) -> None:
-        """Queue a full simulation reset on the next step()."""
-        self.commands.pending_reset = True
-
-    def enqueue_spawn(self, position: tuple[float, float, float],
-                      is_predator: bool = False) -> None:
-        """P10.4: Queue a boid spawn at a specific world position."""
-        if is_predator:
-            self.commands.pending_spawn_predator.append(position)
-        else:
-            self.commands.pending_spawn_bird.append(position)
-
-    def enqueue_clear(self) -> None:
-        """P10.4: Queue clearing all active boids."""
-        self.commands.pending_clear = True
-
-    def enqueue_pilot_move(self, direction: tuple[float, float, float]) -> None:
-        """S2.E6: Queue a pilot-point displacement (unit direction vector).
-
-        Scaled by influencer_pilot_speed * unit-scale U * dt when drained.
-        A no-op unless config.mode == "influencer" and pilot is enabled.
-        """
-        self.commands.pending_pilot_move.append(direction)
-
-    def enqueue_pilot_toggle(self, enabled: bool) -> None:
-        """S2.E6: Queue enabling/disabling pilot mode on the next step()."""
-        self.commands.pending_pilot_toggle = enabled
-
-    def drain_commands(self) -> None:
-        """Execute all pending add/remove/reset commands.
-
-        Called at the start of step() for headless users, and also
-        called by the viz loop on every frame (including paused) so
-        that +/- mutations take effect immediately.
+        Force-mode-aware (reaches into InfluencerMode's pilot target), so
+        this stays on SimulationEngine itself rather than
+        _CommandQueueMixin (see command_queue.py's docstring) — only
+        simulation.engine may import both physics.flock and
+        physics.forces (I4.2 M3 architecture guard).
         """
         cq = self.commands
-
-        if cq.pending_reset:
-            cq.pending_reset = False
-            cq.pending_add = 0
-            cq.pending_remove = 0
-            self.reset()
-            return
-
-        if cq.pending_add > 0:
-            added = self.flock.add_boids(cq.pending_add, self.config)
-            self.config.num_boids = self.flock.N_active
-            cq.pending_add -= added
-
-        if cq.pending_remove > 0:
-            removed = self.flock.remove_boids(cq.pending_remove)
-            self.config.num_boids = self.flock.N_active
-            cq.pending_remove -= removed
-
-        # P10.4: Drain cursor-ray spawns
-        for pos in cq.pending_spawn_bird:
-            self.flock.spawn_at(pos, is_predator=False,
-                               v0=self.config.v0, rng=self.flock.rng)
-        self.config.num_boids = self.flock.N_active
-        cq.pending_spawn_bird.clear()
-
-        for pos in cq.pending_spawn_predator:
-            self.flock.spawn_at(pos, is_predator=True,
-                               v0=self.config.v0, rng=self.flock.rng)
-        self.config.num_boids = self.flock.N_active
-        cq.pending_spawn_predator.clear()
-
-        # P10.4: Clear all boids
-        if cq.pending_clear:
-            self.flock.active[:] = False
-            self.config.num_boids = 0
-            cq.pending_clear = False
-
-        # S2.E6: Pilotable flock — drain toggle + accumulated move commands
         if self.config.mode == "influencer" and self.config.influencer_pilot_enabled:
             from ..physics.forces.influencer import InfluencerMode, PilotTarget
 
@@ -492,7 +405,7 @@ class SimulationEngine:
 
         # 4b. P6.3: Species collision resolution
         if self.config.mode == "vicsek":
-            from ..physics.forces.vicsek import resolve_species_collisions
+            from ..physics.forces.vicsek_predator import resolve_species_collisions
             resolve_species_collisions(
                 self.flock.positions, self.flock.is_predator, self.config,
                 self.flock.active,

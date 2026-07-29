@@ -24,6 +24,17 @@ ALLOWED_EDGES_SYSTEM: dict[str, set[str]] = {
         "pymurmur.physics.priority_stack",
         "pymurmur.analysis.metrics",
         "pymurmur.analysis.perf",      # S4.10: PerfDiagnostics
+        "pymurmur.simulation.command_queue",  # file-size split
+    },
+    # File-size split from engine.py: CommandQueue + _CommandQueueMixin
+    # (enqueue_*/drain_commands). The influencer-pilot-specific draining
+    # (needs physics.forces.influencer) deliberately stays on
+    # SimulationEngine itself as _drain_pilot_commands() — only
+    # simulation.engine may import both physics.flock and physics.forces
+    # (I4.2 M3 architecture guard), so this module stays flock-only.
+    "pymurmur.simulation.command_queue": {
+        "pymurmur.core.config",
+        "pymurmur.physics.flock",
     },
 
     # ── Tier F1: Observables — core + read flock ──
@@ -127,6 +138,8 @@ ALLOWED_EDGES_SYSTEM: dict[str, set[str]] = {
         "pymurmur.core.config",
         "pymurmur.physics.flock",
         "pymurmur.viz.shaders",
+        "pymurmur.viz.shaders_meshes",  # file-size split from shaders.py
+        "pymurmur.viz.shaders_themes",  # file-size split from shaders.py
         "pymurmur.viz.camera",
         "pymurmur.viz.trails",
         "pymurmur.viz.mesh_registry",  # S4.4a
@@ -144,6 +157,10 @@ ALLOWED_EDGES_SYSTEM: dict[str, set[str]] = {
     "pymurmur.viz.shaders": {
         "pymurmur.core.types",
     },
+    # File-size splits from shaders.py: mesh vertex/index data (numpy
+    # only) and theme palettes (pure dict, zero pymurmur imports).
+    "pymurmur.viz.shaders_meshes": set(),
+    "pymurmur.viz.shaders_themes": set(),
     "pymurmur.viz.camera": {
         "pymurmur.core.types",
         "pymurmur.core.config",
@@ -177,6 +194,11 @@ ALLOWED_EDGES_SYSTEM: dict[str, set[str]] = {
         "pymurmur.viz.renderer",
         "pymurmur.viz.shaders",
         "pymurmur.viz.camera",
+        "pymurmur.viz.trails_modes",  # file-size split
+    },
+    # File-size split from trails.py: accumulation/lines trail-mode mixin.
+    "pymurmur.viz.trails_modes": {
+        "pymurmur.physics.flock",  # TYPE_CHECKING only
     },
 
     # ── Viz __init__ (re-exports) ──

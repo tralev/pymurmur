@@ -13,10 +13,8 @@ import pytest
 
 from pymurmur.core.config import SimConfig
 from pymurmur.physics.flock import PhysicsFlock
-from pymurmur.physics.forces.vicsek import (
-    resolve_species_collisions,
-    vicsek_forces,
-)
+from pymurmur.physics.forces.vicsek import vicsek_forces
+from pymurmur.physics.forces.vicsek_predator import resolve_species_collisions
 
 pytestmark = pytest.mark.guard
 

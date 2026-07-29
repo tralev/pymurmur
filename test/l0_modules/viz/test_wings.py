@@ -25,25 +25,25 @@ class TestWingedMeshGeometry:
 
     def test_winged_vertices_shape(self):
         """P8.4: WINGED_VERTICES is (7, 4) — xyz + flap_weight."""
-        from pymurmur.viz.shaders import WINGED_VERTICES
+        from pymurmur.viz.shaders_meshes import WINGED_VERTICES
         assert WINGED_VERTICES.shape == (7, 4)
         assert WINGED_VERTICES.dtype == np.float32
 
     def test_winged_indices_shape(self):
         """P8.4: WINGED_INDICES is (6, 3) — 6 triangles."""
-        from pymurmur.viz.shaders import WINGED_INDICES
+        from pymurmur.viz.shaders_meshes import WINGED_INDICES
         assert WINGED_INDICES.shape == (6, 3)
         assert WINGED_INDICES.dtype == np.uint32
 
     def test_winged_nose_at_front(self):
         """P8.4: Vertex 0 (nose tip) points +Z."""
-        from pymurmur.viz.shaders import WINGED_VERTICES
+        from pymurmur.viz.shaders_meshes import WINGED_VERTICES
         nose = WINGED_VERTICES[0]
         assert nose[2] > 0.5, "Nose should be at front (+Z)"
 
     def test_winged_tail_at_back(self):
         """P8.4: Tail vertices (5, 6) are behind the body centre (Z < -0.5)."""
-        from pymurmur.viz.shaders import WINGED_VERTICES
+        from pymurmur.viz.shaders_meshes import WINGED_VERTICES
         tail_top = WINGED_VERTICES[5]
         tail_bottom = WINGED_VERTICES[6]
         assert tail_top[2] < -0.5, "Tail upper should be behind centre"
@@ -51,7 +51,7 @@ class TestWingedMeshGeometry:
 
     def test_wing_tips_have_flap_weight(self):
         """P8.4: Wing tips (vertices 3, 4) have non-zero flap_weight."""
-        from pymurmur.viz.shaders import WINGED_VERTICES
+        from pymurmur.viz.shaders_meshes import WINGED_VERTICES
         right_wing = WINGED_VERTICES[3]
         left_wing = WINGED_VERTICES[4]
         assert right_wing[3] != 0.0, "Right wing tip must have flap_weight"
@@ -63,25 +63,25 @@ class TestWingedMeshGeometry:
 
     def test_body_vertices_no_flap(self):
         """P8.4: Body vertices (0, 1, 2, 5, 6) have zero flap_weight."""
-        from pymurmur.viz.shaders import WINGED_VERTICES
+        from pymurmur.viz.shaders_meshes import WINGED_VERTICES
         for i in (0, 1, 2, 5, 6):
             assert WINGED_VERTICES[i, 3] == 0.0, f"Vertex {i} should have 0 flap_weight"
 
     def test_winged_triangle_count(self):
         """P8.4: Exactly 6 triangles — 2 body + 2 wing + 2 tail."""
-        from pymurmur.viz.shaders import WINGED_INDICES
+        from pymurmur.viz.shaders_meshes import WINGED_INDICES
         assert len(WINGED_INDICES) == 6
 
     def test_all_indices_in_range(self):
         """P8.4: All indices reference valid vertices (0–6)."""
-        from pymurmur.viz.shaders import WINGED_INDICES
+        from pymurmur.viz.shaders_meshes import WINGED_INDICES
         flat = WINGED_INDICES.flatten()
         assert flat.min() >= 0
         assert flat.max() <= 6
 
     def test_winged_mesh_is_larger_than_tetra(self):
         """P8.4: Winged mesh has more vertices and faces than tetrahedron."""
-        from pymurmur.viz.shaders import (
+        from pymurmur.viz.shaders_meshes import (
             TETRA_INDICES,
             TETRA_VERTICES,
             WINGED_INDICES,
@@ -98,17 +98,17 @@ class TestSkyQuad:
 
     def test_sky_quad_shape(self):
         """P8.4: SKY_QUAD has 4 vertices with 2D positions."""
-        from pymurmur.viz.shaders import SKY_QUAD
+        from pymurmur.viz.shaders_meshes import SKY_QUAD
         assert SKY_QUAD.shape == (4, 2)
 
     def test_sky_quad_indices(self):
         """P8.4: SKY_QUAD_INDICES has 2 triangles."""
-        from pymurmur.viz.shaders import SKY_QUAD_INDICES
+        from pymurmur.viz.shaders_meshes import SKY_QUAD_INDICES
         assert SKY_QUAD_INDICES.shape == (2, 3)
 
     def test_sky_quad_covers_fullscreen(self):
         """P8.4: Sky quad corners are at clip-space extents."""
-        from pymurmur.viz.shaders import SKY_QUAD
+        from pymurmur.viz.shaders_meshes import SKY_QUAD
         assert SKY_QUAD.min() == -1.0
         assert SKY_QUAD.max() == 1.0
 
@@ -319,7 +319,7 @@ class TestFlapAnimation:
 
     def test_flap_weight_signs_oppose_for_wings(self):
         """P8.4: Right wing flaps up when left flaps down (anti-symmetric)."""
-        from pymurmur.viz.shaders import WINGED_VERTICES
+        from pymurmur.viz.shaders_meshes import WINGED_VERTICES
         right = WINGED_VERTICES[3, 3]
         left = WINGED_VERTICES[4, 3]
         # One is positive, one negative
@@ -344,7 +344,7 @@ class TestFlapAnimation:
 
     def test_flap_amplitude_is_flap_weight(self):
         """P8.4: Wings oscillate with amplitude proportional to flap_weight."""
-        from pymurmur.viz.shaders import WINGED_VERTICES
+        from pymurmur.viz.shaders_meshes import WINGED_VERTICES
         # Wing tips have flap_weight = ±0.5
         assert abs(WINGED_VERTICES[3, 3]) == pytest.approx(0.5)
         assert abs(WINGED_VERTICES[4, 3]) == pytest.approx(0.5)

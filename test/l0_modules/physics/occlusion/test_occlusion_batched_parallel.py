@@ -7,10 +7,10 @@ import numpy as np
 import pytest
 
 from pymurmur.physics.occlusion import (
-    _occlusion_culling_chunk,
     spherical_cap_occlusion,
     spherical_cap_occlusion_batched,
 )
+from pymurmur.physics.occlusion_culling import _occlusion_culling_chunk
 
 # ===================================================================
 # I1.3 — Batched occlusion tests
