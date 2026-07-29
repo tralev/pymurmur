@@ -25,6 +25,7 @@ projection:
   phi_p: 0.03             # projection weight (δ̂ coherence)
   phi_a: 0.80             # alignment weight (neighbor heading)
   sigma: 4                # topological neighbor count (σ)
+  heading_inertia: 0.3    # real field, was 0.0 (default) in every preset
 
 # ── Reynolds Spatial Mode (used when mode = spatial) ─────────────────
 spatial:

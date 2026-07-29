@@ -68,6 +68,19 @@ Generated files:
                                                 all-to-all interaction
                                                 instead of the default
                                                 hybrid k-NN filter)
+    examples/metrics_kernel_bell_zone.json / .csv
+                                               (conf/kernels/kernel_bell_zone.yaml —
+                                                the one kernel name valid
+                                                for separation, alignment,
+                                                AND cohesion at once)
+    examples/metrics_filter_topological.json / .csv
+                                               (conf/filters/filter_topological.yaml —
+                                                influence_count-capped,
+                                                no visual_range distance
+                                                filter)
+    examples/metrics_filter_none.json / .csv  (conf/filters/filter_none.yaml —
+                                                every k-NN candidate
+                                                returned unfiltered)
     examples/metrics_full.json / .csv         (conf/murmuration_showcase.yaml,
                                                 metrics_interval=1 — every
                                                 expensive metric populates
@@ -116,6 +129,9 @@ EXAMPLE_TARGETS: list[tuple[str, str | None, dict]] = [
     ("speed_law_quadratic", "conf/speed_laws/speed_law_quadratic.yaml", {}),
     ("speed_law_softened", "conf/speed_laws/speed_law_softened.yaml", {}),
     ("filter_global", "conf/filters/filter_global.yaml", {}),
+    ("kernel_bell_zone", "conf/kernels/kernel_bell_zone.yaml", {}),
+    ("filter_topological", "conf/filters/filter_topological.yaml", {}),
+    ("filter_none", "conf/filters/filter_none.yaml", {}),
     ("full", "conf/murmuration_showcase.yaml", {"frames": 40, "metrics_interval": 1}),
 ]
 

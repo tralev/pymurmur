@@ -1,0 +1,80 @@
+# conf/kernels/kernel_bell_zone.yaml — kernel-coverage reference
+#
+# 10th preset in conf/kernels/. bell_zone itself already has guard
+# coverage via murmuration_showcase.yaml (it's the one kernel name
+# valid for all three registries at once — separation, alignment, AND
+# cohesion), so this file doesn't close a coverage-guard gap. It exists
+# purely so scripts/generate_examples.py has a clean, single-purpose
+# bell_zone source — showcase.yaml simultaneously exercises
+# sphere_soft boundary, hash_grid spatial index, and 4 behavioral
+# extensions, none of which are relevant to demonstrating bell_zone's
+# own cosine-bell-weighted falloff in isolation.
+#
+# This file demonstrates: separation_kernel=alignment_kernel=cohesion_kernel=bell_zone.
+#
+# Coverage/reference fixture, not tuned for visual character. Kept out
+# of top-level conf/ (and so out of --list-configs) since these are
+# narrow technical fixtures, not exploration-worthy presets -- unlike
+# conf/examples/murmuration_nested.yaml, these ARE fully loadable and
+# validated (see test/l4_system/test_config_files.py).
+
+domain:
+  width: 1000.0
+  height: 700.0
+  depth: 400.0
+
+flock:
+  num_boids: 100
+  boid_size: 9.0
+  v0: 4.0
+  max_force: 0.15
+  visual_range: 70.0
+
+mode: spatial
+
+spatial:
+  separation_weight: 4.5
+  alignment_weight: 0.65
+  cohesion_weight: 0.75
+  separation_kernel: bell_zone
+  alignment_kernel: bell_zone
+  cohesion_kernel: bell_zone
+  separation_kernel_radius: 20.0   # zone center — bell_zone consults this
+  kernel_zone_width: 10.0           # zone half-width — bell_zone consults this
+
+boundary_mode: toroidal
+
+extensions:
+  predator_enabled: false
+  roosting_enabled: false
+  wander_enabled: false
+  ripple_enabled: false
+
+performance:
+  spatial_index: auto
+  instance_buffer_chunk: 50000
+
+metrics:
+  detail_level: 1
+  interval: 60
+
+seed: 42
+
+visual:
+  fps: 60
+  window_width: 1200
+  window_height: 800
+  show_grid: false
+  auto_rotate: false
+  theme: ink
+
+capture:
+  width: 800
+  height: 600
+  frames: 240
+  every: 3
+  fps: 20
+  output: output/kernel_bell_zone.gif
+  metrics_csv: output/metrics_kernel_bell_zone.csv
+  metrics_json: output/metrics_kernel_bell_zone.json
+  with_viz: true

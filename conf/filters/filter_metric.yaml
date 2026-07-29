@@ -42,6 +42,12 @@ extensions:
   wander_enabled: false
   ripple_enabled: false
 
+# steric_visible_only: restricts the (nonzero-by-default) steric
+# repulsion force to occlusion-visible neighbors only — real
+# RefinementConfig field with zero preset coverage anywhere before this.
+refinements:
+  steric_visible_only: true
+
 performance:
   spatial_index: auto
   instance_buffer_chunk: 50000

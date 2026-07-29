@@ -34,6 +34,13 @@ field:
   wave_gain: 0.03
   inertia: 0.78
   drift_pull: 0.08
+  # disabled_terms: real FieldConfig field with zero preset coverage
+  # anywhere before this — skips the named field.py FORCE term at
+  # runtime. floating_boundary chosen since it only reuses
+  # field_shell_radius_base/boundary_avoidance_factor (generic fields
+  # every field preset already has), not any of this preset's own
+  # deliberately-tuned values above.
+  disabled_terms: ["floating_boundary"]
 
 # ── Extensions ──────────────────────────────────────────────────────
 extensions:

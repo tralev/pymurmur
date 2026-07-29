@@ -27,6 +27,7 @@ vicsek:
   couplage: 0.8                # η: alignment coupling strength ∈ [0,1]
   diffusion: 0.8               # D: angular noise coefficient
   time_step: 1.0               # Δt per Vicsek update
+  heading_inertia: 0.3         # real field, was 0.0 (default) in every preset
 
   # ── Prey parameters ──
   velocity: 1.0                # constant prey speed
