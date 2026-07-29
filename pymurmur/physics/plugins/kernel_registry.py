@@ -94,67 +94,67 @@ def register_cohesion(name: str, **kwargs: Any):
 
 @register_separation("sum")
 def _sep_sum(diffs, dists, close):
-    from .force_kernels import kernel_sum
+    from ..forces.force_kernels import kernel_sum
     return kernel_sum(diffs, dists, close)
 
 
 @register_separation("mean")
 def _sep_mean(diffs, dists, close):
-    from .force_kernels import kernel_mean
+    from ..forces.force_kernels import kernel_mean
     return kernel_mean(diffs, dists, close)
 
 
 @register_separation("unit")
 def _sep_unit(diffs, dists, close):
-    from .force_kernels import kernel_unit
+    from ..forces.force_kernels import kernel_unit
     return kernel_unit(diffs, dists, close)
 
 
 @register_separation("exp", needs_radius=True)
 def _sep_exp(diffs, dists, close, radius):
-    from .force_kernels import kernel_exp
+    from ..forces.force_kernels import kernel_exp
     return kernel_exp(diffs, dists, close, radius)
 
 
 @register_separation("linear_ramp", needs_radius=True)
 def _sep_linear_ramp(diffs, dists, close, radius):
-    from .force_kernels import kernel_linear_ramp
+    from ..forces.force_kernels import kernel_linear_ramp
     return kernel_linear_ramp(diffs, dists, close, radius)
 
 
 @register_separation("asymptotic", needs_radius=True)
 def _sep_asymptotic(diffs, dists, close, radius):
-    from .force_kernels import kernel_asymptotic
+    from ..forces.force_kernels import kernel_asymptotic
     return kernel_asymptotic(diffs, dists, close, radius)
 
 
 @register_separation("velocity_weighted", needs_closing_speed=True)
 def _sep_velocity_weighted(diffs, dists, close, closing_speed):
-    from .force_kernels import kernel_velocity_weighted
+    from ..forces.force_kernels import kernel_velocity_weighted
     return kernel_velocity_weighted(diffs, dists, close, closing_speed)
 
 
 @register_separation("cosine_zone", needs_heading=True)
 def _sep_cosine_zone(diffs, dists, close, heading):
-    from .force_kernels import kernel_cosine_zone
+    from ..forces.force_kernels import kernel_cosine_zone
     return kernel_cosine_zone(diffs, dists, close, heading)
 
 
 @register_separation("linear")
 def _sep_linear(diffs, dists, close):
-    from .force_kernels import kernel_linear
+    from ..forces.force_kernels import kernel_linear
     return kernel_linear(diffs, dists, close)
 
 
 @register_separation("nearest_only")
 def _sep_nearest_only(diffs, dists, close):
-    from .force_kernels import kernel_nearest_only
+    from ..forces.force_kernels import kernel_nearest_only
     return kernel_nearest_only(diffs, dists, close)
 
 
 @register_separation("bell_zone", needs_radius=True, needs_zone_width=True)
 def _sep_bell_zone(diffs, dists, close, radius, zone_width):
-    from .force_kernels import kernel_bell_zone
+    from ..forces.force_kernels import kernel_bell_zone
     return kernel_bell_zone(diffs, dists, close, radius, zone_width)
 
 
@@ -167,19 +167,19 @@ def _align_unweighted(diffs, dists, close, neighbor_vel):
 
 @register_alignment("fov_weighted", needs_heading=True)
 def _align_fov_weighted(diffs, dists, close, neighbor_vel, heading, fov_min):
-    from .force_kernels import kernel_fov_weighted
+    from ..forces.force_kernels import kernel_fov_weighted
     return kernel_fov_weighted(diffs, dists, close, heading, neighbor_vel, fov_min)
 
 
 @register_alignment("circular_mean_2d")
 def _align_circular_mean(diffs, dists, close, neighbor_vel):
-    from .force_kernels import kernel_circular_mean_2d
+    from ..forces.force_kernels import kernel_circular_mean_2d
     return kernel_circular_mean_2d(diffs, dists, close, neighbor_vel)
 
 
 @register_alignment("bell_zone", needs_radius=True, needs_zone_width=True)
 def _align_bell_zone(diffs, dists, close, neighbor_vel, radius, zone_width):
-    from .force_kernels import kernel_bell_zone_alignment
+    from ..forces.force_kernels import kernel_bell_zone_alignment
     return kernel_bell_zone_alignment(diffs, dists, close, neighbor_vel, radius, zone_width)
 
 
@@ -187,17 +187,17 @@ def _align_bell_zone(diffs, dists, close, neighbor_vel, radius, zone_width):
 
 @register_cohesion("unweighted")
 def _coh_unweighted(diffs):
-    from .force_kernels import kernel_unweighted
+    from ..forces.force_kernels import kernel_unweighted
     return kernel_unweighted(diffs)
 
 
 @register_cohesion("inverse_distance")
 def _coh_inverse_distance(diffs, dists, close):
-    from .force_kernels import kernel_inverse_distance
+    from ..forces.force_kernels import kernel_inverse_distance
     return kernel_inverse_distance(diffs, dists, close)
 
 
 @register_cohesion("bell_zone", needs_radius=True, needs_zone_width=True)
 def _coh_bell_zone(diffs, dists, close, radius, zone_width):
-    from .force_kernels import kernel_bell_zone_cohesion
+    from ..forces.force_kernels import kernel_bell_zone_cohesion
     return kernel_bell_zone_cohesion(diffs, dists, close, radius, zone_width)

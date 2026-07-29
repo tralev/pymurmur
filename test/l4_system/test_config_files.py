@@ -51,7 +51,7 @@ class TestConfigFileValidation:
     def test_config_modes_valid(self):
         """Config mode is a registered ForceMode (S2.C8: was a stale
         hardcoded 5-mode set that predated angle/marl registration)."""
-        from pymurmur.physics.forces._mode import MODE_REGISTRY
+        from pymurmur.physics.plugins.force_mode import MODE_REGISTRY
         valid = set(MODE_REGISTRY.keys())
         for path in ALL_CONFIGS:
             data = _load_config(path)

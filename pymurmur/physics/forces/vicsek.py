@@ -23,8 +23,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ._mode import ForceFn, ForceMode, register
-from .neighbor_selection import NEIGHBOR_SELECTOR_REGISTRY
+from ..plugins.force_mode import ForceFn, ForceMode, register
+from ..plugins.neighbor_selection import NEIGHBOR_SELECTOR_REGISTRY
 
 if TYPE_CHECKING:
     from ...core.config import SimConfig

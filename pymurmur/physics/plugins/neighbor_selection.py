@@ -102,7 +102,7 @@ class HybridSelector(NeighborSelector):
 
     @staticmethod
     def select(positions, velocities, active, index, config, **kwargs):
-        from .spatial_helpers import _query_neighbors
+        from ..forces.spatial_helpers import _query_neighbors
 
         return _query_neighbors(positions, active, index, config, **kwargs)
 
@@ -119,7 +119,7 @@ class TopologicalVisibilitySelector(NeighborSelector):
 
     @staticmethod
     def select(positions, velocities, active, index, config, **kwargs):
-        from .projection import _topological_neighbors_batch
+        from ..forces.projection import _topological_neighbors_batch
 
         active_idx = np.where(active)[0]
         sigma = kwargs["sigma"]

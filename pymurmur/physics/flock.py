@@ -17,7 +17,7 @@ from .boid import (
     integrate,
 )
 from .spatial_index import KDTreeIndex, SpatialHashGrid
-from .spatial_index_strategy import (
+from .plugins.spatial_index_strategy import (
     AUTO_INDEX_THRESHOLD,
     SPATIAL_INDEX_STRATEGY_REGISTRY,
 )

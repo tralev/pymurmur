@@ -26,8 +26,8 @@ from .boid_init import (  # noqa: F401 — re-exported for back-compat
     random_positions,
     random_unit_sphere,
 )
-from .boundary import BOUNDARY_REGISTRY
-from .speed_model import SPEED_MODEL_REGISTRY
+from .plugins.boundary import BOUNDARY_REGISTRY
+from .plugins.speed_model import SPEED_MODEL_REGISTRY
 
 # ── Integration kernel ────────────────────────────────────────────
 

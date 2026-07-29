@@ -95,7 +95,7 @@ def test_double_boid_size_doubles_radii():
 
 def test_angle_mode_in_registry():
     """'angle' key exists in MODE_REGISTRY."""
-    from pymurmur.physics.forces._mode import MODE_REGISTRY
+    from pymurmur.physics.plugins.force_mode import MODE_REGISTRY
 
     assert "angle" in MODE_REGISTRY, "angle must be in MODE_REGISTRY"
     assert MODE_REGISTRY["angle"] == AngleMode

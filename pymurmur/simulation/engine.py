@@ -22,7 +22,7 @@ from ..physics.forces import (
     compute_all_forces,
     mode_needs_index,
 )
-from ..physics.obstacle_avoidance import OBSTACLE_AVOIDANCE_REGISTRY
+from ..physics.plugins.obstacle_avoidance import OBSTACLE_AVOIDANCE_REGISTRY
 from ..physics.priority_stack import allocate_priority_budget
 
 if TYPE_CHECKING:

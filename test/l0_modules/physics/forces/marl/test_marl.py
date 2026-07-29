@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from pymurmur.core.config import SimConfig
-from pymurmur.physics.forces._mode import MODE_REGISTRY
+from pymurmur.physics.plugins.force_mode import MODE_REGISTRY
 from pymurmur.physics.forces.marl import MarlMode
 
 

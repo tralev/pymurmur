@@ -1,4 +1,4 @@
-"""Unit tests for physics.obstacle_avoidance — ObstacleAvoidanceStrategy
+"""Unit tests for physics.plugins.obstacle_avoidance — ObstacleAvoidanceStrategy
 ABC, OBSTACLE_AVOIDANCE_REGISTRY, and dispatch-vs-direct-call equality
 against ObstacleScene.avoidance_accel().
 
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from pymurmur.physics.obstacle_avoidance import (
+from pymurmur.physics.plugins.obstacle_avoidance import (
     OBSTACLE_AVOIDANCE_REGISTRY,
     ObstacleAvoidanceStrategy,
     SDFTTCStrategy,

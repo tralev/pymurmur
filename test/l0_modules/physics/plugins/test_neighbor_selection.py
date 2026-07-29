@@ -1,4 +1,4 @@
-"""Unit tests for physics.forces.neighbor_selection — NeighborSelector
+"""Unit tests for physics.plugins.neighbor_selection — NeighborSelector
 ABC, NEIGHBOR_SELECTOR_REGISTRY, and dispatch-vs-direct-call equality
 for the 3 registered strategies.
 
@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 
 from pymurmur.physics.flock import KDTreeIndex, PhysicsFlock
-from pymurmur.physics.forces.neighbor_selection import (
+from pymurmur.physics.plugins.neighbor_selection import (
     NEIGHBOR_SELECTOR_REGISTRY,
     BallTreeRadiusSelector,
     HybridSelector,

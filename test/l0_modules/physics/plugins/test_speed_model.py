@@ -1,4 +1,4 @@
-"""Unit tests for physics.speed_model — SPEED_MODEL_REGISTRY, mirroring
+"""Unit tests for physics.plugins.speed_model — SPEED_MODEL_REGISTRY, mirroring
 test_boundary_registry.py's shape (registry-membership assertions plus
 per-strategy apply() behavior for a modularity-pass registry).
 
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from pymurmur.physics.speed_model import SPEED_MODEL_REGISTRY, SpeedModel
+from pymurmur.physics.plugins.speed_model import SPEED_MODEL_REGISTRY, SpeedModel
 
 
 class TestSpeedModelRegistry:

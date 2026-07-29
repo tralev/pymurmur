@@ -1,4 +1,4 @@
-"""Unit tests for physics.boundary — BoundaryMode ABC, BOUNDARY_REGISTRY,
+"""Unit tests for physics.plugins.boundary — BoundaryMode ABC, BOUNDARY_REGISTRY,
 and boid.py's registry-based _apply_boundary dispatch.
 
 Modularity pass: formalises the 5 boundary strategies (previously a
@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from pymurmur.physics.boid import _apply_boundary
-from pymurmur.physics.boundary import (
+from pymurmur.physics.plugins.boundary import (
     BOUNDARY_REGISTRY,
     BoundaryMode,
     MarginBoundary,

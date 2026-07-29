@@ -1,4 +1,4 @@
-"""Unit tests for physics.forces.kernel_registry — SEPARATION_KERNEL_REGISTRY,
+"""Unit tests for physics.plugins.kernel_registry — SEPARATION_KERNEL_REGISTRY,
 ALIGNMENT_KERNEL_REGISTRY, COHESION_KERNEL_REGISTRY, and KernelInfo metadata,
 mirroring test_boundary_registry.py's shape (registry-membership assertions
 for a modularity-pass registry).
@@ -12,7 +12,7 @@ is covered by test_force_kernels.py.
 
 from __future__ import annotations
 
-from pymurmur.physics.forces.kernel_registry import (
+from pymurmur.physics.plugins.kernel_registry import (
     ALIGNMENT_KERNEL_REGISTRY,
     COHESION_KERNEL_REGISTRY,
     KernelInfo,

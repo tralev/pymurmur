@@ -69,23 +69,23 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
     # Modularity pass 3: wraps ObstacleScene.avoidance_accel() unchanged
     # behind a registry, mirroring boundary/neighbor_selection. Imports
     # ObstacleScene only under TYPE_CHECKING (for typing, not at runtime).
-    "pymurmur.physics.obstacle_avoidance": {"pymurmur.physics.obstacles"},
+    "pymurmur.physics.plugins.obstacle_avoidance": {"pymurmur.physics.obstacles"},
 
     # ── Tier 1: physics L0 atoms — core only ──
     "pymurmur.physics.boid":      {
         "pymurmur.core.types",
         "pymurmur.physics.boid_init",  # re-exports init helpers (file-size split)
-        "pymurmur.physics.boundary",  # boundary-strategy registry dispatch
-        "pymurmur.physics.speed_model",  # modularity pass 4: speed-model registry dispatch
+        "pymurmur.physics.plugins.boundary",  # boundary-strategy registry dispatch
+        "pymurmur.physics.plugins.speed_model",  # modularity pass 4: speed-model registry dispatch
     },
     "pymurmur.physics.boid_init": set(),  # numpy only, zero pymurmur imports
-    "pymurmur.physics.boundary": {
-        "pymurmur.physics.boundary._mode",
-        "pymurmur.physics.boundary.strategies",
+    "pymurmur.physics.plugins.boundary": {
+        "pymurmur.physics.plugins.boundary._mode",
+        "pymurmur.physics.plugins.boundary.strategies",
     },
-    "pymurmur.physics.boundary._mode": set(),  # numpy only (TYPE_CHECKING), zero pymurmur imports
-    "pymurmur.physics.boundary.strategies": {
-        "pymurmur.physics.boundary._mode",
+    "pymurmur.physics.plugins.boundary._mode": set(),  # numpy only (TYPE_CHECKING), zero pymurmur imports
+    "pymurmur.physics.plugins.boundary.strategies": {
+        "pymurmur.physics.plugins.boundary._mode",
     },
     "pymurmur.physics.occlusion": {"pymurmur.core.types"},
     "pymurmur.physics.steric":    {"pymurmur.core.types"},
@@ -98,7 +98,7 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
         "pymurmur.core.config",
         "pymurmur.physics.boid",
         "pymurmur.physics.spatial_index",
-        "pymurmur.physics.spatial_index_strategy",  # modularity pass 5: index selection dispatch
+        "pymurmur.physics.plugins.spatial_index_strategy",  # modularity pass 5: index selection dispatch
     },
 
     # ── Tier 1: physics/spatial_index (L1 atom, extracted from flock.py
@@ -109,17 +109,17 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
     },
 
     # Modularity pass 4: SpeedModel ABC + SPEED_MODEL_REGISTRY (L0 atom).
-    "pymurmur.physics.speed_model": set(),  # numpy only, zero pymurmur imports
+    "pymurmur.physics.plugins.speed_model": set(),  # numpy only, zero pymurmur imports
 
     # Modularity pass 5: SpatialIndexStrategy registry (L1 — depends on spatial_index).
-    "pymurmur.physics.spatial_index_strategy": {
+    "pymurmur.physics.plugins.spatial_index_strategy": {
         "pymurmur.core.types",
         "pymurmur.core.config",
         "pymurmur.physics.spatial_index",
     },
 
     # ── Tier 2: physics/forces (L1, L0) ──
-    "pymurmur.physics.forces._mode": {
+    "pymurmur.physics.plugins.force_mode": {
         "pymurmur.core.types",
         "pymurmur.core.config",
     },
@@ -131,11 +131,11 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
         "pymurmur.physics.flock",
         "pymurmur.physics.extensions._base",
         "pymurmur.physics.forces.force_kernels",
-        "pymurmur.physics.forces.kernel_registry",  # modularity pass 7: kernel dispatch
+        "pymurmur.physics.plugins.kernel_registry",  # modularity pass 7: kernel dispatch
     },
     "pymurmur.physics.forces.force_kernels": set(),  # numpy only, zero pymurmur imports
     # Modularity pass 7: kernel registry — imports force_kernels for dispatch.
-    "pymurmur.physics.forces.kernel_registry": {
+    "pymurmur.physics.plugins.kernel_registry": {
         "pymurmur.physics.forces.force_kernels",
     },
     "pymurmur.physics.forces._kernels": {
@@ -144,11 +144,11 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
     },
     "pymurmur.physics.forces.spatial": {
         "pymurmur.core.types",
-        "pymurmur.physics.forces._mode",
+        "pymurmur.physics.plugins.force_mode",
         "pymurmur.physics.forces._base",
         "pymurmur.physics.forces._kernels",
         "pymurmur.physics.forces.spatial_helpers",
-        "pymurmur.physics.forces.neighbor_selection",
+        "pymurmur.physics.plugins.neighbor_selection",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
         "pymurmur.physics.flock",
@@ -164,7 +164,7 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
     # listed as allowed targets below. AngleMode's neighbor banding is
     # deliberately NOT included (fused into its own per-bird steering
     # loop, not safely extractable — see the modularity-pass-2 plan).
-    "pymurmur.physics.forces.neighbor_selection": {
+    "pymurmur.physics.plugins.neighbor_selection": {
         "pymurmur.core.config",
         "pymurmur.core.types",
         "pymurmur.physics.forces.spatial_helpers",
@@ -182,9 +182,9 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
     },
     "pymurmur.physics.forces.projection": {
         "pymurmur.core.types",
-        "pymurmur.physics.forces._mode",
+        "pymurmur.physics.plugins.force_mode",
         "pymurmur.physics.forces._base",
-        "pymurmur.physics.forces.neighbor_selection",
+        "pymurmur.physics.plugins.neighbor_selection",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
         "pymurmur.physics.flock",
@@ -192,7 +192,7 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
     },
     "pymurmur.physics.forces.field": {
         "pymurmur.core.types",
-        "pymurmur.physics.forces._mode",
+        "pymurmur.physics.plugins.force_mode",
         "pymurmur.physics.forces._base",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
@@ -216,10 +216,10 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
     },
     "pymurmur.physics.forces.vicsek": {
         "pymurmur.core.types",
-        "pymurmur.physics.forces._mode",
+        "pymurmur.physics.plugins.force_mode",
         "pymurmur.physics.forces._base",
         "pymurmur.physics.forces._kernels",
-        "pymurmur.physics.forces.neighbor_selection",
+        "pymurmur.physics.plugins.neighbor_selection",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
         "pymurmur.physics.flock",
@@ -227,7 +227,7 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
     },
     "pymurmur.physics.forces.influencer": {
         "pymurmur.core.types",
-        "pymurmur.physics.forces._mode",
+        "pymurmur.physics.plugins.force_mode",
         "pymurmur.physics.forces._base",
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
@@ -236,21 +236,21 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
     },
     "pymurmur.physics.forces.marl": {  # P12.1: MARL force mode
         "pymurmur.core.types",
-        "pymurmur.physics.forces._mode",
+        "pymurmur.physics.plugins.force_mode",
         "pymurmur.physics.flock",
         "pymurmur.core.config",
     },
     "pymurmur.physics.forces.angle": {
         "pymurmur.core.types",
         "pymurmur.core.config",
-        "pymurmur.physics.forces._mode",
+        "pymurmur.physics.plugins.force_mode",
         "pymurmur.physics.flock",
     },
     "pymurmur.physics.forces.__init__": {
         "pymurmur.core.types",
         "pymurmur.core.config",
         "pymurmur.physics.flock",
-        "pymurmur.physics.forces._mode",
+        "pymurmur.physics.plugins.force_mode",
         "pymurmur.physics.forces._base",
         "pymurmur.physics.forces.spatial",
         "pymurmur.physics.forces.projection",
@@ -259,7 +259,7 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
         "pymurmur.physics.forces.influencer",
         "pymurmur.physics.forces.angle",
         "pymurmur.physics.forces.marl",  # P12.1
-        "pymurmur.physics.forces.neighbor_selection",
+        "pymurmur.physics.plugins.neighbor_selection",
     },
 
     # ── Tier 2: physics/extensions (L1) — core + read flock ──

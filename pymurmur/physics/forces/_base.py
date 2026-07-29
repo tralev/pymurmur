@@ -19,7 +19,7 @@ from typing import Any, Callable
 import numpy as np
 
 from . import force_kernels as _kernels
-from .kernel_registry import (
+from ..plugins.kernel_registry import (
     ALIGNMENT_KERNEL_REGISTRY,
     COHESION_KERNEL_REGISTRY,
     KernelInfo,

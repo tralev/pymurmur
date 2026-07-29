@@ -301,7 +301,7 @@ class TestP3ArchitectureEdges:
         p3_edges = {
             "pymurmur.physics.forces.field": {
                 "pymurmur.core.types",
-                "pymurmur.physics.forces._mode",
+                "pymurmur.physics.plugins.force_mode",
                 "pymurmur.physics.forces._base",
                 "pymurmur.physics.flock",
                 "pymurmur.core.config",

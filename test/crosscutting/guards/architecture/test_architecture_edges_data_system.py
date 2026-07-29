@@ -20,7 +20,7 @@ ALLOWED_EDGES_SYSTEM: dict[str, set[str]] = {
         "pymurmur.physics.forces",
         "pymurmur.physics.extensions",
         "pymurmur.physics.obstacles",  # S6.4: ObstacleScene
-        "pymurmur.physics.obstacle_avoidance",  # modularity pass 3
+        "pymurmur.physics.plugins.obstacle_avoidance",  # modularity pass 3
         "pymurmur.physics.priority_stack",
         "pymurmur.analysis.metrics",
         "pymurmur.analysis.perf",      # S4.10: PerfDiagnostics

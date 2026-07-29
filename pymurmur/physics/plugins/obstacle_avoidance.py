@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import numpy as np
 
-    from .obstacles import ObstacleScene
+    from ..obstacles import ObstacleScene
 
 OBSTACLE_AVOIDANCE_REGISTRY: dict[str, type["ObstacleAvoidanceStrategy"]] = {}
 

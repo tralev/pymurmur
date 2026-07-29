@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ...core.types import min_image, rotate_about, safe_normalize
-from ._mode import ForceMode, register
+from ..plugins.force_mode import ForceMode, register
 
 if TYPE_CHECKING:
     from ...core.config import SimConfig

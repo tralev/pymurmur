@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ._base import ForceTerm, composeForces
-from ._mode import ForceFn, ForceMode, register
+from ..plugins.force_mode import ForceFn, ForceMode, register
 from .field_anchors import (
     _compute_anchors,
     _compute_leader_chaser,

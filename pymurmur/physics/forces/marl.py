@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ._mode import ForceFn, ForceMode, register
+from ..plugins.force_mode import ForceFn, ForceMode, register
 
 if TYPE_CHECKING:
     from ...core.config import SimConfig

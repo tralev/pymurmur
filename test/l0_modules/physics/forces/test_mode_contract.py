@@ -9,7 +9,7 @@ import pytest
 from pymurmur.core.config import SimConfig
 from pymurmur.physics.flock import PhysicsFlock
 from pymurmur.physics.forces import compute_all_forces
-from pymurmur.physics.forces._mode import MODE_REGISTRY, ForceMode, register
+from pymurmur.physics.plugins.force_mode import MODE_REGISTRY, ForceMode, register
 
 # ── P2.2: ForceMode ABC ───────────────────────────────────────────
 

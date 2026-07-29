@@ -27,8 +27,8 @@ from ._base import (
     noise_force,
     separation_force,
 )
-from ._mode import ForceFn, ForceMode, register
-from .neighbor_selection import NEIGHBOR_SELECTOR_REGISTRY
+from ..plugins.force_mode import ForceFn, ForceMode, register
+from ..plugins.neighbor_selection import NEIGHBOR_SELECTOR_REGISTRY
 from .spatial_helpers import (
     _apply_hybrid_filter,  # noqa: F401  # re-export
     _maybe_perception_filter,

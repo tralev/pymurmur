@@ -16,8 +16,8 @@ import numpy as np
 
 from ..occlusion import spherical_cap_occlusion_batched
 from ..steric import steric_force  # P1.10: L0 atom import at module top (no cycle risk)
-from ._mode import ForceFn, ForceMode, register
-from .neighbor_selection import NEIGHBOR_SELECTOR_REGISTRY
+from ..plugins.force_mode import ForceFn, ForceMode, register
+from ..plugins.neighbor_selection import NEIGHBOR_SELECTOR_REGISTRY
 
 if TYPE_CHECKING:
     from ...core.config import SimConfig

@@ -1,4 +1,4 @@
-"""Unit tests for physics.spatial_index_strategy — SPATIAL_INDEX_STRATEGY_REGISTRY
+"""Unit tests for physics.plugins.spatial_index_strategy — SPATIAL_INDEX_STRATEGY_REGISTRY
 and AUTO_INDEX_THRESHOLD, mirroring test_boundary_registry.py's shape
 (registry-membership assertions for a modularity-pass registry).
 
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pymurmur.core.config import SimConfig
 from pymurmur.physics.spatial_index import KDTreeIndex, SpatialHashGrid
-from pymurmur.physics.spatial_index_strategy import (
+from pymurmur.physics.plugins.spatial_index_strategy import (
     AUTO_INDEX_THRESHOLD,
     SPATIAL_INDEX_STRATEGY_REGISTRY,
 )

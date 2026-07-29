@@ -20,8 +20,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..core.config import SimConfig
-    from ..core.types import SpatialIndex
+    from ...core.config import SimConfig
+    from ...core.types import SpatialIndex
 
 SPATIAL_INDEX_STRATEGY_REGISTRY: dict[str, type["SpatialIndexStrategy"]] = {}
 
@@ -84,7 +84,7 @@ def register(name: str):
 @register("kdtree")
 def _kdtree_strategy(config, N_active, kdtree_box):
     """Always use KDTreeIndex (toroidal-aware when box is provided)."""
-    from .spatial_index import KDTreeIndex
+    from ..spatial_index import KDTreeIndex
 
     return KDTreeIndex(box=kdtree_box)
 
@@ -92,7 +92,7 @@ def _kdtree_strategy(config, N_active, kdtree_box):
 @register("hash_grid")
 def _hash_grid_strategy(config, N_active, kdtree_box):
     """Always use SpatialHashGrid."""
-    from .spatial_index import SpatialHashGrid
+    from ..spatial_index import SpatialHashGrid
 
     return SpatialHashGrid(config)
 
@@ -106,7 +106,7 @@ def _none_strategy(config, N_active, kdtree_box):
 @register("auto")
 def _auto_strategy(config, N_active, kdtree_box):
     """Auto-select: SpatialHashGrid for N < AUTO_INDEX_THRESHOLD, KDTreeIndex above."""
-    from .spatial_index import KDTreeIndex, SpatialHashGrid
+    from ..spatial_index import KDTreeIndex, SpatialHashGrid
 
     if N_active >= AUTO_INDEX_THRESHOLD:
         return KDTreeIndex(box=kdtree_box)
