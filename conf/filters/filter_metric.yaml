@@ -1,0 +1,72 @@
+# conf/filters/filter_metric.yaml — neighbor_filter-coverage reference
+#
+# One of 4 small presets in conf/filters/ closing out spatial.neighbor_filter
+# coverage — 5 real, functionally-distinct values (spatial_helpers.py's
+# _query_neighbors: hybrid/metric/topological/none, plus a separate
+# "global" short-circuit in spatial.py) but only "hybrid"
+# (murmuration_starlings.yaml) was ever exercised by a runnable preset.
+#
+# This file demonstrates: neighbor_filter=metric (visual_range-only
+# distance filter, no topological cap).
+#
+# Coverage/reference fixture, not tuned for visual character. Kept out
+# of top-level conf/ (and so out of --list-configs) since these are
+# narrow technical fixtures, not exploration-worthy presets — same
+# precedent as conf/kernels/.
+
+domain:
+  width: 1000.0
+  height: 700.0
+  depth: 400.0
+
+flock:
+  num_boids: 100
+  boid_size: 9.0
+  v0: 4.0
+  max_force: 0.15
+  visual_range: 70.0
+
+mode: spatial
+
+spatial:
+  separation_weight: 4.5
+  alignment_weight: 0.65
+  cohesion_weight: 0.75
+  neighbor_filter: metric
+
+boundary_mode: toroidal
+
+extensions:
+  predator_enabled: false
+  roosting_enabled: false
+  wander_enabled: false
+  ripple_enabled: false
+
+performance:
+  spatial_index: auto
+  instance_buffer_chunk: 50000
+
+metrics:
+  detail_level: 1
+  interval: 60
+
+seed: 42
+
+visual:
+  fps: 60
+  window_width: 1200
+  window_height: 800
+  show_grid: false
+  auto_rotate: false
+  theme: ink
+
+capture:
+  width: 800
+  height: 600
+  frames: 240
+  every: 3
+  fps: 20
+  output: output/filter_metric.gif
+  metrics_csv: output/metrics_filter_metric.csv
+  metrics_json: output/metrics_filter_metric.json
+  with_viz: true

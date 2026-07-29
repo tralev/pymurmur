@@ -61,6 +61,7 @@ metrics:
 
 seed: 42
 velocity_init: cube
+position_init: grid
 
 visual:
   fps: 60

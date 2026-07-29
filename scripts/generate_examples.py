@@ -45,6 +45,14 @@ Generated files:
                                                 is computed from runtime
                                                 closing speed, not a static
                                                 distance/angle formula)
+    examples/metrics_kernel_exp.json / .csv   (conf/kernels/kernel_exp.yaml —
+                                                a closed-form distance
+                                                falloff kernel, contrasting
+                                                with velocity_weighted's
+                                                runtime-computed one)
+    examples/metrics_obstacles.json / .csv    (conf/murmuration_obstacles.yaml —
+                                                priority_stack_enabled +
+                                                SDF obstacle avoidance)
     examples/metrics_full.json / .csv         (conf/murmuration_showcase.yaml,
                                                 metrics_interval=1 — every
                                                 expensive metric populates
@@ -88,6 +96,8 @@ EXAMPLE_TARGETS: list[tuple[str, str | None, dict]] = [
     ("field", "conf/murmuration_field.yaml", {"num_boids": 200}),
     ("marl", "conf/murmuration_marl.yaml", {}),
     ("kernel_velocity_weighted", "conf/kernels/kernel_velocity_weighted.yaml", {}),
+    ("kernel_exp", "conf/kernels/kernel_exp.yaml", {}),
+    ("obstacles", "conf/murmuration_obstacles.yaml", {}),
     ("full", "conf/murmuration_showcase.yaml", {"frames": 40, "metrics_interval": 1}),
 ]
 

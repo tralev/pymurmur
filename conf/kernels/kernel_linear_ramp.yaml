@@ -60,6 +60,7 @@ metrics:
 
 seed: 42
 velocity_init: tangential
+position_init: blob
 
 visual:
   fps: 60

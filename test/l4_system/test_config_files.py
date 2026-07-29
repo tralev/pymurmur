@@ -14,12 +14,43 @@ ALL_CONFIGS = sorted(CONF_DIR.glob("*.yaml"))
 # presets. See conf/kernels/kernel_sum.yaml for why they exist.
 KERNEL_CONF_DIR = CONF_DIR / "kernels"
 ALL_KERNEL_CONFIGS = sorted(KERNEL_CONF_DIR.glob("*.yaml"))
+# Narrow neighbor_filter-coverage fixtures — same rationale/precedent as
+# ALL_KERNEL_CONFIGS. See conf/filters/filter_metric.yaml.
+FILTER_CONF_DIR = CONF_DIR / "filters"
+ALL_FILTER_CONFIGS = sorted(FILTER_CONF_DIR.glob("*.yaml"))
 
 
 def _load_config(path: Path):
     """Parse a YAML config file and return the raw dict."""
     import yaml
     return yaml.safe_load(path.read_text()) or {}
+
+
+def _find_any_section_value(data: dict, key: str):
+    """Look for `key` at top level or nested one level into any dict
+    section, trying both `key` and `{section}_{key}` (the same
+    de-prefix/full-prefix ambiguity config_io.py's loader itself
+    tolerates — e.g. a `predator:` section may spell it `mode:` or
+    `predator_mode:`, and direct fields like position_init/velocity_init
+    may be nested under any section, e.g. field_silk_sheet.yaml's
+    `flock.position_init`). Returns the first match found, or None.
+
+    Only needed for coverage-scanning tests that read raw YAML text
+    directly — SimConfig.from_file() resolves this ambiguity for real
+    loading, but these tests intentionally avoid a full SimConfig load
+    per preset for speed across dozens of files.
+    """
+    if key in data:
+        return data[key]
+    for section_name, section_data in data.items():
+        if not isinstance(section_data, dict):
+            continue
+        if key in section_data:
+            return section_data[key]
+        prefixed = f"{section_name}_{key}"
+        if prefixed in section_data:
+            return section_data[prefixed]
+    return None
 
 
 class TestConfigFileValidation:
@@ -293,6 +324,166 @@ class TestConfigFileValidation:
         assert not uncovered, (
             f"velocity_init values with zero preset coverage: {uncovered}. Add a "
             f"top-level velocity_init: {{value}} preset, e.g. under conf/kernels/."
+        )
+
+    def test_filter_configs_parse_and_validate(self):
+        """Every conf/filters/*.yaml loads and validates via SimConfig.
+
+        Mirrors test_kernel_configs_parse_and_validate for the sibling
+        conf/filters/ family (neighbor_filter coverage).
+        """
+        from pymurmur.core.config import SimConfig
+
+        assert len(ALL_FILTER_CONFIGS) >= 4, (
+            f"Expected >= 4 filter-coverage configs, found {len(ALL_FILTER_CONFIGS)}"
+        )
+        for path in ALL_FILTER_CONFIGS:
+            cfg = SimConfig.from_file(str(path))
+            cfg.validate()
+
+    def test_every_neighbor_filter_has_example_coverage(self):
+        """Every valid spatial.neighbor_filter value appears as a literal
+        value in at least one shipped preset. No live registry exists
+        for neighbor_filter (bare str field, inline comment in
+        config_sections.py's SpatialConfig) so the valid set is
+        hardcoded here — mirrors test_every_noise_mode_has_example_coverage's
+        precedent. Before conf/filters/ was added, only "hybrid"
+        (murmuration_starlings.yaml) had any preset coverage —
+        metric/topological/global/none had zero."""
+        valid_neighbor_filters = {"hybrid", "metric", "topological", "global", "none"}
+        all_data = [
+            _load_config(path)
+            for path in ALL_CONFIGS + ALL_KERNEL_CONFIGS + ALL_FILTER_CONFIGS
+        ]
+
+        uncovered = [
+            mode for mode in valid_neighbor_filters
+            if not any(data.get("spatial", {}).get("neighbor_filter") == mode for data in all_data)
+        ]
+        assert not uncovered, (
+            f"neighbor_filter values with zero preset coverage: {uncovered}. Add a "
+            f"spatial.neighbor_filter: {{value}} preset, e.g. under conf/filters/."
+        )
+
+    def test_every_position_init_has_example_coverage(self):
+        """Every valid position_init value appears as a literal value in
+        at least one shipped preset, EXCEPT "influencer_density" which
+        is checked separately: engine.py's _apply_influencer_density_init
+        auto-triggers it whenever mode=="influencer" and
+        influencer.density_scaled_init is set (murmuration_influencer.yaml
+        does exactly this) — so it's genuinely exercised despite never
+        appearing as literal position_init: text anywhere. Scanning for
+        the literal string would report a false gap.
+
+        _VALID_POSITION_INITS is a real SimConfig class attribute,
+        imported live (mirrors velocity_init's guard). Before this, only
+        "gaussian" (field_silk_sheet.yaml) had explicit coverage —
+        box/random/sphere/grid/sphere_shell/blob had zero."""
+        from pymurmur.core.config import SimConfig
+
+        all_data = [
+            _load_config(path)
+            for path in ALL_CONFIGS + ALL_KERNEL_CONFIGS + ALL_FILTER_CONFIGS
+        ]
+
+        influencer_density_covered = any(
+            data.get("mode") == "influencer"
+            and data.get("influencer", {}).get("density_scaled_init") is True
+            for data in all_data
+        )
+
+        uncovered = []
+        for mode in SimConfig._VALID_POSITION_INITS:
+            if mode == "influencer_density":
+                if not influencer_density_covered:
+                    uncovered.append(f"{mode} (checked via auto-trigger, not literal text)")
+                continue
+            if not any(_find_any_section_value(data, "position_init") == mode for data in all_data):
+                uncovered.append(mode)
+
+        assert not uncovered, (
+            f"position_init values with zero preset coverage: {uncovered}. Add a "
+            f"top-level position_init: {{value}} preset, e.g. under conf/kernels/."
+        )
+
+    def test_every_theme_has_example_coverage(self):
+        """Every valid visual theme appears as a literal value in at
+        least one shipped preset. _VALID_THEMES is a real SimConfig
+        class attribute, imported live. Before conf/filters/ was added,
+        ink/inverse/paper were covered but graphite/heading had zero."""
+        from pymurmur.core.config import SimConfig
+
+        all_data = [
+            _load_config(path)
+            for path in ALL_CONFIGS + ALL_KERNEL_CONFIGS + ALL_FILTER_CONFIGS
+        ]
+
+        uncovered = [
+            theme for theme in SimConfig._VALID_THEMES
+            if not any(_find_any_section_value(data, "theme") == theme for data in all_data)
+        ]
+        assert not uncovered, (
+            f"theme values with zero preset coverage: {uncovered}. Add a "
+            f"visual.theme: {{value}} preset, e.g. under conf/filters/."
+        )
+
+    def test_every_trail_mode_has_example_coverage(self):
+        """Every valid trails value appears as a literal value in at
+        least one shipped preset. No live registry exists for trails
+        (bare str field, inline comment in config_sections.py's VizConfig)
+        so the valid set is hardcoded here. Before conf/filters/ was
+        added, velocity/ring/accumulation were covered but "lines" had
+        zero ("off" is the implicit default, not required to be explicit)."""
+        valid_trails = {"off", "velocity", "ring", "accumulation", "lines"}
+        all_data = [
+            _load_config(path)
+            for path in ALL_CONFIGS + ALL_KERNEL_CONFIGS + ALL_FILTER_CONFIGS
+        ]
+
+        uncovered = [
+            trail for trail in valid_trails - {"off"}
+            if not any(_find_any_section_value(data, "trails") == trail for data in all_data)
+        ]
+        assert not uncovered, (
+            f"trails values with zero preset coverage: {uncovered}. Add a "
+            f"visual.trails: {{value}} preset, e.g. under conf/filters/."
+        )
+
+    def test_every_predator_mode_has_example_coverage(self):
+        """Every valid predator_mode value appears as a literal value in
+        at least one shipped preset, EXCEPT "off" — paired with
+        extensions.predator_enabled: true (required for the predator:
+        section to matter at all), predator_mode: off is a degenerate,
+        self-contradictory combination not worth manufacturing a preset
+        for. _VALID_PREDATOR_MODES is a real SimConfig class attribute,
+        imported live. Before this, only "orbit"
+        (field_predator_ripple.yaml) had explicit coverage — "autonomous"
+        is the default everywhere but was never explicit, and "cursor"
+        had zero coverage anywhere."""
+        from pymurmur.core.config import SimConfig
+
+        all_data = [
+            _load_config(path)
+            for path in ALL_CONFIGS + ALL_KERNEL_CONFIGS + ALL_FILTER_CONFIGS
+        ]
+
+        def predator_mode_of(data: dict):
+            # Deliberately NOT _find_any_section_value("mode") — top-level
+            # "mode" is the force-mode field (spatial/projection/...);
+            # scanning generically would false-match every preset's mode
+            # instead of looking inside predator: specifically.
+            predator_section = data.get("predator", {})
+            if not isinstance(predator_section, dict):
+                return None
+            return predator_section.get("mode", predator_section.get("predator_mode"))
+
+        uncovered = [
+            mode for mode in SimConfig._VALID_PREDATOR_MODES - {"off"}
+            if not any(predator_mode_of(data) == mode for data in all_data)
+        ]
+        assert not uncovered, (
+            f"predator_mode values with zero preset coverage: {uncovered}. Add a "
+            f"predator.mode: {{value}} preset."
         )
 
     def test_300k_config_kdtree(self):

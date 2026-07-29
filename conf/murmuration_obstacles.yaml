@@ -77,9 +77,13 @@ extensions:
   priority_stack_enabled: true # tier1/2/3 binary-cutoff force-budget allocation
 
 # ── Predator-Specific (used since extensions.predator_enabled = true) ─
+# mode: autonomous — already the implicit PredatorConfig default, made
+# explicit here for guard-visible textual coverage (same rationale as
+# conf/kernels/kernel_sum.yaml's explicit defaults).
 predator:
   threat_radius: 60.0          # scaled to this preset's domain, not the 12.0 default
   strength: 1.0
+  mode: autonomous
 
 # ── Performance Tuning ───────────────────────────────────────────────
 performance:

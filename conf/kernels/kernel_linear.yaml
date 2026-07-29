@@ -60,6 +60,7 @@ metrics:
 
 seed: 42
 velocity_init: speed_uniform
+position_init: sphere_shell
 
 visual:
   fps: 60

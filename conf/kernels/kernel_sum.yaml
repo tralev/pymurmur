@@ -61,6 +61,7 @@ metrics:
 
 seed: 42
 velocity_init: sphere   # explicit textual coverage for the implicit default
+position_init: box      # explicit textual coverage for the implicit default
 
 visual:
   fps: 60

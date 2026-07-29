@@ -79,9 +79,15 @@ extensions:
   boid_state_machine_enabled: true
 
 # ── Predator-Specific (used since extensions.predator_enabled = true) ─
+# mode: cursor — the one predator_mode with zero preset coverage
+# elsewhere (orbit: field_predator_ripple.yaml; autonomous is the
+# default everywhere but never explicit). Falls back to autonomous-like
+# behavior in a headless capture (no live cursor bridge), so this is
+# config-literal coverage, not a claim of different captured physics.
 predator:
   threat_radius: 100.0
   strength: 1.0
+  mode: cursor
 
 # ── Performance Tuning ───────────────────────────────────────────────
 # hash_grid: explicitly forced. Every other preset leaves this on
