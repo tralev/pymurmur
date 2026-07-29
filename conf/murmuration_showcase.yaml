@@ -1,0 +1,124 @@
+# murmuration_showcase.yaml — plugin-diversity showcase for pymurmur
+#
+# Every other shipped preset is built around one specific character or
+# purpose and mostly leaves the computational-plugin knobs (kernels,
+# spatial index, boundary mode) and the newer behavioral extensions at
+# their defaults. This preset deliberately turns on everything that
+# has zero coverage elsewhere in conf/, so it's a single runnable
+# reference for the parts of the plugin surface (arch.md §6/§7) that
+# no other preset demonstrates:
+#   - boundary_mode: sphere_soft   (the one boundary mode never used
+#                                    by any other preset)
+#   - bell_zone kernels for separation/alignment/cohesion (9 of 11
+#                                    separation kernels, all 4 alignment,
+#                                    and all 3 cohesion kernels are
+#                                    otherwise never exercised)
+#   - performance.spatial_index: hash_grid (every other preset leaves
+#                                    this on "auto")
+#   - the 4 newest extensions — SpeedNoise, NeighborAdaptiveSpeed,
+#     DynamicVisionRange, BoidStateMachine — have zero presets with
+#     them enabled anywhere else
+#
+# Not tuned for visual character — this is a coverage/reference
+# preset, not a production one.
+
+# ── Simulation Domain ───────────────────────────────────────────────
+domain:
+  width: 1000.0
+  height: 700.0
+  depth: 400.0
+
+# ── Flock Parameters ────────────────────────────────────────────────
+flock:
+  num_boids: 150
+  boid_size: 9.0
+  v0: 4.0
+  max_force: 0.15
+  visual_range: 70.0
+
+# ── Spatial / Reynolds Mode ─────────────────────────────────────────
+# spatial is the one mode where dynamic_vision_range_enabled actually
+# does something — it's only consumed by spatial_helpers.py's
+# _query_neighbors (spatial + projection modes).
+mode: spatial
+
+# ── Reynolds Spatial Parameters ─────────────────────────────────────
+spatial:
+  separation_weight: 4.5
+  alignment_weight: 0.65
+  cohesion_weight: 0.75
+  # bell_zone: cosine-bell-weighted average, peaking at the zone
+  # center (separation_kernel_radius) and falling off over
+  # kernel_zone_width — valid for all three kernel registries, unlike
+  # most of the other 15 kernel names which are separation/alignment/
+  # cohesion-specific.
+  separation_kernel: bell_zone
+  alignment_kernel: bell_zone
+  cohesion_kernel: bell_zone
+  separation_kernel_radius: 20.0   # zone center
+  kernel_zone_width: 10.0          # zone half-width
+
+# ── Boundary Mode ───────────────────────────────────────────────────
+# sphere_soft: the one boundary strategy no other shipped preset uses.
+boundary_mode: sphere_soft
+boundary_sphere_radius: 300.0
+
+# ── Behavioural Extensions ──────────────────────────────────────────
+# predator_enabled + roosting_enabled so BoidStateMachine's
+# "threatened" state (reads ctx.threat_prox, published by Predator)
+# has something to actually trigger, and so Ecology's roost cycle is
+# exercised alongside the newer per-bird speed-multiplier extensions.
+extensions:
+  predator_enabled: true
+  roosting_enabled: true
+  wander_enabled: false
+  ripple_enabled: false
+  speed_noise_enabled: true
+  neighbor_adaptive_speed_enabled: true
+  dynamic_vision_range_enabled: true
+  boid_state_machine_enabled: true
+
+# ── Predator-Specific (used since extensions.predator_enabled = true) ─
+predator:
+  threat_radius: 100.0
+  strength: 1.0
+
+# ── Performance Tuning ───────────────────────────────────────────────
+# hash_grid: explicitly forced. Every other preset leaves this on
+# "auto" (which resolves to hash_grid below 5000 birds anyway) —
+# forcing it here demonstrates the override is a real, valid choice.
+performance:
+  spatial_index: hash_grid
+  instance_buffer_chunk: 50000
+
+# ── Metrics Detail ──────────────────────────────────────────────────
+# detail_level: 2 + a short interval so the expensive/gated metrics
+# (h2, tau_rho, hull_volume, aspect_ratio, ...) actually populate more
+# than once in a short example capture.
+metrics:
+  detail_level: 2
+  interval: 20
+
+# ── Random Seed ─────────────────────────────────────────────────────
+seed: 42
+
+# ── Visualization ───────────────────────────────────────────────────
+visual:
+  fps: 60
+  window_width: 1200
+  window_height: 800
+  show_grid: false
+  auto_rotate: false
+  theme: ink
+
+# ── Capture Settings ────────────────────────────────────────────────
+capture:
+  width: 800
+  height: 600
+  frames: 240
+  every: 3
+  fps: 20
+  output: output/murmuration_showcase.gif
+  metrics_csv: output/metrics_showcase.csv
+  metrics_json: output/metrics_showcase.json
+  with_viz: true

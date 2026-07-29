@@ -1,4 +1,4 @@
-"""Config file validation — all 7 shipped conf/*.yaml files must be valid.
+"""Config file validation — all shipped conf/*.yaml files must be valid.
 
 Tests that every config preset in conf/ parses correctly, has the
 required top-level sections, and has consistent values.
@@ -19,7 +19,7 @@ def _load_config(path: Path):
 class TestConfigFileValidation:
     """All shipped config files are valid and complete."""
 
-    def test_all_7_configs_parse(self):
+    def test_all_configs_parse(self):
         """All conf/*.yaml files parse without error."""
         assert len(ALL_CONFIGS) >= 7, f"Expected ≥ 7 configs, found {len(ALL_CONFIGS)}"
         for path in ALL_CONFIGS:
@@ -34,14 +34,14 @@ class TestConfigFileValidation:
                 assert field in data, f"{path.name}: missing '{field}'"
 
     def test_config_performance_fields_present(self):
-        """All 7 configs have performance.spatial_index."""
+        """All configs have performance.spatial_index."""
         for path in ALL_CONFIGS:
             data = _load_config(path)
             perf = data.get("performance", {})
             assert "spatial_index" in perf, f"{path.name}: perforce.spatial_index missing"
 
     def test_config_metrics_fields_present(self):
-        """All 7 configs have metrics.detail_level and metrics.interval."""
+        """All configs have metrics.detail_level and metrics.interval."""
         for path in ALL_CONFIGS:
             data = _load_config(path)
             metrics = data.get("metrics", {})
@@ -60,7 +60,7 @@ class TestConfigFileValidation:
 
     def test_config_boundary_valid(self):
         """Config boundary is one of the valid values."""
-        valid = {"toroidal", "open", "margin", "sphere"}
+        valid = {"toroidal", "open", "margin", "sphere", "sphere_soft"}
         for path in ALL_CONFIGS:
             data = _load_config(path)
             boundary = data.get("boundary_mode", "")
@@ -81,6 +81,36 @@ class TestConfigFileValidation:
             data = _load_config(path)
             ext = data.get("extensions", {})
             assert ext.get("wander_enabled") is True, "field config should have wander enabled"
+
+    def test_every_extension_has_example_coverage(self):
+        """Every registered extension is enabled=true in at least one
+        shipped preset — no more silent gaps like the one this test
+        closes: SpeedNoise, NeighborAdaptiveSpeed, DynamicVisionRange,
+        and BoidStateMachine had zero preset coverage anywhere (the
+        same 4 extensions that were also missing from arch.md §7's
+        table until that was fixed separately) until
+        conf/murmuration_showcase.yaml was added specifically to
+        demonstrate them. Derived from the live EXTENSION_REGISTRY, not
+        a hardcoded list, so a newly-registered extension with no
+        example preset fails this test immediately instead of drifting
+        silently."""
+        from pymurmur.physics.extensions.extension_registry import EXTENSION_REGISTRY
+
+        all_extensions_data = [_load_config(path) for path in ALL_CONFIGS]
+        uncovered = []
+        for cls, config_attr, _cleanup_attr in EXTENSION_REGISTRY:
+            covered = any(
+                data.get("extensions", {}).get(config_attr) is True
+                for data in all_extensions_data
+            )
+            if not covered:
+                uncovered.append(f"{cls.__name__} ({config_attr})")
+
+        assert not uncovered, (
+            f"Extensions with zero preset coverage (enabled=true in no "
+            f"conf/*.yaml): {uncovered}. Add extensions.{{config_attr}}: "
+            f"true to at least one preset, e.g. conf/murmuration_showcase.yaml."
+        )
 
     def test_300k_config_kdtree(self):
         """murmuration_300k.yaml has performance.spatial_index: kdtree."""
