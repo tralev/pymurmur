@@ -2,7 +2,7 @@
 
 > **STATUS: ACTIVE.** This document describes the test suite's organization,
 > conventions, and how CI (including Docker) runs it.
-> **3,658 tests collected; 3,233 run in the fast suite** (`-m "not slow and not
+> **3,660 tests collected; 3,235 run in the fast suite** (`-m "not slow and not
 > gl and not gpu"`).
 > **Organization: Bottom-Up / Micro-to-Macro.** The `test/` tree is layered by
 > altitude, mirroring `arch.md` §2.2's bottom-up view: Level 0 (module

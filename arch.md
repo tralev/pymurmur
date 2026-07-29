@@ -193,9 +193,9 @@ pymurmur/                          # pip-installable package
 │                              #   stdout/stderr seam — no print() anywhere else in pymurmur/)
 │
 ├── simulation/
-│   └── engine.py              # SimulationEngine: step orchestration, command queue,
-│                              #   control hook, fixed-step accumulator, run_headless,
-│                              #   benchmark(), reset
+│   ├── engine.py              # SimulationEngine: step orchestration, control hook,
+│   │                          #   fixed-step accumulator, run_headless, benchmark(), reset
+│   └── command_queue.py       # CommandQueue + _CommandQueueMixin: enqueue_*/drain_commands
 │
 ├── physics/
 │   ├── boid.py                # integrate(speed_mode|move|inertia|noise), boundaries
@@ -205,33 +205,52 @@ pymurmur/                          # pip-installable package
 │   ├── flock.py               # PhysicsFlock (composes FlockArrays; rng, is_predator,
 │   │                          #   center, prev_positions, last_accelerations, max_speed),
 │   │                          #   SpatialHashGrid (modulo cells, incremental), KDTreeIndex (boxsize)
-│   ├── occlusion.py           # spherical-cap occlusion with true visibility culling,
-│   │                          #   union Θ, boundary-weighted δ̂  (pure numpy)
+│   ├── occlusion.py           # spherical-cap occlusion — per-observer math, true visibility
+│   │                          #   culling, union Θ, boundary-weighted δ̂  (pure numpy)
+│   ├── occlusion_culling.py   # P4.6 sequential/chunk/parallel culling-strategy dispatch
 │   ├── steric.py              # clamped 1/d² repulsion            (pure numpy)
 │   ├── obstacles.py           # SDF primitives + CSG scene, zero-crossing detection,
 │   │                          #   kinematic correction
+│   ├── plugins/                     # computational-plugin registries (§6 "Other
+│   │   │                            #   Computational Plugins" — consolidated here from
+│   │   │                            #   their former scattered locations)
+│   │   ├── force_mode.py            # ForceMode ABC, MODE_REGISTRY, @register
+│   │   ├── boundary/                # BoundaryMode ABC + 5 strategies, BOUNDARY_REGISTRY
+│   │   ├── neighbor_selection.py    # NeighborSelector ABC + 3 strategies
+│   │   ├── obstacle_avoidance.py    # ObstacleAvoidanceStrategy ABC + sdf_ttc
+│   │   ├── speed_model.py           # SpeedModel ABC + 4 strategies (band/ceiling/fixed/none)
+│   │   ├── spatial_index_strategy.py # index-selection dispatch (auto/hash_grid/kdtree/none)
+│   │   └── kernel_registry.py       # separation(11)/alignment(4)/cohesion(3) kernel dispatch
 │   ├── forces/
-│   │   ├── _mode.py           # ForceMode ABC (needs_index, speed_mode, owns_positions,
-│   │   │                      #   reset/step), MODE_REGISTRY, @register
-│   │   ├── _base.py           # corrected primitives: sep(unit/d²)/align/coh/noise(×scale),
-│   │   │                      #   ForceTerm + composeForces
+│   │   ├── _base.py           # alignment/cohesion/curl_flow/noise primitives, ForceTerm +
+│   │   │                      #   composeForces
+│   │   ├── separation_primitives.py # separation's kernel dispatch + separation_force
+│   │   │                      #   (11 kernel variants — most complex of the three)
 │   │   ├── _kernels.py        # numba JIT force kernels (use_numba; fastmath policy)
 │   │   ├── projection.py      # Pearce: δ̂ + alignment + noise; refinements
 │   │   ├── spatial.py         # Reynolds: hybrid filter, dual radii, jitter, species,
 │   │   │                      #   physical pipeline order, parallel two-phase
 │   │   ├── field.py           # 13-term blob field: anchors, leader/chaser, shell/cavity,
 │   │   │                      #   slot repulsion, flow/fold, grid-sep normalization
-│   │   ├── vicsek.py          # corrected update, predator-prey, asymmetric collisions
+│   │   ├── vicsek.py          # corrected update — core P1.8 alignment/memory term
+│   │   ├── vicsek_predator.py # Phase 6 predator-prey: fear blending, hunting,
+│   │   │                      #   asymmetric collisions
 │   │   ├── influencer.py      # tick-driven Lissajous, move-then-steer, rank influence, pilot
 │   │   ├── angle.py           # turn-rate steering, mode gating, adaptive speed, edges
 │   │   └── marl.py            # deferred global rules under external control
-│   └── extensions/
+│   └── extensions/            # behavioral-extension plugins (§7) — EXTENSION_REGISTRY
 │       ├── _base.py           # Extension ABC — apply(flock, ctx: StepContext)
+│       ├── extension_registry.py # EXTENSION_REGISTRY, @register_extension
 │       ├── predator.py        # Threat FSM (approach/egress, wake/split/wave bundle)
 │       ├── ecology.py         # logistic dusk, temperature boost, coherence gate,
 │       │                      #   seasonal size model, roost
 │       ├── wander.py          # boundedUnitTravel attractor + heading
-│       └── ripple.py          # enveloped travelling pulses (wraps field-mode impl)
+│       ├── ripple.py          # enveloped travelling pulses (wraps field-mode impl)
+│       ├── speed_noise.py     # 3D value-noise organic slow/fast zones
+│       ├── neighbor_adaptive_speed.py # isolated boids fly faster (neighbour-deficit law)
+│       ├── dynamic_vision_range.py # flock-wide adaptive perception radius
+│       └── boid_state_machine.py # threshold-driven per-boid state (normal/isolated/
+│                              #   crowded/threatened)
 │
 ├── viz/                       # optional; never imports simulation
 │   ├── renderer.py            # ModernGL: InstanceSchema, _build_vao discipline,
@@ -243,7 +262,11 @@ pymurmur/                          # pip-installable package
 │   │                          #   incl. the "heading" debug theme)
 │   ├── shaders.py             # GLSL: LookAt+flap, impostor+depth cues+Fresnel rim,
 │   │                          #   mesh Fresnel rim, trail, grid, HUD
+│   ├── shaders_meshes.py      # mesh vertex/index arrays (tetra/winged/sky-quad/
+│   │                          #   impostor-quad/grid/HUD-quad)
+│   ├── shaders_themes.py      # THEMES: 4 monochrome palettes + P8.5 material tables
 │   ├── trails.py              # 4 trail modes: velocity / accumulation / ring / lines
+│   ├── trails_modes.py        # _TrailExtraModesMixin: accumulation + lines mode draws
 │   ├── camera.py              # OrbitCamera + ortho/projection presets + capture sweep +
 │   │                          #   median-flock-depth spawn-ray intersection
 │   ├── hud.py                 # SliderHUD: sep/coh/align/avoid/noise sliders, ortho-pass
@@ -330,12 +353,18 @@ plus named `FORBIDDEN_EDGES`. Subpackage summary:
 ```
 core/                    → numpy/stdlib only          (core/config/ is a subpackage;
                                                       "core.config" path unchanged)
-physics/boid             → core                      (never flock/forces)
-physics/occlusion|steric → core                      (pure numpy)
+physics/boid             → core, physics/plugins/{boundary,speed_model}  (never flock/forces)
+physics/occlusion        → core, physics/occlusion_culling (pure numpy)
+physics/steric           → core                      (pure numpy)
 physics/obstacles        → core
-physics/forces/*         → physics primitives, core  (read flock arrays; no cKDTree
-                                                      construction — use flock.index)
-physics/flock            → core, physics/boid        (NEVER forces — the cycle is dead)
+physics/plugins/*        → core, physics primitives  (computational-plugin registries,
+                                                      consolidated here — §6 "Other
+                                                      Computational Plugins")
+physics/forces/*         → physics primitives, physics/plugins/*, core  (read flock
+                                                      arrays; no cKDTree construction —
+                                                      use flock.index)
+physics/flock            → core, physics/boid, physics/plugins/spatial_index_strategy
+                                                      (NEVER forces — the cycle is dead)
 physics/extensions       → physics/flock(read), core
 simulation/engine        → physics/*, analysis/{metrics,perf}, core
 analysis/{metrics,presets}  → physics/flock(read), core                (tier F1)
@@ -379,12 +408,41 @@ Runtime: `M` cycles `sorted(MODE_REGISTRY)` (= angle, field, influencer,
 marl, projection, spatial, vicsek); each mode reads only its own
 sub-config. Adding a mode = one file + `@register`.
 
+### Other Computational Plugins
+
+**Plugin**, formally, means a per-strategy dispatch registry: an ABC
+(or, where the strategies share no uniform signature, a plain
+callable) plus a `@register("name")` decorator populating a
+`dict[str, ...]` that a call site looks up at runtime instead of
+branching on a hardcoded if/elif chain. Force Modes (above) is the
+largest such family — one `ForceMode` per file, `MODE_REGISTRY`. The
+other six live together under `physics/plugins/` (their ABC/registry
+plumbing was scattered across `physics/`, `physics/forces/`, and
+`physics/boundary/` until consolidated there):
+
+| Plugin family | Purpose | File | Registry | Entries |
+|---|---|---|---|---|
+| **ForceMode** | force computation (see table above) | `physics/plugins/force_mode.py` | `MODE_REGISTRY` | angle, field, influencer, marl, projection, spatial, vicsek |
+| **BoundaryMode** | domain-edge handling, dispatched from `boid.py`'s `_apply_boundary()` | `physics/plugins/boundary/` | `BOUNDARY_REGISTRY` | margin, open, sphere, sphere_soft, toroidal |
+| **NeighborSelector** | per-mode neighbour-query strategy (spatial/vicsek/projection) | `physics/plugins/neighbor_selection.py` | `NEIGHBOR_SELECTOR_REGISTRY` | ball_tree_radius, hybrid, topological_visibility |
+| **ObstacleAvoidanceStrategy** | SDF-gradient fly-away + linear-TTC predictive steering | `physics/plugins/obstacle_avoidance.py` | `OBSTACLE_AVOIDANCE_REGISTRY` | sdf_ttc |
+| **SpeedModel** | post-integrate speed enforcement, dispatched from `boid.py`'s `integrate()` | `physics/plugins/speed_model.py` | `SPEED_MODEL_REGISTRY` | band, ceiling, clamp (alias of band), fixed, none |
+| **SpatialIndexStrategy** | N-adaptive index selection (`flock.py`) | `physics/plugins/spatial_index_strategy.py` | `SPATIAL_INDEX_STRATEGY_REGISTRY` | auto, hash_grid, kdtree, none |
+| **Kernel registries** | separation/alignment/cohesion distance-weighting, dispatched from `forces/separation_primitives.py` + `forces/_base.py` | `physics/plugins/kernel_registry.py` | `SEPARATION_KERNEL_REGISTRY` (11) / `ALIGNMENT_KERNEL_REGISTRY` (4) / `COHESION_KERNEL_REGISTRY` (3) | — |
+
 ---
 
 ## 7. Behavioural Extensions *(Level 3)*
 
 `Extension.apply(flock, ctx: StepContext)` — live-toggleable each frame via
-config; all stochastic draws from `ctx.rng`.
+config; all stochastic draws from `ctx.rng`. Unlike the computational
+plugins above (which select among interchangeable algorithms for one
+computation), extensions are opt-in per-step hooks that mutate
+simulation state or inject forces outside the main force-mode dispatch
+— a second, behavioral plugin family, registered in `EXTENSION_REGISTRY`
+(`physics/extensions/extension_registry.py`) rather than physically
+relocated alongside the computational ones (already a cohesive
+subpackage, not scattered).
 
 | Extension | Provides | Publishes |
 |-----------|----------|-----------|
@@ -392,6 +450,10 @@ config; all stochastic draws from `ctx.rng`.
 | **Ecology** | logistic dusk roost (temperature-boosted), coherence gate on weights, seasonal flock-size model, per-day predator presence | `predator_active` property |
 | **Wander** | boundedUnitTravel attractor (‖path‖ ≤ 1) + flock heading | wander_center/heading |
 | **Ripple** | enveloped, twisting, travelling density pulses | envelope sum (fold-noise coupling) |
+| **SpeedNoise** | 3D value-noise organic slow/fast zones, works under every speed_mode and mode | `speed_noise_mult` (per-boid speed-cap multiplier) |
+| **NeighborAdaptiveSpeed** | isolated boids fly faster — neighbour-deficit law generalised across all 7 modes | `neighbor_adaptive_speed_mult` |
+| **DynamicVisionRange** | flock-wide adaptive perception radius (spatial/projection modes only) | scalar multiplier consumed by `spatial_helpers._query_neighbors` |
+| **BoidStateMachine** | threshold-driven per-boid state (normal/isolated/crowded/threatened), first-match-wins priority | `boid_state_speed_mult` |
 
 ---
 

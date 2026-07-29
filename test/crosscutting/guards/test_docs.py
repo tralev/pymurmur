@@ -10,6 +10,10 @@ Verifies that:
 and removed from the working tree 2026-07-21 — its history lives in git,
 not as a live file this guard needs to cross-check against.  `docker.md`
 was merged into `test.md` §Continuous Integration & Docker the same day.
+
+Plugin-taxonomy table checks ("Other Computational Plugins" §6,
+Behavioural Extensions §7) moved to test_docs_plugins.py (file-size
+split of this file).
 """
 
 import re
@@ -182,7 +186,8 @@ def _extract_force_mode_table_names(md_file: str = FORCE_MODE_TABLE_FILE) -> lis
     )
     assert start is not None, f"{md_file} has no '## 6. Force Modes' section"
     end = next(
-        (i for i in range(start + 1, len(lines)) if lines[i].startswith("## 7.")),
+        (i for i in range(start + 1, len(lines))
+         if lines[i].startswith("## 7.") or lines[i].startswith("### ")),
         len(lines),
     )
     names = []
