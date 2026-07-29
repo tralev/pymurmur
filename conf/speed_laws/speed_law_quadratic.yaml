@@ -1,0 +1,65 @@
+# conf/speed_laws/speed_law_quadratic.yaml — speed-law coverage reference
+#
+# One of 2 small presets in conf/speed_laws/ closing out two independent
+# "deficit-based speed law" axes that share the same linear/quadratic/
+# softened vocabulary but are otherwise unrelated implementations:
+#   - angle.angle_speed_mode (AngleConfig, angle.py — only "linear",
+#     murmuration_angle.yaml's default, had any preset coverage)
+#   - neighbor_adaptive_speed.mode (NeighborAdaptiveSpeedConfig,
+#     "generalizes angle.py's deficit-based speed law... across all 7
+#     modes" per its own docstring — only murmuration_showcase.yaml
+#     enables the extension at all, and always via the implicit
+#     "linear" default)
+#
+# NeighborAdaptiveSpeed is mode-agnostic, so one mode: angle preset can
+# exercise both axes at once with the same "quadratic"/"softened" value
+# — closing 4 gaps (2 axes x 2 values) across just 2 files.
+#
+# This file demonstrates: angle_speed_mode=quadratic,
+# neighbor_adaptive_speed_mode=quadratic.
+#
+# Coverage/reference fixture, not tuned for visual character. Kept out
+# of top-level conf/ (and so out of --list-configs) since these are
+# narrow technical fixtures, not exploration-worthy presets — same
+# precedent as conf/kernels/ and conf/filters/.
+
+domain:
+  width: 800.0
+  height: 800.0
+  depth: 600.0
+
+flock:
+  num_boids: 100
+  boid_size: 9.0
+
+mode: angle
+
+boundary_mode: margin
+boundary_margin: 42.0
+
+angle:
+  turn_rate: 120.0
+  max_turn_rate: 200.0
+  turn_threshold: 0.5
+  jitter_deg: 4.0
+  speed_mode: quadratic
+  base_speed: 150.0
+  neighbors: 7
+  sep_radius_bodies: 1.0
+  align_radius_bodies: 5.0
+  range_radius_bodies: 12.0
+
+extensions:
+  neighbor_adaptive_speed_enabled: true
+
+neighbor_adaptive_speed:
+  mode: quadratic
+
+performance:
+  spatial_index: auto
+
+metrics:
+  detail_level: 1
+  interval: 60
+
+seed: 42

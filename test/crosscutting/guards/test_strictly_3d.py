@@ -108,8 +108,15 @@ def test_domain_config_validates_positive_depth():
     (including the depth check) now lives in config_validation.py, not
     config.py itself -- scan every core/config*.py file, not just the
     one named config.py, so this check survives future splits too.
+
+    A second, later split moved core/config.py to the core/config/
+    package (core/config/config_validation.py etc.) -- the original
+    Path("pymurmur/core").glob("config*.py") predates that move and has
+    matched zero files since (a bare directory named "config" doesn't
+    satisfy a "*.py" glob), silently no-opping this guard via the
+    "no files found" skip below rather than ever checking anything.
     """
-    config_files = sorted(Path("pymurmur/core").glob("config*.py"))
+    config_files = sorted(Path("pymurmur/core/config").glob("*.py"))
     if not config_files:
         pytest.skip("no core/config*.py files found")
 

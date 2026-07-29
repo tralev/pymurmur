@@ -4,7 +4,6 @@ Split out of test_boid.py (file-size split).
 """
 
 import numpy as np
-import pytest
 
 from pymurmur.physics.boid import (
     integrate,
@@ -14,7 +13,6 @@ from pymurmur.physics.boid import (
 
 # ── Array helper additions ────────────────────────────────────────
 
-@pytest.mark.skip(reason="requires scipy for uniformity test")
 def test_random_unit_sphere_uniform():
     """Distribution across octants is roughly balanced (weak uniformity check)."""
     N = 500

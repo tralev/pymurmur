@@ -70,6 +70,7 @@ visual:
   show_grid: false
   auto_rotate: false
   theme: ink
+  bird_mesh: tetra
 
 capture:
   width: 800

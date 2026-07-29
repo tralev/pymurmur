@@ -53,6 +53,21 @@ Generated files:
     examples/metrics_obstacles.json / .csv    (conf/murmuration_obstacles.yaml —
                                                 priority_stack_enabled +
                                                 SDF obstacle avoidance)
+    examples/metrics_speed_law_quadratic.json / .csv
+                                               (conf/speed_laws/speed_law_quadratic.yaml —
+                                                angle mode with both
+                                                angle_speed_mode and
+                                                neighbor_adaptive_speed.mode
+                                                set to "quadratic")
+    examples/metrics_speed_law_softened.json / .csv
+                                               (conf/speed_laws/speed_law_softened.yaml —
+                                                same, but "softened")
+    examples/metrics_filter_global.json / .csv
+                                               (conf/filters/filter_global.yaml —
+                                                neighbor_filter=global,
+                                                all-to-all interaction
+                                                instead of the default
+                                                hybrid k-NN filter)
     examples/metrics_full.json / .csv         (conf/murmuration_showcase.yaml,
                                                 metrics_interval=1 — every
                                                 expensive metric populates
@@ -98,6 +113,9 @@ EXAMPLE_TARGETS: list[tuple[str, str | None, dict]] = [
     ("kernel_velocity_weighted", "conf/kernels/kernel_velocity_weighted.yaml", {}),
     ("kernel_exp", "conf/kernels/kernel_exp.yaml", {}),
     ("obstacles", "conf/murmuration_obstacles.yaml", {}),
+    ("speed_law_quadratic", "conf/speed_laws/speed_law_quadratic.yaml", {}),
+    ("speed_law_softened", "conf/speed_laws/speed_law_softened.yaml", {}),
+    ("filter_global", "conf/filters/filter_global.yaml", {}),
     ("full", "conf/murmuration_showcase.yaml", {"frames": 40, "metrics_interval": 1}),
 ]
 

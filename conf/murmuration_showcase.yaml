@@ -89,6 +89,11 @@ predator:
   strength: 1.0
   mode: cursor
 
+# ── NeighborAdaptiveSpeed-Specific (explicit textual coverage for the
+# implicit "linear" default — conf/speed_laws/ covers quadratic/softened) ─
+neighbor_adaptive_speed:
+  mode: linear
+
 # ── Performance Tuning ───────────────────────────────────────────────
 # hash_grid: explicitly forced. Every other preset leaves this on
 # "auto" (which resolves to hash_grid below 5000 birds anyway) —

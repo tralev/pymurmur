@@ -70,6 +70,7 @@ visual:
   show_grid: false
   auto_rotate: false
   theme: ink
+  bird_mesh: auto   # explicit textual coverage for the implicit default
 
 capture:
   width: 800

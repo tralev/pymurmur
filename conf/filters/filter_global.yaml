@@ -63,6 +63,7 @@ visual:
   show_grid: false
   auto_rotate: false
   theme: graphite
+  bird_mesh: ellipsoid
 
 capture:
   width: 800

@@ -59,6 +59,7 @@ visual:
   show_grid: false
   auto_rotate: false
   theme: ink
+  bird_mesh: arrow
 
 capture:
   width: 800

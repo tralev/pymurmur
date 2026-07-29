@@ -39,6 +39,7 @@ spatial:
   alignment_weight: 0.65
   cohesion_weight: 0.75
   neighbor_filter: none
+  speed_mode: none      # mnemonic pairing with this file's own name
 
 boundary_mode: toroidal
 
@@ -66,6 +67,7 @@ visual:
   auto_rotate: false
   theme: heading
   trails: lines
+  bird_mesh: impostor
 
 capture:
   width: 800
