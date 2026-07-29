@@ -38,39 +38,17 @@ field:
   # ── Leader/Chaser (§2.2) ──
   num_groups: 7            # number of leader/chaser groups
   leader_fraction: 0.16    # ~16% of particles are leaders
-  leader_lag_base: 1.1     # base lag multiplier
-  secondary_mix: 0.3       # blend toward secondary group anchor
-
-  # ── Slot repulsion (§2.4) ──
-  slot_radius: 0.07        # slot repulsion distance (base)
-  slot_offsets: [1, 7, 31]  # fixed-index offsets for O(n) spacing
 
   # ── Ripple envelopes (§2.5, §2.6) ──
   ripple_enabled: true
   wave_gain: 0.04          # ripple intensity multiplier
   ripple_trains: 3         # number of staggered ripple trains
-  ripple_offsets: [0.0, 9.33, 18.67]  # train onset delays (seconds)
 
   # ── Flow field noise (§2.5) ──
   flow_pull: 0.22          # flow force attraction strength
-  flow_pulse: 0.08         # flow modulation by ripple activity
-  flow_spatial_freq: [2.8, 2.3, 2.6]  # spatial frequencies (x, y, z)
-  flow_temporal_freq: [0.24, 0.20, 0.16]  # temporal frequencies
-
-  # ── Fold noise (§2.8) ──
-  fold_spatial_freq: [3.7, 3.1, 3.3]    # higher freq than flow field
-  fold_temporal_freq: [0.73, 0.67, 0.59]
 
   # ── Tangential orbital (§2.1) ──
   tangent_pull: 0.035      # orbital force strength
-
-  # ── Buoyancy (§2.6) ──
-  buoyancy_amplitude: 0.09 # vertical undulation amplitude
-  buoyancy_vertical_pull: 0.24  # pull toward target y-level
-
-  # ── Viscous drag (§3.6) ──
-  viscous_base: 0.08       # base drag coefficient
-  viscous_flow_mix: 0.02   # flow-modulated addition
 
   # ── Drift alignment (§2.2) ──
   drift_pull: 0.12         # drift alignment attraction
@@ -83,7 +61,6 @@ field:
   inertia: 0.82            # lerp factor for speed clamping (0=crisp, 1=pure direction)
 
   # ── Boundary ──
-  pilot_radius: 1.0        # base radius for boundary sphere
   boundary_radius_factor: 1.45  # soft boundary at this multiple of pilot_radius
 
 # ── Boundary Mode ───────────────────────────────────────────────────
@@ -102,7 +79,6 @@ extensions:
 wander:
   attractor_speed: 0.15    # speed of the wandering attractor
   attractor_radius: 400.0  # max radius of wander from domain center
-  wander_speed: 1.0        # multiplier on bounded_unit_travel
 
 # ── Performance Tuning (300K target) ────────────────────────────────
 # Field mode is already O(1) per bird — fastest at any scale.

@@ -41,6 +41,7 @@ spatial:
   cohesion_kernel: inverse_distance
   separation_kernel_radius: 20.0   # only consulted by exp/linear_ramp/asymptotic/bell_zone
   kernel_zone_width: 10.0           # only consulted by bell_zone (sep/align/coh)
+  noise_mode: seed_sinusoidal
 
 boundary_mode: toroidal
 
@@ -59,6 +60,7 @@ metrics:
   interval: 60
 
 seed: 42
+velocity_init: drift
 
 visual:
   fps: 60

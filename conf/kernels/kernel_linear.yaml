@@ -59,6 +59,7 @@ metrics:
   interval: 60
 
 seed: 42
+velocity_init: speed_uniform
 
 visual:
   fps: 60

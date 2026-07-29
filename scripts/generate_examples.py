@@ -27,6 +27,30 @@ Generated files:
     examples/metrics_showcase.json / .csv     (conf/murmuration_showcase.yaml —
                                                 extensions/kernels/sphere_soft/
                                                 hash_grid all exercised)
+    examples/metrics_angle.json / .csv        (conf/murmuration_angle.yaml)
+    examples/metrics_vicsek.json / .csv       (conf/murmuration_vicsek.yaml)
+    examples/metrics_field.json / .csv        (conf/murmuration_field.yaml,
+                                                num_boids capped to 200 — its
+                                                native 16,000-boid scale is
+                                                intractable at
+                                                metrics_detail_level=2; see
+                                                the H2/consensus-robustness
+                                                dense-eigh O(N^3) cost
+                                                documented in
+                                                test_performance_budgets_combined.py)
+    examples/metrics_marl.json / .csv         (conf/murmuration_marl.yaml)
+    examples/metrics_kernel_velocity_weighted.json / .csv
+                                               (conf/kernels/kernel_velocity_weighted.yaml —
+                                                the one kernel whose weighting
+                                                is computed from runtime
+                                                closing speed, not a static
+                                                distance/angle formula)
+    examples/metrics_full.json / .csv         (conf/murmuration_showcase.yaml,
+                                                metrics_interval=1 — every
+                                                expensive metric populates
+                                                every frame, a zero-nulls
+                                                reference for all 47
+                                                FlockMetrics fields)
 
 Determinism: every target is re-seeded to DEFAULT_SEED regardless of
 what the source preset specifies, so regeneration is reproducible.
@@ -51,11 +75,20 @@ DEFAULT_METRICS_INTERVAL = 20
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "examples"
 DT = 1.0 / 60.0
 
-# (name, source preset path or None for SimConfig() defaults)
-EXAMPLE_TARGETS: list[tuple[str, str | None]] = [
-    ("projection", None),
-    ("influencer", "conf/murmuration_influencer.yaml"),
-    ("showcase", "conf/murmuration_showcase.yaml"),
+# (name, source preset path or None for SimConfig() defaults, overrides)
+# overrides: "frames"/"metrics_interval" override this target's run
+# parameters; any other key is set directly on the loaded SimConfig via
+# setattr (e.g. "num_boids") before validate().
+EXAMPLE_TARGETS: list[tuple[str, str | None, dict]] = [
+    ("projection", None, {}),
+    ("influencer", "conf/murmuration_influencer.yaml", {}),
+    ("showcase", "conf/murmuration_showcase.yaml", {}),
+    ("angle", "conf/murmuration_angle.yaml", {}),
+    ("vicsek", "conf/murmuration_vicsek.yaml", {}),
+    ("field", "conf/murmuration_field.yaml", {"num_boids": 200}),
+    ("marl", "conf/murmuration_marl.yaml", {}),
+    ("kernel_velocity_weighted", "conf/kernels/kernel_velocity_weighted.yaml", {}),
+    ("full", "conf/murmuration_showcase.yaml", {"frames": 40, "metrics_interval": 1}),
 ]
 
 
@@ -66,6 +99,7 @@ def generate_example(
     frames: int = DEFAULT_FRAMES,
     metrics_interval: int = DEFAULT_METRICS_INTERVAL,
     output_dir: Path = OUTPUT_DIR,
+    overrides: dict | None = None,
 ) -> tuple[Path, Path]:
     """Generate one example's metrics CSV + JSON.
 
@@ -76,10 +110,17 @@ def generate_example(
         frames: number of simulation steps to run.
         metrics_interval: frames between expensive/gated metric computations.
         output_dir: directory for the .csv/.json files.
+        overrides: optional per-target overrides — "frames"/"metrics_interval"
+            replace those parameters for this target; any other key is
+            applied via setattr(cfg, key, value).
 
     Returns:
         (csv_path, json_path)
     """
+    overrides = overrides or {}
+    frames = overrides.get("frames", frames)
+    metrics_interval = overrides.get("metrics_interval", metrics_interval)
+
     cfg = SimConfig.from_file(source) if source else SimConfig()
     cfg.seed = seed
     cfg.metrics_detail_level = 2
@@ -87,13 +128,17 @@ def generate_example(
     cfg.capture_with_viz = False  # headless: never touches GPU/Visualizer
     cfg.capture_frames = frames
     cfg.capture_prewarm = 0
+    for key, value in overrides.items():
+        if key in ("frames", "metrics_interval"):
+            continue
+        setattr(cfg, key, value)
     if cfg.visual_range <= 0:
-        # conf/murmuration_influencer.yaml ships visual_range=0.0 (influencer
-        # mode never queries neighbors, so it's a documented no-op value) --
-        # but SimConfig.validate() rejects visual_range<=0 unconditionally.
-        # This is a pre-existing bug in the shipped preset/validation rule,
-        # out of scope here; work around it since the override has zero
-        # physics effect on influencer mode specifically.
+        # conf/murmuration_influencer.yaml and conf/murmuration_field.yaml
+        # both ship visual_range=0.0 (neither mode queries neighbors, so
+        # it's a documented no-op value) -- but SimConfig.validate()
+        # rejects visual_range<=0 unconditionally. Pre-existing bug in the
+        # shipped presets/validation rule, out of scope here; work around
+        # it since the override has zero physics effect on either mode.
         cfg.visual_range = 1.0
     cfg.validate()
 
@@ -123,7 +168,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--name",
-        choices=[n for n, _ in EXAMPLE_TARGETS] + ["all"],
+        choices=[n for n, _, _ in EXAMPLE_TARGETS] + ["all"],
         default="all",
         help="Example to regenerate (default: all).",
     )
@@ -138,7 +183,7 @@ def main() -> int:
     args = parser.parse_args()
 
     targets = EXAMPLE_TARGETS if args.name == "all" else [
-        (n, s) for n, s in EXAMPLE_TARGETS if n == args.name
+        (n, s, o) for n, s, o in EXAMPLE_TARGETS if n == args.name
     ]
 
     print("Example metrics regeneration")
@@ -150,20 +195,21 @@ def main() -> int:
 
     if args.dry_run:
         print("[DRY RUN] Would generate:")
-        for name, source in targets:
-            print(f"  {args.output_dir / f'metrics_{name}.csv'}  (source: {source or 'defaults'})")
+        for name, source, overrides in targets:
+            print(f"  {args.output_dir / f'metrics_{name}.csv'}  (source: {source or 'defaults'}, overrides: {overrides or None})")
             print(f"  {args.output_dir / f'metrics_{name}.json'}")
         return 0
 
     generated = []
     errors = []
-    for name, source in targets:
+    for name, source, overrides in targets:
         try:
             csv_path, json_path = generate_example(
                 name, source,
                 seed=args.seed, frames=args.frames,
                 metrics_interval=args.metrics_interval,
                 output_dir=args.output_dir,
+                overrides=overrides,
             )
             print(f"  ✓ {name:12s} → {csv_path.name}, {json_path.name}")
             generated.append(name)

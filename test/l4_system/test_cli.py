@@ -134,6 +134,92 @@ class TestLoadConfig:
         assert cfg.num_boids == 77
 
 
+class TestResolveConfigPath:
+    """_resolve_config_path() mirrors load_config()'s search order but
+    returns the file Path itself — used to wire obstacles: into the
+    engine for the normal CLI path (previously only EvoFlock's own
+    runner did this; see conf/murmuration_obstacles.yaml)."""
+
+    def test_resolve_none_returns_none(self):
+        from pymurmur.__main__ import _resolve_config_path
+        assert _resolve_config_path(None) is None
+
+    def test_resolve_shipped_preset(self):
+        from pymurmur.__main__ import _resolve_config_path
+        path = _resolve_config_path("murmuration_obstacles")
+        assert path is not None
+        assert path.name == "murmuration_obstacles.yaml"
+        assert path.exists()
+
+    def test_resolve_missing_returns_none(self):
+        from pymurmur.__main__ import _resolve_config_path
+        assert _resolve_config_path("nonexistent_config_xyz_123") is None
+
+    def test_resolve_absolute_path(self, tmp_path):
+        import yaml
+
+        from pymurmur.__main__ import _resolve_config_path
+
+        custom = tmp_path / "custom.yaml"
+        custom.write_text(yaml.dump({"mode": "spatial", "num_boids": 50}))
+        resolved = _resolve_config_path(str(custom))
+        assert resolved == custom
+
+
+class TestObstacleSceneWiring:
+    """main() loads obstacles: from the resolved config path and wires
+    it into the engine — the fix for the gap TestResolveConfigPath
+    documents. Exercises the same load_obstacle_scene() call main() makes,
+    not main() itself (which requires argv/engine plumbing covered by
+    TestMainDispatch)."""
+
+    def test_murmuration_obstacles_scene_loads(self):
+        from pymurmur.__main__ import _resolve_config_path
+        from pymurmur.analysis.evoflock import load_obstacle_scene
+
+        path = _resolve_config_path("murmuration_obstacles")
+        scene = load_obstacle_scene(path)
+        assert scene is not None
+        assert scene.n_shapes == 4
+
+    def test_config_without_obstacles_returns_none(self):
+        from pymurmur.__main__ import _resolve_config_path
+        from pymurmur.analysis.evoflock import load_obstacle_scene
+
+        path = _resolve_config_path("murmuration_spatial")
+        assert load_obstacle_scene(path) is None
+
+    def test_obstacle_scene_confined_within_boundary_sphere(self):
+        """Every shape's center in murmuration_obstacles.yaml's course
+        sits inside its own boundary_sphere_radius, confirming the +100
+        domain-centre shift documented in the preset actually lands the
+        course where boids can reach it (flock.py centres the sphere
+        boundary on the domain centre, not the origin — obstacle centers
+        are in the same absolute corner-anchored frame as boid
+        positions). Reads the raw obstacles: spec directly rather than
+        ObstacleScene internals (its compiled SDF closures aren't
+        introspectable) — black-box by construction.
+        """
+        import numpy as np
+        import yaml
+
+        from pymurmur.__main__ import _resolve_config_path
+        from pymurmur.core.config import SimConfig
+
+        path = _resolve_config_path("murmuration_obstacles")
+        cfg = SimConfig.from_file(str(path))
+        with open(path) as f:
+            spec = yaml.safe_load(f)["obstacles"]
+
+        domain_center = np.array([cfg.width / 2, cfg.height / 2, cfg.depth / 2])
+        for shape in spec:
+            center = np.array(shape["center"], dtype=float)
+            assert np.linalg.norm(center - domain_center) < cfg.boundary_sphere_radius, (
+                f"obstacle center {center} outside boundary_sphere_radius="
+                f"{cfg.boundary_sphere_radius} of domain center {domain_center}"
+            )
+
+
 class TestListConfigs:
     """list_available_configs() scans conf/ and prints presets."""
 

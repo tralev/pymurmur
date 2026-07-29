@@ -522,16 +522,19 @@ Version pins: [requirements.txt](requirements.txt),
 | `murmuration_spatial.yaml` | spatial | 200 | Reynolds + threat |
 | `murmuration_starlings.yaml` | spatial | 150 | hybrid neighbour filter, dual radii, sphere boundary, parameter jitter |
 | `murmuration_boids.yaml` | spatial | 150 | unit separation kernel, velocity-domain noise, ceiling speed mode |
-| `murmuration_field.yaml` | field | 16K | full 13-term blob dynamics |
+| `murmuration_field.yaml` | field | 16K | blob dynamics (core/shell/leader-chaser/ripple/flow/drift/target terms) |
 | `field_quiet_roost / lava_lamp / ink_cloud / predator_ripple / vacuole / silk_sheet / storm_turn.yaml` | field | 3K–18K | the seven field character presets |
 | `murmuration_vicsek.yaml` | vicsek | 101 | predator–prey, phase transition |
 | `murmuration_angle.yaml` | angle | 200 | turn-rate-limited heading steering, margin boundary |
 | `murmuration_influencer.yaml` | influencer | 200 | Lissajous pursuit, alpha-density rendering |
 | `murmuration_marl.yaml` | marl | 200 | deferred-global-rules mode, dual-view, pairs with `MurmurationEnv` |
+| `murmuration_showcase.yaml` | spatial | 150 | plugin-diversity reference — `sphere_soft` boundary, `bell_zone` kernels, `hash_grid` index, all 4 newest extensions |
+| `murmuration_obstacles.yaml` | spatial | 150 | `priority_stack_enabled` + SDF obstacle course, interactive (non-GA) |
 | `murmuration_evo.yaml` | spatial (GA) | 200 | SSGA + SDF obstacle course (confined) |
 | `evo_open.yaml` | spatial (GA) | 200 | open-boundary GA evaluation variant |
 | `murmuration_300k.yaml` | spatial | 300K | cKDTree + numba benchmark config |
-| `conf/examples/murmuration_nested.yaml` | — | — | nested-schema reference example |
+| `conf/kernels/*.yaml` (9 files) | spatial | 100 | separation/alignment/cohesion kernel + `noise_mode` + `velocity_init` coverage fixtures, not `--list-configs`-visible |
+| `conf/examples/murmuration_nested.yaml` | — | — | nested-schema reference example, not loadable |
 
 Presets load exactly as written (documented-intent policy) — a shipped
 preset's values may deliberately override a sub-config's raw dataclass

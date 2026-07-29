@@ -88,6 +88,47 @@ class TestConfigFileValidation:
             ext = data.get("extensions", {})
             assert ext.get("wander_enabled") is True, "field config should have wander enabled"
 
+    def test_priority_stack_has_example_coverage(self):
+        """Some shipped preset has extensions.priority_stack_enabled: true.
+
+        priority_stack_enabled is real ExtensionConfig field
+        (pymurmur/physics/priority_stack.py's tier1/2/3 force-budget
+        cascade) but engine-level branching, not a class-based
+        Extension — structurally invisible to
+        test_every_extension_has_example_coverage's live
+        EXTENSION_REGISTRY scan. No registry exists for this single
+        flag, so it's a direct assertion (mirrors
+        test_spatial_config_has_predator) rather than a registry-driven
+        loop.
+        """
+        covered = any(
+            _load_config(path).get("extensions", {}).get("priority_stack_enabled") is True
+            for path in ALL_CONFIGS
+        )
+        assert covered, (
+            "No conf/*.yaml has extensions.priority_stack_enabled: true — "
+            "see conf/murmuration_obstacles.yaml."
+        )
+
+    def test_obstacles_demonstrated_outside_evoflock(self):
+        """Some preset other than murmuration_evo.yaml has a non-empty
+        obstacles: scene, run through the normal (non-GA) CLI path.
+
+        Before conf/murmuration_obstacles.yaml, obstacles: only appeared
+        in murmuration_evo.yaml's headless GA training scene — and
+        __main__.py never wired obstacles: into the engine at all for
+        the normal CLI path (only EvoFlock's own runner did), so the
+        section was silently inert for every other preset regardless.
+        """
+        covered = any(
+            path.name != "murmuration_evo.yaml" and bool(_load_config(path).get("obstacles"))
+            for path in ALL_CONFIGS
+        )
+        assert covered, (
+            "No conf/*.yaml other than murmuration_evo.yaml has a non-empty "
+            "obstacles: scene — see conf/murmuration_obstacles.yaml."
+        )
+
     def test_every_extension_has_example_coverage(self):
         """Every registered extension is enabled=true in at least one
         shipped preset — no more silent gaps like the one this test
@@ -117,6 +158,47 @@ class TestConfigFileValidation:
             f"conf/*.yaml): {uncovered}. Add extensions.{{config_attr}}: "
             f"true to at least one preset, e.g. conf/murmuration_showcase.yaml."
         )
+
+    def test_all_top_level_configs_strict_load_and_validate(self):
+        """Every conf/*.yaml loads via the real strict SimConfig.from_file()
+        loader and passes validate() — not just a raw yaml.safe_load dict
+        check (that's what test_all_configs_parse does, and it's why
+        conf/murmuration_field.yaml was able to ship with 16 dead field:
+        keys — leftover from an earlier, richer field-force design that
+        was simplified out of FieldConfig — and crash on the normal CLI
+        path undetected until this test was added).
+
+        Three presets are narrowly skipped by name, each a pre-existing,
+        out-of-scope bug flagged (not fixed) here:
+          - murmuration_influencer.yaml / murmuration_field.yaml both ship
+            visual_range=0.0 (neither mode queries neighbors, so it's a
+            documented no-op value) but validate() rejects visual_range<=0
+            unconditionally for every mode. Matches
+            scripts/generate_examples.py's workaround.
+          - murmuration_300k.yaml ships viz.fps=0 ("uncapped, measure real
+            throughput" per its own comment) but validate() rejects
+            viz.fps<=0 unconditionally.
+        murmuration_evo.yaml is excluded structurally, not as a bug: it
+        carries EvoFlock-only sections (evoflock/objectives/
+        parameters_to_optimize) that collide with real SimConfig field
+        names under strict parsing and is loaded via
+        SimConfig.from_file(path, strict=False) plus EvoFlock-specific
+        extraction elsewhere (__main__.py, test_evoflock_*.py) — never
+        through this plain strict+validate path.
+        """
+        from pymurmur.core.config import SimConfig
+
+        known_validation_bugs = {
+            "murmuration_influencer.yaml",
+            "murmuration_field.yaml",
+            "murmuration_300k.yaml",
+        }
+        structurally_excluded = {"murmuration_evo.yaml"}
+        for path in ALL_CONFIGS:
+            if path.name in known_validation_bugs or path.name in structurally_excluded:
+                continue
+            cfg = SimConfig.from_file(str(path))
+            cfg.validate()
 
     def test_kernel_configs_parse_and_validate(self):
         """Every conf/kernels/*.yaml loads and validates via SimConfig."""
@@ -166,6 +248,51 @@ class TestConfigFileValidation:
         assert not uncovered, (
             f"Kernels with zero preset coverage: {uncovered}. Add a "
             f"spatial.{{field}}: {{name}} preset, e.g. under conf/kernels/."
+        )
+
+    def test_every_noise_mode_has_example_coverage(self):
+        """Every valid spatial.noise_mode value appears as a literal
+        value in at least one shipped preset. No live registry exists
+        for noise_mode (it's a bare str field with an inline comment
+        listing the valid set, config_sections.py's SpatialConfig,
+        unlike kernels/extensions) so the valid set is hardcoded here —
+        mirrors test_config_boundary_valid's existing precedent for the
+        same reason. Before this, only "velocity"
+        (murmuration_boids.yaml) and the implicit "additive" default had
+        any real preset behind them; maxwellian/none/seed_sinusoidal had
+        zero coverage anywhere."""
+        valid_noise_modes = {"additive", "maxwellian", "none", "seed_sinusoidal", "velocity"}
+        all_data = [_load_config(path) for path in ALL_CONFIGS + ALL_KERNEL_CONFIGS]
+
+        uncovered = [
+            mode for mode in valid_noise_modes
+            if not any(data.get("spatial", {}).get("noise_mode") == mode for data in all_data)
+        ]
+        assert not uncovered, (
+            f"noise_mode values with zero preset coverage: {uncovered}. Add a "
+            f"spatial.noise_mode: {{value}} preset, e.g. under conf/kernels/."
+        )
+
+    def test_every_velocity_init_has_example_coverage(self):
+        """Every valid velocity_init value appears as a literal value in
+        at least one shipped preset. Unlike noise_mode,
+        _VALID_VELOCITY_INITS is a real SimConfig class attribute, so
+        it's imported live rather than hardcoded. Before this, only the
+        implicit "sphere" default had any real preset behind it —
+        blob/drift/cube/speed_uniform/tangential/fixed had zero coverage
+        anywhere (only named in conf/examples/murmuration_nested.yaml's
+        comments)."""
+        from pymurmur.core.config import SimConfig
+
+        all_data = [_load_config(path) for path in ALL_CONFIGS + ALL_KERNEL_CONFIGS]
+
+        uncovered = [
+            mode for mode in SimConfig._VALID_VELOCITY_INITS
+            if not any(data.get("velocity_init") == mode for data in all_data)
+        ]
+        assert not uncovered, (
+            f"velocity_init values with zero preset coverage: {uncovered}. Add a "
+            f"top-level velocity_init: {{value}} preset, e.g. under conf/kernels/."
         )
 
     def test_300k_config_kdtree(self):

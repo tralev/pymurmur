@@ -130,6 +130,33 @@ def load_config(name: str | None) -> SimConfig:
     )
 
 
+def _resolve_config_path(name: str | None) -> Path | None:
+    """Resolve a config name/path to its actual file Path, or None.
+
+    Mirrors load_config()'s search order (conf/{name}.yaml -> {name} as
+    path) without re-parsing the file — used to locate the raw YAML for
+    obstacle-scene loading (S6.4/P11.6's `obstacles:` section isn't a
+    SimConfig field, so it's invisible on the loaded cfg object; only
+    EvoFlock's own runner previously wired obstacles: into the engine,
+    leaving the same section inert for any preset run through the normal
+    CLI path).
+    """
+    if name is None:
+        return None
+    config_name = name[:-5] if name.endswith(".yaml") else name
+    package_dir = Path(__file__).parent
+    shipped = package_dir / "conf" / f"{config_name}.yaml"
+    if shipped.exists():
+        return shipped
+    project_conf = Path("conf") / f"{config_name}.yaml"
+    if project_conf.exists():
+        return project_conf
+    user_path = Path(name)
+    if user_path.exists():
+        return user_path
+    return None
+
+
 def probe_capabilities() -> dict[str, str | None]:
     """Probe optional dependencies and return capability dict.
 
@@ -397,6 +424,16 @@ def main() -> None:
     # ── Build simulation engine ──────────────────────────────────
     from .simulation.engine import SimulationEngine
     sim = SimulationEngine(cfg)
+
+    # S6.4/P11.6: wire an obstacles: scene in for the normal CLI path —
+    # previously only EvoFlock's own runner did this, leaving obstacles:
+    # silently inert for every other preset (see _resolve_config_path).
+    config_path = _resolve_config_path(args.config)
+    if config_path is not None:
+        from .analysis.evoflock import load_obstacle_scene
+        obstacle_scene = load_obstacle_scene(config_path)
+        if obstacle_scene is not None:
+            sim.obstacle_scene = obstacle_scene
 
     # S5.6: Log lifecycle — engine created
     _log.info("Lifecycle | engine_created mode=%s N=%d", cfg.mode, cfg.num_boids)

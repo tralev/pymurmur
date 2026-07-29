@@ -1,0 +1,116 @@
+# murmuration_obstacles.yaml — priority-stack + obstacle-avoidance showcase
+#
+# Two gaps closed at once: extensions.priority_stack_enabled has zero
+# preset coverage anywhere else, and obstacles: (SDF CSG scene, loaded
+# via load_obstacle_scene) is only ever used by murmuration_evo.yaml's
+# headless GA — there's no preset for visually exploring obstacle
+# avoidance interactively. They're combined here rather than split into
+# two presets because priority_stack (pymurmur/physics/priority_stack.py)
+# only does something observable when tier 1 (obstacle avoidance) and
+# tier 2 (predator threat) both have real forces to arbitrate alongside
+# tier 3 (flocking) — a binary-cutoff cascade over a shared per-boid
+# force budget, not a plain weighted sum.
+#
+# Unlike murmuration_evo.yaml, this is a normal, non-GA, interactively
+# runnable preset — `python -m pymurmur --config conf/murmuration_obstacles.yaml`.
+
+# ── Simulation Domain ───────────────────────────────────────────────
+domain:
+  width: 200.0
+  height: 200.0
+  depth: 200.0
+
+# ── Flock Parameters ────────────────────────────────────────────────
+flock:
+  num_boids: 150
+  boid_size: 4.0
+  v0: 6.0
+  max_force: 1.0           # priority_stack's per-boid force budget ceiling
+  visual_range: 60.0
+
+# ── Spatial / Reynolds Mode ─────────────────────────────────────────
+mode: spatial
+
+# ── Reynolds Spatial Parameters ─────────────────────────────────────
+spatial:
+  separation_weight: 4.5
+  alignment_weight: 0.65
+  cohesion_weight: 0.75
+  # Obstacle-avoidance (tier 1): both static and predictive terms on,
+  # scaled to max_force=1.0 so they're a meaningful share of the shared
+  # priority_stack budget without saturating it outright.
+  static_avoid_weight: 0.8
+  predictive_avoid_weight: 0.8
+  fly_away_max_dist: 20.0
+  min_time_to_collide: 2.0
+
+# ── Boundary Mode (confined enclosure — obstacle course sits inside) ─
+boundary_mode: sphere
+boundary_sphere_radius: 90.0
+
+# ── Obstacle Scene (SDF CSG, loaded via load_obstacle_scene) ─────────
+# Same course layout as murmuration_evo.yaml's GA training scene — three
+# pillars and a central sphere — but shifted +100 on every axis.
+# Obstacle `center:` coordinates are absolute, in the same corner-
+# anchored [0,width]x[0,height]x[0,depth] frame as flock positions, NOT
+# domain-centered — while boundary_mode: sphere is explicitly centred on
+# the domain centre (flock.py: "boundary sphere is centred on the DOMAIN
+# centre"). murmuration_evo.yaml's origin-centered course therefore sits
+# entirely outside its own boundary_sphere_radius confinement zone (its
+# objectives.obstacle_avoidance is also `enabled: false`, so this was
+# never actually exercised). Shifting by (width/2, height/2, depth/2) =
+# (100, 100, 100) here places the course inside this preset's actual
+# confinement sphere, verified by construction (max obstacle extent from
+# domain centre ≈73 < boundary_sphere_radius=90).
+obstacles:
+  - {shape: sphere, center: [100.0, 100.0, 100.0], radius: 15.0}
+  - {shape: cylinder, center: [140.0, 100.0, 100.0], radius: 8.0, half_height: 60.0}
+  - {shape: cylinder, center: [60.0, 100.0, 130.0], radius: 8.0, half_height: 60.0}
+  - {shape: box, center: [100.0, 100.0, 55.0], half_extents: [10.0, 40.0, 10.0]}
+
+# ── Behavioural Extensions ──────────────────────────────────────────
+extensions:
+  predator_enabled: true       # tier 2 — gives priority_stack something to arbitrate
+  roosting_enabled: false
+  wander_enabled: false
+  ripple_enabled: false
+  priority_stack_enabled: true # tier1/2/3 binary-cutoff force-budget allocation
+
+# ── Predator-Specific (used since extensions.predator_enabled = true) ─
+predator:
+  threat_radius: 60.0          # scaled to this preset's domain, not the 12.0 default
+  strength: 1.0
+
+# ── Performance Tuning ───────────────────────────────────────────────
+performance:
+  spatial_index: kdtree
+  instance_buffer_chunk: 50000
+
+# ── Metrics Detail ──────────────────────────────────────────────────
+metrics:
+  detail_level: 1
+  interval: 60
+
+# ── Random Seed ─────────────────────────────────────────────────────
+seed: 42
+
+# ── Visualization ───────────────────────────────────────────────────
+visual:
+  fps: 60
+  window_width: 1200
+  window_height: 800
+  show_grid: false
+  auto_rotate: true
+  theme: ink
+
+# ── Capture Settings ────────────────────────────────────────────────
+capture:
+  width: 800
+  height: 600
+  frames: 240
+  every: 3
+  fps: 20
+  output: output/murmuration_obstacles.gif
+  metrics_csv: output/metrics_obstacles.csv
+  metrics_json: output/metrics_obstacles.json
+  with_viz: true
