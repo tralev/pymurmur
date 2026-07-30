@@ -159,10 +159,26 @@ class PhysicsFlock:
         self.last_accelerations[:] = self.accelerations
         self.prev_positions[:] = self.positions
 
+        # Modularity pass 10/11: mode-computed per-bird target speed
+        # (vicsek's predator/prey v0-vs-v_pred distinction, angle's
+        # adaptive deficit-based speed law) -- takes priority as the
+        # max_speed BASE that the extension multipliers below compose
+        # onto, instead of defaulting to flat config.v0 and silently
+        # discarding what the mode itself computed (a real bug this
+        # channel fixes: speed_mode="fixed" previously always
+        # renormalised to flat v0 regardless of what vicsek/angle wrote
+        # to velocities, since nothing ever populated self.max_speed for
+        # them). One-shot: cleared after read so a stale array can't
+        # leak into a later frame or mode switch.
+        max_speed = self.max_speed
+        mode_target_speed = getattr(config, '_mode_target_speed', None)
+        if mode_target_speed is not None:
+            max_speed = mode_target_speed
+            config._mode_target_speed = None
+
         # C3: predator_speed_boost — predator rows get a faster speed cap.
         # Golden-safe fast path: default n_predators=0 means is_predator
         # is all-False, so self.max_speed passes through unchanged.
-        max_speed = self.max_speed
         predator_boost = config.spatial.predator_speed_boost
         if predator_boost != 1.0 and self.is_predator.any():
             base = max_speed if max_speed is not None else np.full(

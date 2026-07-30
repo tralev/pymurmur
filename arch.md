@@ -218,9 +218,11 @@ pymurmur/                          # pip-installable package
 │   │   ├── boundary/                # BoundaryMode ABC + 5 strategies, BOUNDARY_REGISTRY
 │   │   ├── neighbor_selection.py    # NeighborSelector ABC + 3 strategies
 │   │   ├── obstacle_avoidance.py    # ObstacleAvoidanceStrategy ABC + sdf_ttc
-│   │   ├── speed_model.py           # SpeedModel ABC + 4 strategies (band/ceiling/fixed/none)
+│   │   ├── speed_model.py           # SpeedModel ABC + 6 strategies (band/ceiling/fixed/none/
+│   │   │                            #   noise_modulated/velocity_adaptive)
 │   │   ├── spatial_index_strategy.py # index-selection dispatch (auto/hash_grid/kdtree/none)
-│   │   └── kernel_registry.py       # separation(11)/alignment(4)/cohesion(3) kernel dispatch
+│   │   ├── kernel_registry.py       # separation(11)/alignment(4)/cohesion(3) kernel dispatch
+│   │   └── noise_strategy.py        # NoiseStrategy ABC + 5 strategies (spatial-mode noise_mode)
 │   ├── forces/
 │   │   ├── _base.py           # alignment/cohesion/curl_flow/noise primitives, ForceTerm +
 │   │   │                      #   composeForces
@@ -416,7 +418,7 @@ callable) plus a `@register("name")` decorator populating a
 `dict[str, ...]` that a call site looks up at runtime instead of
 branching on a hardcoded if/elif chain. Force Modes (above) is the
 largest such family — one `ForceMode` per file, `MODE_REGISTRY`. The
-other six live together under `physics/plugins/` (their ABC/registry
+other seven live together under `physics/plugins/` (their ABC/registry
 plumbing was scattered across `physics/`, `physics/forces/`, and
 `physics/boundary/` until consolidated there):
 
@@ -426,9 +428,10 @@ plumbing was scattered across `physics/`, `physics/forces/`, and
 | **BoundaryMode** | domain-edge handling, dispatched from `boid.py`'s `_apply_boundary()` | `physics/plugins/boundary/` | `BOUNDARY_REGISTRY` | margin, open, sphere, sphere_soft, toroidal |
 | **NeighborSelector** | per-mode neighbour-query strategy (spatial/vicsek/projection) | `physics/plugins/neighbor_selection.py` | `NEIGHBOR_SELECTOR_REGISTRY` | ball_tree_radius, hybrid, topological_visibility |
 | **ObstacleAvoidanceStrategy** | SDF-gradient fly-away + linear-TTC predictive steering | `physics/plugins/obstacle_avoidance.py` | `OBSTACLE_AVOIDANCE_REGISTRY` | sdf_ttc |
-| **SpeedModel** | post-integrate speed enforcement, dispatched from `boid.py`'s `integrate()` | `physics/plugins/speed_model.py` | `SPEED_MODEL_REGISTRY` | band, ceiling, clamp (alias of band), fixed, none |
+| **SpeedModel** | post-integrate speed enforcement, dispatched from `boid.py`'s `integrate()` | `physics/plugins/speed_model.py` | `SPEED_MODEL_REGISTRY` | band, ceiling, clamp (alias of band), fixed, none, noise_modulated, velocity_adaptive |
 | **SpatialIndexStrategy** | N-adaptive index selection (`flock.py`) | `physics/plugins/spatial_index_strategy.py` | `SPATIAL_INDEX_STRATEGY_REGISTRY` | auto, hash_grid, kdtree, none |
 | **Kernel registries** | separation/alignment/cohesion distance-weighting, dispatched from `forces/separation_primitives.py` + `forces/_base.py` | `physics/plugins/kernel_registry.py` | `SEPARATION_KERNEL_REGISTRY` (11) / `ALIGNMENT_KERNEL_REGISTRY` (4) / `COHESION_KERNEL_REGISTRY` (3) | — |
+| **NoiseStrategy** | spatial-mode noise injection, dispatched from `forces/spatial.py` | `physics/plugins/noise_strategy.py` | `NOISE_STRATEGY_REGISTRY` | additive, maxwellian, none, seed_sinusoidal, velocity |
 
 ---
 

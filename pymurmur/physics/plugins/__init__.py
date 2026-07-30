@@ -2,7 +2,7 @@
 selecting among interchangeable algorithms for a physics computation
 (force mode, boundary mode, neighbor selection, obstacle avoidance,
 speed model, spatial index strategy, separation/alignment/cohesion
-kernels).
+kernels, noise strategy).
 
 Each submodule is independent; import the specific plugin family you
 need (e.g. ``from pymurmur.physics.plugins.force_mode import

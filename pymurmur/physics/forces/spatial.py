@@ -12,23 +12,30 @@ P4.5: Per-frame parameter jitter — seeded random variation on
       separation/cohesion/alignment weights each frame.
 P4.10: Numba-accelerated kernels for hot-loop operations — hybrid filter,
        predator detection, and predator escape.
+Modularity pass 9: sep/align/coh/flow/predator_escape/forward_thrust are
+       registered as named ForceTerm entries in SPATIAL_TERMS and composed
+       via composeForces() (physics/forces/_base.py), the same S2.A5
+       contract field.py's terms use — accel_scale/clamp/noise stay
+       outside the composed terms, matching field.py's own precedent.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ...core.types import seed_noise3
 from ._base import (
+    ForceTerm,
     alignment_force,
     cohesion_force,
+    composeForces,
     curl_flow,
-    noise_force,
     separation_force,
 )
 from ..plugins.force_mode import ForceFn, ForceMode, register
 from ..plugins.neighbor_selection import NEIGHBOR_SELECTOR_REGISTRY
+from ..plugins.noise_strategy import NOISE_STRATEGY_REGISTRY
 from .spatial_helpers import (
     _apply_hybrid_filter,  # noqa: F401  # re-export
     _maybe_perception_filter,
@@ -162,6 +169,87 @@ if TYPE_CHECKING:
     from ...core.types import SpatialIndex
 
 
+# ── Modularity pass 9: spatial-mode term composition (S2.A5 contract) ──
+# Ports field.py's ForceTerm/composeForces pattern to spatial mode —
+# same shared infrastructure (_base.py), same "named, typed, runtime-
+# togglable force contribution" contract. Unlike field mode's terms
+# (which compute raw physics per term), spatial's terms are thin
+# weight-multiplier wrappers around sep/align/coh/flow/escape/thrust
+# arrays already computed earlier in compute() — a faithful 1:1
+# extraction of the pre-existing weighted-sum expression, not a
+# reformulation (verified byte-identical against golden trajectories).
+
+@dataclass
+class SpatialTermContext:
+    """Shared per-frame context passed to every spatial-mode ForceTerm."""
+
+    config: SimConfig
+    positions: np.ndarray       # (N, 3) full-width
+    velocities: np.ndarray      # (N, 3) full-width
+    active: np.ndarray          # (N,) full-width bool
+    sep: np.ndarray             # (N, 3) — from separation_force(), threat-zeroed
+    align: np.ndarray           # (N, 3) — from alignment_force(), threat-zeroed
+    coh: np.ndarray             # (N, 3) — from cohesion_force(), threat-zeroed
+    sep_jitter: float
+    align_jitter: float
+    coh_jitter: float
+    flow_contrib: np.ndarray    # (N, 3) — already fully scaled (flow_weight*0.22 baked in)
+    escape_force: np.ndarray | None  # (N, 3) or None (no threatened birds this frame)
+
+
+def _term_separation(fx: SpatialTermContext) -> np.ndarray:
+    return fx.sep * (fx.config.separation_weight * fx.sep_jitter)
+
+
+def _term_alignment(fx: SpatialTermContext) -> np.ndarray:
+    return fx.align * (fx.config.alignment_weight * fx.align_jitter)
+
+
+def _term_cohesion(fx: SpatialTermContext) -> np.ndarray:
+    return fx.coh * (fx.config.cohesion_weight * fx.coh_jitter)
+
+
+def _term_flow(fx: SpatialTermContext) -> np.ndarray:
+    return fx.flow_contrib
+
+
+def _term_predator_escape(fx: SpatialTermContext) -> np.ndarray:
+    if fx.escape_force is None:
+        return np.zeros((len(fx.positions), 3), dtype=np.float32)
+    return fx.escape_force
+
+
+def _term_forward_thrust(fx: SpatialTermContext) -> np.ndarray:
+    """P11.5: Evolvable forward force — thrust toward cruise speed.
+    F_fwd = w_fwd * (v0 - |v|) * v_hat : sign flips around v* = v0.
+    """
+    out = np.zeros((len(fx.positions), 3), dtype=np.float32)
+    w_fwd = fx.config.spatial.w_fwd
+    if w_fwd > 0.0:
+        speeds = np.linalg.norm(fx.velocities, axis=1)
+        moving = fx.active & (speeds > 1e-6)
+        if moving.any():
+            v_hat = fx.velocities[moving] / speeds[moving, np.newaxis]
+            out[moving] = v_hat * (
+                w_fwd * (fx.config.v0 - speeds[moving])
+            )[:, np.newaxis]
+    return out
+
+
+# Order matches the pre-extraction expression exactly: sep+align+coh+flow
+# (one Python expression), then += escape_force, then the masked
+# forward-thrust addition — composeForces' left-to-right accumulation
+# reproduces the same floating-point summation order bit-for-bit.
+SPATIAL_TERMS: list[ForceTerm] = [
+    ForceTerm("separation", fn=_term_separation),
+    ForceTerm("alignment", fn=_term_alignment),
+    ForceTerm("cohesion", fn=_term_cohesion),
+    ForceTerm("flow", fn=_term_flow),
+    ForceTerm("predator_escape", fn=_term_predator_escape),
+    ForceTerm("forward_thrust", fn=_term_forward_thrust),
+]
+
+
 @register("spatial")
 class SpatialMode(ForceMode):
     """Reynolds 1987 boids — separation + alignment + cohesion + noise."""
@@ -283,45 +371,19 @@ class SpatialMode(ForceMode):
                 kernel=config.spatial.cohesion_kernel,
                 kernel_radius=config.spatial.separation_kernel_radius,
                 kernel_zone_width=config.spatial.kernel_zone_width)
-        # S2.B2: velocity-domain noise — (U³−0.5)·noise_scale added
-        # directly to velocity, after v+=a and before the final speed
-        # clamp (spec pipeline order), not to accelerations. Stashed on
-        # config for flock.integrate() to consume and clear (one-shot).
-        config._spatial_velocity_noise = None
-        if noise_mode == "velocity":
-            vel_noise = np.zeros((len(positions), 3), dtype=np.float32)
-            u = rng.uniform(0.0, 1.0, (n_active, 3)).astype(np.float32)
-            vel_noise[active] = (u ** 3 - 0.5) * config.noise_scale
-            config._spatial_velocity_noise = vel_noise
-
-        if noise_mode == "none" or noise_mode == "velocity":
-            noise_full = np.zeros((len(positions), 3), dtype=np.float32)
-        elif noise_mode == "maxwellian":
-            # Maxwellian: velocity perturbation scaled by noise_scale
-            noise_full = np.zeros((len(positions), 3), dtype=np.float32)
-            noise_full[active] = noise_force(n_active, 1.0, rng)
-            # Scale existing velocities instead of accelerations
-            if n_active > 0:
-                velocities[active] += noise_full[active] * config.noise_scale * 0.1
-            noise_full = np.zeros((len(positions), 3), dtype=np.float32)
-        elif noise_mode == "seed_sinusoidal":
-            # S2.B11: deterministic per-bird sinusoids (seed_noise3, L0
-            # atom, ±0.18/axis) instead of the seeded-rng draw — same
-            # (seeds, t) always gives the same noise, independent of rng
-            # call order elsewhere in the pipeline.
-            noise_full = np.zeros((len(positions), 3), dtype=np.float32)
-            active_idx_noise = np.where(active)[0]
-            seeds = np.arange(len(active_idx_noise), dtype=np.float32)
-            t = getattr(config, '_field_time', 0.0)
-            noise_full[active_idx_noise] = seed_noise3(seeds, t) * (
-                config.noise_scale / 0.18
-            )
-        else:  # "additive" (default)
-            noise = noise_force(n_active, config.noise_scale, rng)
-            noise_full = np.zeros((len(positions), 3), dtype=np.float32)
-            noise_full[active] = noise
+        # S2.B2/Modularity pass 8: noise strategies own their own side
+        # effects (e.g. "velocity"'s config._spatial_velocity_noise
+        # one-shot stash for flock.integrate() to consume, "maxwellian"'s
+        # direct velocity mutation) — see plugins/noise_strategy.py.
+        # Unrecognised noise_mode values fall back to "additive", matching
+        # this dispatch's pre-registry else-branch default exactly.
+        noise_strategy = NOISE_STRATEGY_REGISTRY.get(
+            noise_mode, NOISE_STRATEGY_REGISTRY["additive"]
+        )
+        noise_full = noise_strategy.apply(positions, velocities, active, n_active, config, rng)
 
         # ── P4.3: Predator effect — escape replaces separation, zero align/coh ──
+        escape_force: np.ndarray | None = None
         if threatened is not None and threatened.any():
             t_idx = threatened & active
             # mypy narrow: is_predator is not None (guarded above)
@@ -372,28 +434,25 @@ class SpatialMode(ForceMode):
             flow_contrib[flow_active_idx] = curl_flow(
                 positions[flow_active_idx], flow_center, flow_seeds, flow_t, flow_U,
             ) * (flow_w * 0.22)
-        accelerations += (
-            sep * (config.separation_weight * sep_jitter) +
-            align * (config.alignment_weight * align_jitter) +
-            coh * (config.cohesion_weight * coh_jitter) +
-            flow_contrib
+        # Modularity pass 9: sep/align/coh/flow/escape/forward-thrust,
+        # composed via the shared S2.A5 ForceTerm/composeForces contract
+        # (same summation order as the pre-extraction expression — see
+        # SPATIAL_TERMS' comment).
+        fx = SpatialTermContext(
+            config=config,
+            positions=positions,
+            velocities=velocities,
+            active=active,
+            sep=sep,
+            align=align,
+            coh=coh,
+            sep_jitter=sep_jitter,
+            align_jitter=align_jitter,
+            coh_jitter=coh_jitter,
+            flow_contrib=flow_contrib,
+            escape_force=escape_force,
         )
-
-        # P4.3: Add predator escape force (replaces separation)
-        if threatened is not None and threatened.any():
-            accelerations += escape_force
-
-        # ── P11.5: Evolvable forward force — thrust toward cruise speed ──
-        # F_fwd = w_fwd · (v0 − |v|) · v̂ : sign flips around v* = v0.
-        w_fwd = config.spatial.w_fwd
-        if w_fwd > 0.0:
-            speeds = np.linalg.norm(velocities, axis=1)
-            moving = active & (speeds > 1e-6)
-            if moving.any():
-                v_hat = velocities[moving] / speeds[moving, np.newaxis]
-                accelerations[moving] += v_hat * (
-                    w_fwd * (config.v0 - speeds[moving])
-                )[:, np.newaxis]
+        accelerations += composeForces(fx, SPATIAL_TERMS, n=len(positions))
 
         # 2. Apply acceleration scale (global intensity multiplier)
         acceleration_scale = config.spatial.acceleration_scale

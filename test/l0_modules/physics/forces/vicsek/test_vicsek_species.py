@@ -324,3 +324,39 @@ class TestVicsekSpeciesIntegration:
             f"Prey speed: {prey_speeds}"
         )
 
+    def test_predator_speed_survives_full_integrate_pipeline(self):
+        """Modularity pass 11 regression: the test above only checked
+        compute() in isolation, calling vicsek_forces() directly and
+        reading velocities before any post-processing ran — which is
+        exactly how a real bug escaped detection for as long as it did.
+        speed_mode="fixed" previously always renormalised to a flat
+        config.v0 in flock.integrate(), silently discarding vicsek's own
+        predator/prey speed distinction in every actual simulation run
+        (stash_target_speed() in physics/forces/_base.py fixes this).
+        This test goes through the full pipeline compute() ->
+        flock.integrate() actually uses, not just compute() alone."""
+        cfg = SimConfig()
+        cfg.num_boids = 10
+        cfg.mode = "vicsek"
+        cfg.vicsek_velocity = 1.0
+        cfg.vicsek_velocity_predator = 2.0
+        cfg.vicsek_radius_predators = 80.0
+        cfg.spatial.predator_speed_boost = 1.0  # rule out an unrelated confound
+        cfg.seed = 42
+
+        flock = PhysicsFlock(cfg)
+        flock.is_predator[:3] = True
+
+        _call_force(vicsek_forces, flock, cfg)
+        flock.integrate(cfg, dt=1.0 / 60.0, speed_mode="fixed")
+
+        pred_speeds = np.linalg.norm(flock.velocities[:3], axis=1)
+        prey_speeds = np.linalg.norm(flock.velocities[3:], axis=1)
+        assert np.allclose(pred_speeds, 2.0, atol=1e-4), (
+            f"Predator speed after integrate(): {pred_speeds} (expected ~2.0, "
+            f"not v0=1.0 or a spatial-mode-config-driven value)"
+        )
+        assert np.allclose(prey_speeds, 1.0, atol=1e-4), (
+            f"Prey speed after integrate(): {prey_speeds}"
+        )
+

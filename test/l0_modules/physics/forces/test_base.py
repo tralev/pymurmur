@@ -313,3 +313,100 @@ def test_curl_flow_field_and_spatial_agree_up_to_gain():
     field_out = _compute_curl_flow(positions, center, seeds, t, U, flow, flow_pull)
     shared_out = curl_flow(positions, center, seeds, t, U) * flow * flow_pull
     np.testing.assert_allclose(field_out, shared_out, atol=1e-6)
+
+
+# ── Modularity pass 10/11: stash_target_speed ────────────────────
+
+class TestStashTargetSpeed:
+    def test_scatters_active_speeds_and_defaults_inactive_to_v0(self):
+        from pymurmur.core.config import SimConfig
+        from pymurmur.physics.forces._base import stash_target_speed
+
+        cfg = SimConfig()
+        cfg.v0 = 4.0
+        active_idx = np.array([1, 3])
+        speeds = np.array([10.0, 20.0], dtype=np.float32)
+
+        stash_target_speed(cfg, n_total=5, active_idx=active_idx, speeds_active=speeds)
+
+        stashed = cfg._mode_target_speed
+        assert stashed.shape == (5,)
+        assert stashed[1] == 10.0
+        assert stashed[3] == 20.0
+        # Inactive rows (0, 2, 4) default to v0 -- masked out by `active`
+        # downstream regardless, but must not be NaN/garbage.
+        assert stashed[0] == 4.0
+        assert stashed[2] == 4.0
+        assert stashed[4] == 4.0
+
+    def test_empty_active_idx_produces_all_v0(self):
+        from pymurmur.core.config import SimConfig
+        from pymurmur.physics.forces._base import stash_target_speed
+
+        cfg = SimConfig()
+        cfg.v0 = 4.0
+        stash_target_speed(
+            cfg, n_total=3, active_idx=np.array([], dtype=np.int64),
+            speeds_active=np.array([], dtype=np.float32),
+        )
+        np.testing.assert_array_equal(cfg._mode_target_speed, [4.0, 4.0, 4.0])
+
+
+class TestModeTargetSpeedIntegration:
+    """flock.integrate() consumes config._mode_target_speed as the
+    max_speed base, and clears it after reading (one-shot)."""
+
+    def test_integrate_uses_mode_target_speed_as_base(self):
+        from pymurmur.core.config import SimConfig
+        from pymurmur.physics.flock import PhysicsFlock
+
+        cfg = SimConfig()
+        cfg.mode = "spatial"  # mode choice irrelevant here — testing integrate() directly
+        cfg.num_boids = 3
+        cfg.v0 = 4.0
+        cfg.spatial.predator_speed_boost = 1.0
+
+        flock = PhysicsFlock(cfg)
+        flock.velocities[:3] = np.array([[10, 0, 0], [10, 0, 0], [10, 0, 0]], dtype=np.float32)
+        cfg._mode_target_speed = np.array([1.0, 2.0, 3.0] + [4.0] * (len(flock.positions) - 3), dtype=np.float32)
+
+        flock.integrate(cfg, dt=1.0 / 60.0, speed_mode="fixed")
+
+        speeds = np.linalg.norm(flock.velocities[:3], axis=1)
+        np.testing.assert_allclose(speeds, [1.0, 2.0, 3.0], atol=1e-4)
+
+    def test_integrate_clears_mode_target_speed_after_use(self):
+        from pymurmur.core.config import SimConfig
+        from pymurmur.physics.flock import PhysicsFlock
+
+        cfg = SimConfig()
+        cfg.mode = "spatial"
+        cfg.num_boids = 3
+        flock = PhysicsFlock(cfg)
+        cfg._mode_target_speed = np.full(len(flock.positions), 2.0, dtype=np.float32)
+
+        flock.integrate(cfg, dt=1.0 / 60.0, speed_mode="fixed")
+
+        assert cfg._mode_target_speed is None
+
+    def test_integrate_without_mode_target_speed_falls_back_to_v0(self):
+        """No stash present (e.g. spatial/projection/field modes, which
+        never call stash_target_speed) -> unaffected, same as before
+        this change."""
+        from pymurmur.core.config import SimConfig
+        from pymurmur.physics.flock import PhysicsFlock
+
+        cfg = SimConfig()
+        cfg.mode = "spatial"
+        cfg.num_boids = 3
+        cfg.v0 = 4.0
+        cfg.spatial.predator_speed_boost = 1.0
+
+        flock = PhysicsFlock(cfg)
+        flock.velocities[:3] = np.array([[10, 0, 0]] * 3, dtype=np.float32)
+        assert getattr(cfg, '_mode_target_speed', None) is None
+
+        flock.integrate(cfg, dt=1.0 / 60.0, speed_mode="fixed")
+
+        speeds = np.linalg.norm(flock.velocities[:3], axis=1)
+        np.testing.assert_allclose(speeds, [4.0, 4.0, 4.0], atol=1e-4)

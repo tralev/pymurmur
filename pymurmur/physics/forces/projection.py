@@ -7,13 +7,22 @@ I1.3: Uses spherical_cap_occlusion_batched — all observers in one call,
 zero Python object allocations in the hot path.
 
 P2.2: Wrapped in ProjectionMode(ForceMode) with @register("projection").
+Modularity pass 9: delta/alignment/heading_inertia/noise are registered
+       as named ForceTerm entries in PROJECTION_TERMS and composed via
+       composeForces() (physics/forces/_base.py) to build v_desired —
+       the same S2.A5 contract field.py's terms use. The Reynolds
+       subtraction, clamp, and steric stay outside the composed terms,
+       matching field.py's own precedent of keeping post-processing
+       separate from the composed terms.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
 
+from ._base import ForceTerm, composeForces
 from ..occlusion import spherical_cap_occlusion_batched
 from ..steric import steric_force  # P1.10: L0 atom import at module top (no cycle risk)
 from ..plugins.force_mode import ForceFn, ForceMode, register
@@ -22,6 +31,70 @@ from ..plugins.neighbor_selection import NEIGHBOR_SELECTOR_REGISTRY
 if TYPE_CHECKING:
     from ...core.config import SimConfig
     from ...core.types import SpatialIndex
+
+
+# ── Modularity pass 9: projection-mode term composition (S2.A5 contract) ──
+# The composable part of projection mode is building v_desired from
+# delta/alignment/heading-inertia/noise (a genuine weighted sum); the
+# Reynolds-subtract + clamp + steric stay outside composeForces, matching
+# field.py's own precedent of keeping post-processing (its max_force
+# clamp) separate from the composed terms. Faithful 1:1 extraction of
+# the pre-existing v_desired-building expression, not a reformulation.
+
+@dataclass
+class ProjectionTermContext:
+    """Shared per-frame context passed to every projection-mode ForceTerm."""
+
+    delta: np.ndarray                  # (n_active, 3) — from occlusion
+    align_dir: np.ndarray              # (n_active, 3)
+    phi_p: float                       # coherence-gated
+    phi_a: float                       # coherence-gated
+    phi_n: float
+    heading_inertia: float
+    current_heading: np.ndarray | None  # (n_active, 3) or None if heading_inertia <= 0
+    eta_dir: np.ndarray | None          # (n_active, 3) unit noise or None if phi_n <= 0
+
+
+def _term_projection_delta(fx: ProjectionTermContext) -> np.ndarray:
+    return fx.delta * fx.phi_p
+
+
+def _term_projection_alignment(fx: ProjectionTermContext) -> np.ndarray:
+    return fx.align_dir * fx.phi_a
+
+
+def _term_projection_heading_inertia(fx: ProjectionTermContext) -> np.ndarray:
+    """SS09/S11-style heading-blend inertia: a genuinely separate additive
+    pull toward the bird's own current heading, independent of the
+    phi_p+phi_a+phi_n partition of unity (v_desired was never actually
+    constrained to unit length before the Reynolds subtraction, so this
+    extends rather than breaks that invariant)."""
+    if fx.current_heading is None:
+        return np.zeros_like(fx.delta)
+    return fx.current_heading * fx.heading_inertia
+
+
+def _term_projection_noise(fx: ProjectionTermContext) -> np.ndarray:
+    """S1.4: Pearce noise term — v proportional to phi_p*delta +
+    phi_a*<v_hat>_sigma + phi_n*eta_hat, phi_n = 1 - phi_p - phi_a,
+    eta_hat uniform on S^2. Keeps the flock from converging to perfect
+    alignment."""
+    if fx.eta_dir is None:
+        return np.zeros_like(fx.delta)
+    return fx.eta_dir * fx.phi_n
+
+
+# Order matches the pre-extraction expression exactly: delta*phi_p +
+# align_dir*phi_a (one Python expression), then optionally +=
+# current_heading*heading_inertia, then optionally += eta_dir*phi_n —
+# composeForces' left-to-right accumulation reproduces the same
+# floating-point summation order bit-for-bit.
+PROJECTION_TERMS: list[ForceTerm] = [
+    ForceTerm("delta", fn=_term_projection_delta),
+    ForceTerm("alignment", fn=_term_projection_alignment),
+    ForceTerm("heading_inertia", fn=_term_projection_heading_inertia),
+    ForceTerm("noise", fn=_term_projection_noise),
+]
 
 
 @register("projection")
@@ -121,32 +194,41 @@ class ProjectionMode(ForceMode):
             phi_p *= coherence
             phi_a *= coherence
 
-        v_desired = delta * phi_p + align_dir * phi_a  # (n_active, 3)
-
-        # §09/§11-style heading-blend inertia: a genuinely separate
-        # additive pull toward the bird's OWN current heading, independent
-        # of the phi_p+phi_a+phi_n partition of unity below (v_desired was
-        # never actually constrained to unit length before the Reynolds
-        # subtraction, so this extends rather than breaks that invariant).
-        # 0.0 (default) adds nothing — byte-identical to before this existed.
+        # 0.0 heading_inertia adds nothing — byte-identical to before this
+        # existed. current_heading is only computed when needed, matching
+        # the original conditional-skip (no wasted norm() calls).
         heading_inertia = config.projection.projection_heading_inertia
+        current_heading = None
         if heading_inertia > 0.0:
             v_norms = np.linalg.norm(velocities[active_idx], axis=1, keepdims=True)
             safe_norms = np.where(v_norms > 1e-6, v_norms, 1.0)
             current_heading = np.where(
                 v_norms > 1e-6, velocities[active_idx] / safe_norms, 0.0,
             )
-            v_desired = v_desired + current_heading * heading_inertia
 
-        # S1.4: Pearce noise term — v ∝ φp·δ̂ + φa·⟨v̂⟩_σ + φn·η̂ with
-        # φn = 1 − φp − φa and η̂ uniform on S². Keeps the flock from
-        # converging to perfect alignment.
+        # S1.4: Pearce noise term — phi_n = 1 - phi_p - phi_a. eta_dir is
+        # only drawn from rng when phi_n > 0, matching the original
+        # conditional-skip exactly (determinism-critical: the rng call
+        # sequence must stay identical to preserve golden trajectories).
         phi_n = max(0.0, 1.0 - phi_p - phi_a)
+        eta_dir = None
         if phi_n > 0.0:
             eta = rng.normal(size=(n_active, 3)).astype(np.float32)
             eta_norms = np.linalg.norm(eta, axis=1, keepdims=True)
             eta_norms[eta_norms == 0] = 1.0
-            v_desired += (eta / eta_norms) * phi_n
+            eta_dir = eta / eta_norms
+
+        fx = ProjectionTermContext(
+            delta=delta,
+            align_dir=align_dir,
+            phi_p=phi_p,
+            phi_a=phi_a,
+            phi_n=phi_n,
+            heading_inertia=heading_inertia,
+            current_heading=current_heading,
+            eta_dir=eta_dir,
+        )
+        v_desired = composeForces(fx, PROJECTION_TERMS, n=n_active)
 
         steering = v_desired - velocities[active_idx]
 

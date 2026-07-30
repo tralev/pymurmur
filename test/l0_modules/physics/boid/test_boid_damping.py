@@ -40,7 +40,10 @@ def test_damping_zero_byte_identical_to_no_damping():
     np.testing.assert_array_equal(vel1, vel2)
 
 
-@pytest.mark.parametrize("speed_mode", ["band", "clamp", "fixed", "ceiling", "none"])
+@pytest.mark.parametrize("speed_mode", [
+    "band", "clamp", "fixed", "ceiling", "none",
+    "noise_modulated", "velocity_adaptive",
+])
 def test_damping_reduces_speed_across_all_speed_modes(speed_mode):
     """The specific claim this ordering choice is designed to satisfy:
     damping must be visible even under 'fixed' mode's exact

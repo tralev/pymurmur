@@ -19,7 +19,7 @@ FORCE_MODE_TABLE_FILE = "arch.md"
 # ── G2: "Other Computational Plugins" table stays in sync ────────
 #
 # arch.md §6's "### Other Computational Plugins" subsection catalogues
-# the 6 computational-strategy registries other than ForceMode (which
+# the 7 computational-strategy registries other than ForceMode (which
 # the table above already covers). Mirrors the Force-Mode-table check:
 # parse the doc, compare against live registries.
 
@@ -30,6 +30,7 @@ _COMPUTATIONAL_PLUGIN_FAMILIES = {
     "ObstacleAvoidanceStrategy",
     "SpeedModel",
     "SpatialIndexStrategy",
+    "NoiseStrategy",
 }  # "Kernel registries" row is a 3-way family, checked separately below
 
 
@@ -69,6 +70,7 @@ def test_g2_other_computational_plugins_table_matches_registries():
         SEPARATION_KERNEL_REGISTRY,
     )
     from pymurmur.physics.plugins.neighbor_selection import NEIGHBOR_SELECTOR_REGISTRY
+    from pymurmur.physics.plugins.noise_strategy import NOISE_STRATEGY_REGISTRY
     from pymurmur.physics.plugins.obstacle_avoidance import OBSTACLE_AVOIDANCE_REGISTRY
     from pymurmur.physics.plugins.spatial_index_strategy import (
         SPATIAL_INDEX_STRATEGY_REGISTRY,
@@ -91,6 +93,7 @@ def test_g2_other_computational_plugins_table_matches_registries():
         "ObstacleAvoidanceStrategy": OBSTACLE_AVOIDANCE_REGISTRY,
         "SpeedModel": SPEED_MODEL_REGISTRY,
         "SpatialIndexStrategy": SPATIAL_INDEX_STRATEGY_REGISTRY,
+        "NoiseStrategy": NOISE_STRATEGY_REGISTRY,
     }
     for family, registry in registries_by_family.items():
         row_text = rows[family]

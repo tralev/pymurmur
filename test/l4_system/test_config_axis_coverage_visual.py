@@ -21,6 +21,14 @@ FILTER_CONF_DIR = CONF_DIR / "filters"
 ALL_FILTER_CONFIGS = sorted(FILTER_CONF_DIR.glob("*.yaml"))
 SPEED_LAW_CONF_DIR = CONF_DIR / "speed_laws"
 ALL_SPEED_LAW_CONFIGS = sorted(SPEED_LAW_CONF_DIR.glob("*.yaml"))
+# Sibling of speed_laws/ but a genuinely different config field
+# (spatial.speed_mode, not angle_speed_mode) -- deliberately its own
+# directory rather than mixed into speed_laws/, since config_sections.py
+# itself notes angle mode's field is named angle_speed_mode specifically
+# to avoid colliding with this one (see
+# test_every_speed_mode_has_example_coverage's docstring).
+SPEED_MODEL_CONF_DIR = CONF_DIR / "speed_models"
+ALL_SPEED_MODEL_CONFIGS = sorted(SPEED_MODEL_CONF_DIR.glob("*.yaml"))
 
 
 def _load_config(path: Path):
@@ -149,6 +157,23 @@ class TestConfigAxisCoverageVisual:
             cfg = SimConfig.from_file(str(path))
             cfg.validate()
 
+    def test_speed_model_configs_parse_and_validate(self):
+        """Every conf/speed_models/*.yaml loads and validates via SimConfig.
+
+        Mirrors test_speed_law_configs_parse_and_validate for the
+        spatial.speed_mode axis (added alongside noise_modulated/
+        velocity_adaptive completing SPEED_MODEL_REGISTRY's 6-strategy
+        taxonomy).
+        """
+        from pymurmur.core.config import SimConfig
+
+        assert len(ALL_SPEED_MODEL_CONFIGS) >= 2, (
+            f"Expected >= 2 speed-model configs, found {len(ALL_SPEED_MODEL_CONFIGS)}"
+        )
+        for path in ALL_SPEED_MODEL_CONFIGS:
+            cfg = SimConfig.from_file(str(path))
+            cfg.validate()
+
     def test_every_speed_mode_has_example_coverage(self):
         """Every registered spatial.speed_mode value appears as a literal
         value in at least one shipped preset. SPEED_MODEL_REGISTRY is a
@@ -175,7 +200,7 @@ class TestConfigAxisCoverageVisual:
         all_data = [
             _load_config(path)
             for path in ALL_CONFIGS + ALL_KERNEL_CONFIGS + ALL_FILTER_CONFIGS
-            + ALL_SPEED_LAW_CONFIGS
+            + ALL_SPEED_LAW_CONFIGS + ALL_SPEED_MODEL_CONFIGS
         ]
 
         def spatial_speed_mode_of(data: dict):

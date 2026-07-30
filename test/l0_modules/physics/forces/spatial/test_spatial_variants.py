@@ -416,3 +416,96 @@ class TestVelocityNoiseMode:
             "velocity-domain noise must not be bounded by the force-domain "
             "max_force clamp"
         )
+
+
+# ── Modularity pass 8: NoiseStrategy registry ───────────────────
+
+class TestMaxwellianNoiseMode:
+    """noise_mode="maxwellian" perturbs velocity directly (isotropic,
+    scaled by noise_scale*0.1) rather than accumulating into
+    accelerations — had no dedicated coverage before the noise-strategy
+    extraction (Modularity pass 8), only a passing mention."""
+
+    def _make_engine(self, noise_scale=2.0, noise_mode="maxwellian", seed=3):
+        from pymurmur.core.config import SimConfig
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg = SimConfig()
+        cfg.mode = "spatial"
+        cfg.num_boids = 20
+        cfg.seed = seed
+        cfg.spatial.noise_mode = noise_mode
+        cfg.spatial.noise_scale = noise_scale
+        return SimulationEngine(cfg)
+
+    def test_maxwellian_changes_trajectory_vs_none(self):
+        eng_noise = self._make_engine(noise_mode="maxwellian")
+        eng_none = self._make_engine(noise_mode="none")
+        eng_noise.run_headless(steps=5)
+        eng_none.run_headless(steps=5)
+        assert not np.allclose(
+            eng_noise.flock.positions, eng_none.flock.positions
+        ), "maxwellian noise mode must perturb the trajectory"
+
+    def test_maxwellian_zero_scale_is_noop(self):
+        eng_a = self._make_engine(noise_mode="maxwellian", noise_scale=0.0)
+        eng_b = self._make_engine(noise_mode="none", noise_scale=0.0)
+        eng_a.run_headless(steps=5)
+        eng_b.run_headless(steps=5)
+        assert np.allclose(eng_a.flock.positions, eng_b.flock.positions)
+
+    def test_maxwellian_leaves_no_stale_velocity_noise_stash(self):
+        """Unlike "velocity", "maxwellian" doesn't use the
+        config._spatial_velocity_noise side channel — must stay None."""
+        eng = self._make_engine(noise_mode="maxwellian")
+        eng.step(1.0 / 60.0)
+        assert getattr(eng.config, "_spatial_velocity_noise", None) is None
+
+    def test_maxwellian_finite(self):
+        eng = self._make_engine(noise_mode="maxwellian", noise_scale=10.0)
+        eng.run_headless(steps=10)
+        assert np.isfinite(eng.flock.velocities).all()
+        assert np.isfinite(eng.flock.positions).all()
+
+
+class TestNoiseStrategyRegistry:
+    """Direct coverage of plugins/noise_strategy.py's registry dispatch,
+    independent of any one force mode's config wiring."""
+
+    def test_all_five_strategies_registered(self):
+        from pymurmur.physics.plugins.noise_strategy import NOISE_STRATEGY_REGISTRY
+
+        assert set(NOISE_STRATEGY_REGISTRY.keys()) == {
+            "none", "velocity", "maxwellian", "seed_sinusoidal", "additive",
+        }
+
+    def test_unrecognised_mode_falls_back_to_additive(self):
+        """Matches the pre-registry if/elif chain's implicit else-branch
+        default — an unrecognised noise_mode string must behave exactly
+        like "additive", not silently disable noise."""
+        from pymurmur.core.config import SimConfig
+        from pymurmur.simulation.engine import SimulationEngine
+
+        cfg_bad = SimConfig()
+        cfg_bad.mode = "spatial"
+        cfg_bad.num_boids = 20
+        cfg_bad.seed = 7
+        cfg_bad.spatial.noise_mode = "not_a_real_mode"
+        cfg_bad.spatial.noise_scale = 1.0
+
+        cfg_additive = SimConfig()
+        cfg_additive.mode = "spatial"
+        cfg_additive.num_boids = 20
+        cfg_additive.seed = 7
+        cfg_additive.spatial.noise_mode = "additive"
+        cfg_additive.spatial.noise_scale = 1.0
+
+        eng_bad = SimulationEngine(cfg_bad)
+        eng_additive = SimulationEngine(cfg_additive)
+        eng_bad.run_headless(steps=5)
+        eng_additive.run_headless(steps=5)
+        np.testing.assert_allclose(
+            eng_bad.flock.positions, eng_additive.flock.positions
+        )
+
+

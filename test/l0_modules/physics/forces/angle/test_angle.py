@@ -250,6 +250,51 @@ def test_adaptive_speed_linear_isolated_faster():
     )
 
 
+def test_adaptive_speed_survives_full_integrate_pipeline():
+    """Modularity pass 11 regression: the test above only checked
+    compute() in isolation, reading velocities before any
+    post-processing ran — which is exactly how a real bug escaped
+    detection for as long as it did. speed_mode="fixed" previously
+    always renormalised to a flat config.v0 in flock.integrate(),
+    silently discarding angle mode's own adaptive deficit-based speed
+    law in every actual simulation run (stash_target_speed() in
+    physics/forces/_base.py fixes this). This test goes through the
+    full pipeline compute() -> flock.integrate(), not just compute()
+    alone."""
+    cfg = SimConfig()
+    cfg.mode = "angle"
+    cfg.num_boids = 1
+    cfg.v0 = 4.0
+    cfg.base_speed = 20.0  # deliberately far from v0
+    cfg.neighbors = 7
+    cfg.turn_threshold = 10.0
+    cfg.jitter_deg = 0.0
+    cfg.boundary_mode = "open"
+    cfg.spatial.predator_speed_boost = 1.0  # rule out an unrelated confound
+
+    flock = PhysicsFlock(cfg)
+    flock.active[:] = True
+    flock.positions[0] = np.array([500, 350, 200], dtype=np.float32)
+    flock.velocities[0] = np.array([4.0, 0, 0], dtype=np.float32)
+    flock.accelerations[:] = 0.0
+    flock.get_index().rebuild(flock.positions, flock.active)
+
+    AngleMode.compute(
+        flock.positions, flock.velocities, flock.accelerations,
+        flock.active, flock.get_index(), flock.rng,
+        flock.last_theta, cfg,
+    )
+    flock.integrate(cfg, dt=1.0 / 60.0, speed_mode="fixed")
+
+    speed_after = np.linalg.norm(flock.velocities[0])
+    # Isolated: 0 neighbours < 7 -> speed = base_speed(20) + 7*5 = 55,
+    # NOT v0=4.0 (the pre-fix, silently-stomped value).
+    assert speed_after > 40.0, (
+        f"Adaptive speed must survive flock.integrate(): got {speed_after:.1f}, "
+        f"expected ~55 (base_speed=20 + deficit bonus), not v0=4.0"
+    )
+
+
 def test_adaptive_speed_dense_crowd_normal():
     """P5.3: m ≥ 7 neighbours → speed = base_speed."""
     cfg = SimConfig()

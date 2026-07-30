@@ -18,6 +18,16 @@ P2.2: Wrapped in VicsekMode(ForceMode) with @register("vicsek").
 
 Phase 6 predator-prey helper functions and resolve_species_collisions
 moved to vicsek_predator.py (file-size split of this file).
+
+Modularity pass 10/11: this mode computes a genuine per-bird target
+speed (v0 for prey, vicsek_velocity_predator for predators), but
+speed_mode="fixed" previously always renormalised to a flat config.v0
+in flock.integrate() regardless -- nothing ever told it what this mode
+actually computed, silently discarding the predator/prey distinction
+in every real simulation run (unit tests calling compute() directly,
+before integrate() runs, never caught it). _stash_target_speed() fixes
+this by scattering the computed speed onto config._mode_target_speed,
+which flock.integrate() now reads as the max_speed base.
 """
 
 from __future__ import annotations
@@ -28,6 +38,7 @@ import numpy as np
 
 from ..plugins.force_mode import ForceFn, ForceMode, register
 from ..plugins.neighbor_selection import NEIGHBOR_SELECTOR_REGISTRY
+from ._base import stash_target_speed as _stash_target_speed
 from .vicsek_predator import (
     _apply_fear_blending,
     _apply_predator_hunting,
@@ -90,6 +101,10 @@ class VicsekMode(ForceMode):
                 rand_dirs = rng.normal(size=(n_active, 3)).astype(np.float32)
                 rand_norms = np.linalg.norm(rand_dirs, axis=1, keepdims=True) + 1e-10
                 velocities[active_idx] = (rand_dirs / rand_norms) * v_pred
+                _stash_target_speed(
+                    config, len(positions), active_idx,
+                    np.full(n_active, v_pred, dtype=np.float32),
+                )
                 return
         else:
             is_pred = np.zeros(n_active, dtype=bool)
@@ -132,6 +147,10 @@ class VicsekMode(ForceMode):
                 directions = blended / blended_norms
 
             velocities[active_idx] = directions * v0
+            _stash_target_speed(
+                config, len(positions), active_idx,
+                np.full(n_active, v0, dtype=np.float32),
+            )
             return
 
         # ── Neighbour alignment (standard Vicsek) ─────────────
@@ -233,6 +252,7 @@ class VicsekMode(ForceMode):
             speeds[is_pred] = v_pred
 
         velocities[active_idx] = directions * speeds[:, np.newaxis]
+        _stash_target_speed(config, len(positions), active_idx, speeds)
 
 
 

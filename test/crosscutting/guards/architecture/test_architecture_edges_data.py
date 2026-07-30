@@ -151,6 +151,16 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
     "pymurmur.physics.plugins.kernel_registry": {
         "pymurmur.physics.forces.force_kernels",
     },
+    # Modularity pass 8: noise-mode registry — imports forces._base (for
+    # noise_force) and core.types (for seed_noise3), both lazily inside
+    # apply() method bodies to avoid a module-level cycle with _base.py
+    # (which forces/spatial.py also imports directly) — still counted as
+    # edges by the AST walker (it walks function bodies too).
+    "pymurmur.physics.plugins.noise_strategy": {
+        "pymurmur.core.config",
+        "pymurmur.core.types",
+        "pymurmur.physics.forces._base",
+    },
     "pymurmur.physics.forces._kernels": {
         # S2.B3: min_image for toroidal-aware predator escape distances.
         "pymurmur.core.types",
@@ -162,6 +172,7 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
         "pymurmur.physics.forces._kernels",
         "pymurmur.physics.forces.spatial_helpers",
         "pymurmur.physics.plugins.neighbor_selection",
+        "pymurmur.physics.plugins.noise_strategy",  # modularity pass 8: noise-mode dispatch
         "pymurmur.physics.occlusion",
         "pymurmur.physics.steric",
         "pymurmur.physics.flock",
@@ -265,6 +276,8 @@ ALLOWED_EDGES_CORE: dict[str, set[str]] = {
         "pymurmur.core.config",
         "pymurmur.physics.plugins.force_mode",
         "pymurmur.physics.flock",
+        # Modularity pass 11: stash_target_speed() — see _base.py.
+        "pymurmur.physics.forces._base",
     },
     "pymurmur.physics.forces.__init__": {
         "pymurmur.core.types",

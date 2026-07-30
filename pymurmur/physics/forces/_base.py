@@ -19,7 +19,7 @@ through this module.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 
@@ -30,6 +30,9 @@ from ..plugins.kernel_registry import (
     KernelInfo,
 )
 from .separation_primitives import _is_ragged, separation_force  # noqa: F401 — public API
+
+if TYPE_CHECKING:
+    from ...core.config import SimConfig
 
 # ── P2.10/S2.A5: ForceTerm composition infrastructure ─────────────
 
@@ -376,3 +379,38 @@ def noise_force(
     # D9: multiply by scale so noise_scale actually controls magnitude,
     # not just on/off toggling via the normalisation step.
     return (pts / norms) * scale
+
+
+def stash_target_speed(
+    config: "SimConfig", n_total: int, active_idx: np.ndarray, speeds_active: np.ndarray,
+) -> None:
+    """Modularity pass 10/11: scatter a mode's computed per-bird target
+    speed onto config._mode_target_speed for flock.integrate() to
+    consume as the max_speed base.
+
+    Fixes a real bug: speed_mode="fixed" previously always renormalised
+    to flat config.v0 in flock.integrate(), regardless of what a mode
+    (vicsek's predator/prey v0-vs-v_pred distinction, angle's adaptive
+    deficit-based speed law) actually computed and wrote to velocities
+    — nothing ever populated flock.max_speed for them, so their own
+    per-bird speed calculation was silently discarded in every real
+    simulation run (only visible when calling compute() directly and
+    reading velocities before integrate() ran, which is why the bug
+    escaped every existing unit test).
+
+    One-shot: flock.integrate() clears config._mode_target_speed after
+    reading it, so a stale array can't leak into a later frame or a
+    mode switch.
+
+    Args:
+        config: SimConfig — the array is stashed on config._mode_target_speed
+        n_total: full flock capacity (len(positions))
+        active_idx: (n_active,) global indices this frame's speeds apply to
+        speeds_active: (n_active,) computed target speed per active bird
+
+    Inactive rows default to config.v0 — masked out by `active` in every
+    SpeedModel strategy regardless, but must not be NaN/garbage.
+    """
+    full = np.full(n_total, config.v0, dtype=np.float32)
+    full[active_idx] = speeds_active
+    config._mode_target_speed = full

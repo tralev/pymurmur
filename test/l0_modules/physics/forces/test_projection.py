@@ -313,3 +313,69 @@ def test_topological_neighbors_kdtree(default_config):
     assert (result >= 0).any()  # returns neighbours via KDTree
 
 
+# ── Modularity pass 9: PROJECTION_TERMS / composeForces ─────────────
+
+def test_projection_terms_registered_in_order():
+    from pymurmur.physics.forces.projection import PROJECTION_TERMS
+
+    assert [t.name for t in PROJECTION_TERMS] == [
+        "delta", "alignment", "heading_inertia", "noise",
+    ]
+
+
+def test_projection_terms_compose_matches_manual_sum():
+    """composeForces(ctx, PROJECTION_TERMS, n) must equal the manual
+    delta*phi_p + align_dir*phi_a + heading*inertia + eta_dir*phi_n sum
+    it replaced — direct unit-level check alongside the golden-trajectory
+    coverage (which proves this for real simulation runs)."""
+    from pymurmur.physics.forces._base import composeForces
+    from pymurmur.physics.forces.projection import (
+        PROJECTION_TERMS,
+        ProjectionTermContext,
+    )
+
+    n = 5
+    rng = np.random.default_rng(0)
+    delta = rng.normal(size=(n, 3)).astype(np.float32)
+    align_dir = rng.normal(size=(n, 3)).astype(np.float32)
+    current_heading = rng.normal(size=(n, 3)).astype(np.float32)
+    eta_dir = rng.normal(size=(n, 3)).astype(np.float32)
+    phi_p, phi_a, phi_n, heading_inertia = 0.3, 0.5, 0.2, 0.1
+
+    fx = ProjectionTermContext(
+        delta=delta, align_dir=align_dir, phi_p=phi_p, phi_a=phi_a,
+        phi_n=phi_n, heading_inertia=heading_inertia,
+        current_heading=current_heading, eta_dir=eta_dir,
+    )
+    result = composeForces(fx, PROJECTION_TERMS, n=n)
+
+    expected = (
+        delta * phi_p + align_dir * phi_a
+        + current_heading * heading_inertia
+        + eta_dir * phi_n
+    )
+    np.testing.assert_allclose(result, expected, atol=1e-6)
+
+
+def test_projection_terms_none_fields_contribute_zero():
+    """current_heading=None / eta_dir=None (heading_inertia<=0 / phi_n<=0
+    at the call site) must drop those terms to zero, matching the
+    original conditional-skip semantics exactly."""
+    from pymurmur.physics.forces._base import composeForces
+    from pymurmur.physics.forces.projection import (
+        PROJECTION_TERMS,
+        ProjectionTermContext,
+    )
+
+    n = 3
+    delta = np.ones((n, 3), dtype=np.float32)
+    align_dir = np.ones((n, 3), dtype=np.float32) * 2.0
+    fx = ProjectionTermContext(
+        delta=delta, align_dir=align_dir, phi_p=1.0, phi_a=1.0,
+        phi_n=0.0, heading_inertia=0.0,
+        current_heading=None, eta_dir=None,
+    )
+    result = composeForces(fx, PROJECTION_TERMS, n=n)
+    np.testing.assert_allclose(result, delta + align_dir)
+
+

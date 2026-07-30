@@ -108,7 +108,7 @@ def integrate(
 
     # Resolve strategy — unrecognised modes fall back to "band" (safe default)
     strategy = SPEED_MODEL_REGISTRY.get(speed_mode, SPEED_MODEL_REGISTRY["band"])
-    strategy.apply(velocities, active, caps, min_speed, speeds)
+    strategy.apply(velocities, active, caps, min_speed, speeds, positions, rng, dt)
 
     # 4. Inertia: lerp between raw and clamped velocity
     if inertia > 0 and raw_vel is not None:
