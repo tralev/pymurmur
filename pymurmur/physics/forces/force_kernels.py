@@ -218,41 +218,34 @@ def kernel_fov_weighted(
     return np.sum(weighted, axis=-2) / total_weight[..., np.newaxis]
 
 
-def kernel_circular_mean_2d(
+def kernel_spherical_mean_alignment(
     diffs: np.ndarray, dists: np.ndarray, close: np.ndarray,
     neighbor_vel: np.ndarray,
 ) -> np.ndarray:
-    """Alignment: 2D circular mean of neighbor headings, projected onto
-    the XY plane (this engine's ground-plane convention — Z is "up").
-    theta_bar = atan2(Σsinθ, Σcosθ), a scalar-angle circular mean, not a
-    vector average — matches §16/17 exactly. Z has no circular/
-    wraparound semantics (altitude isn't an angle), so it's averaged
-    linearly instead. The XY part is scaled by the mean XY speed (not
-    left as a unit vector) so it's on the same physical velocity scale
-    as the linearly-averaged Z part, rather than one part being ~1 and
-    the other being a real speed."""
-    vx = neighbor_vel[..., 0]
-    vy = neighbor_vel[..., 1]
-    vz = neighbor_vel[..., 2]
-    xy_speed = np.sqrt(vx ** 2 + vy ** 2)
-    valid = close & (xy_speed > 1e-6)
+    """Alignment: spherical mean direction of neighbor headings — the
+    true 3D generalization of a circular mean.
 
-    theta = np.arctan2(np.where(valid, vy, 0.0), np.where(valid, vx, 1.0))
-    sin_sum = np.sum(np.where(valid, np.sin(theta), 0.0), axis=-1)
-    cos_sum = np.sum(np.where(valid, np.cos(theta), 0.0), axis=-1)
-    theta_bar = np.arctan2(sin_sum, cos_sum)
+    A circular mean (atan2(Σsinθ,Σcosθ)) is only defined on the circle
+    (S¹); it's algebraically the angle of normalize(Σ unit_2d(v)). The
+    directional-statistics equivalent on the sphere (S²) is the mean
+    resultant direction: normalize(Σ v̂ᵢ) over each neighbor's full 3D
+    unit heading, with no special-cased axis (no XY-circular / Z-linear
+    split — every axis is treated identically, which is what "strictly
+    3D" means here). Scaled by the mean speed (not left as a unit
+    vector) so the result is a real velocity, not a heading indicator."""
+    speed = np.linalg.norm(neighbor_vel, axis=-1)
+    valid = close & (speed > 1e-6)
 
-    n_valid = np.sum(valid, axis=-1)
-    n_valid_safe = np.where(n_valid == 0, 1, n_valid)
-    mean_xy_speed = np.sum(np.where(valid, xy_speed, 0.0), axis=-1) / n_valid_safe
+    v_dir = neighbor_vel / np.where(valid, speed, 1.0)[..., np.newaxis]
+    resultant = np.sum(np.where(valid[..., np.newaxis], v_dir, 0.0), axis=-2)
+    resultant_norm = np.linalg.norm(resultant, axis=-1, keepdims=True)
+    mean_dir = resultant / np.where(resultant_norm > 1e-9, resultant_norm, 1.0)
 
     n_close = np.sum(close, axis=-1)
     n_close_safe = np.where(n_close == 0, 1, n_close)
-    z_mean = np.sum(np.where(close, vz, 0.0), axis=-1) / n_close_safe
+    mean_speed = np.sum(np.where(close, speed, 0.0), axis=-1) / n_close_safe
 
-    result_x = mean_xy_speed * np.cos(theta_bar)
-    result_y = mean_xy_speed * np.sin(theta_bar)
-    return np.stack([result_x, result_y, z_mean], axis=-1)
+    return mean_dir * mean_speed[..., np.newaxis]
 
 
 def kernel_bell_zone_alignment(
@@ -307,5 +300,5 @@ VALID_SEPARATION_KERNELS = frozenset({
 })
 VALID_COHESION_KERNELS = frozenset({"unweighted", "inverse_distance", "bell_zone"})
 VALID_ALIGNMENT_KERNELS = frozenset({
-    "unweighted", "fov_weighted", "circular_mean_2d", "bell_zone",
+    "unweighted", "fov_weighted", "spherical_mean", "bell_zone",
 })

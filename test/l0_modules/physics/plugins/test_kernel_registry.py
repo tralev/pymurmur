@@ -74,7 +74,7 @@ class TestSeparationKernelRegistry:
 class TestAlignmentKernelRegistry:
     def test_all_four_kernels_registered(self):
         assert set(ALIGNMENT_KERNEL_REGISTRY.keys()) == {
-            "unweighted", "fov_weighted", "circular_mean_2d", "bell_zone",
+            "unweighted", "fov_weighted", "spherical_mean", "bell_zone",
         }
 
     def test_needs_heading_flags(self):

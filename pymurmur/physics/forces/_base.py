@@ -140,8 +140,10 @@ def alignment_force(
     kernel="fov_weighted" → InverseLerp(cos_theta, fov_min, 1.0)-weighted
         average: neighbours near the bearing axis (dead ahead) dominate,
         neighbours near fov_min contribute ~0.
-    kernel="circular_mean_2d" → 2D circular mean (atan2(Σsinθ,Σcosθ)) of
-        neighbour headings projected onto the XY plane, Z averaged linearly.
+    kernel="spherical_mean" → 3D spherical mean direction (normalize the
+        sum of unit neighbour headings — the directional-statistics
+        generalization of a circular mean from the circle to the sphere),
+        scaled by mean neighbour speed. Every axis treated identically.
     kernel="bell_zone" → cosine-bell-weighted average velocity, peaking at
         kernel_radius (zone center) and falling off symmetrically over
         kernel_zone_width — same distance-zone concept as separation/
@@ -159,7 +161,7 @@ def alignment_force(
     if n_active == 0:
         return force
 
-    needs_dists = kernel in ("fov_weighted", "circular_mean_2d", "bell_zone")
+    needs_dists = kernel in ("fov_weighted", "spherical_mean", "bell_zone")
 
     if _is_ragged(neighbor_idx):
         # Ragged object array — per-bird fallback

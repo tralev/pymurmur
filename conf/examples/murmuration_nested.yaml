@@ -100,7 +100,7 @@ spatial:
   separation_kernel: sum     # how sep forces are combined (kernel_registry.py)
   separation_kernel_radius: 20.0   # exp/linear_ramp/asymptotic/bell_zone (zone center)
   cohesion_kernel: unweighted      # unweighted | inverse_distance | bell_zone
-  alignment_kernel: unweighted     # unweighted | fov_weighted | circular_mean_2d | bell_zone
+  alignment_kernel: unweighted     # unweighted | fov_weighted | spherical_mean | bell_zone
   kernel_zone_width: 10.0     # bell_zone half-width (sep + cohesion + alignment)
   alignment_radius_ratio: 1.0 # dual-radii: alignment sees a tighter subset than sep/coh
                               # (1.0 = no extra restriction; starlings preset sets 0.75)

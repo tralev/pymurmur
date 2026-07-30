@@ -281,25 +281,51 @@ class TestKernelFovWeighted:
         np.testing.assert_allclose(out, 0.0, atol=1e-6)
 
 
-class TestKernelCircularMean2d:
-    def test_reduces_to_plain_circular_mean_in_xy_plane(self):
-        # Two neighbours: heading 0 degrees and 90 degrees, equal speed.
-        # Circular mean of {0, 90} degrees = 45 degrees.
+class TestKernelSphericalMeanAlignment:
+    def test_matches_plain_mean_direction_in_xy_plane(self):
+        # Two neighbours: heading +X and +Y, equal speed 1 -> mean
+        # resultant direction is the diagonal (45 degrees in XY),
+        # scaled by mean speed 1.0. A pure-XY case coincides with what
+        # the old 2D-circular-mean formula gave, confirming the 3D
+        # spherical-mean formula is a genuine generalization, not a
+        # different result on the plane it used to be restricted to.
         diffs = np.array([[10.0, 0, 0], [0, 10.0, 0]], dtype=np.float32)
         dists = np.linalg.norm(diffs, axis=1)
         close = dists > 1e-6
         neighbor_vel = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
-        out = kernels.kernel_circular_mean_2d(diffs, dists, close, neighbor_vel)
+        out = kernels.kernel_spherical_mean_alignment(diffs, dists, close, neighbor_vel)
         expected = np.array([np.cos(np.pi / 4), np.sin(np.pi / 4), 0.0], dtype=np.float32)
         np.testing.assert_allclose(out, expected, atol=1e-5)
 
-    def test_z_averaged_linearly(self):
+    def test_no_axis_is_special_cased(self):
+        # Same two-neighbour construction as above, but in the XZ plane
+        # instead of XY -- must produce the exact mirror-image result.
+        # The old kernel gave Z separate linear-average treatment (it
+        # could never produce this diagonal answer); this is exactly
+        # what "strictly 3D, no privileged axis" fixes.
+        diffs = np.array([[10.0, 0, 0], [0, 0, 10.0]], dtype=np.float32)
+        dists = np.linalg.norm(diffs, axis=1)
+        close = dists > 1e-6
+        neighbor_vel = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32)
+        out = kernels.kernel_spherical_mean_alignment(diffs, dists, close, neighbor_vel)
+        expected = np.array([np.cos(np.pi / 4), 0.0, np.sin(np.pi / 4)], dtype=np.float32)
+        np.testing.assert_allclose(out, expected, atol=1e-5)
+
+    def test_mean_speed_uses_all_close_neighbors(self):
+        # A close but stationary (zero-velocity) neighbour contributes
+        # nothing to the resultant direction, but still counts toward
+        # the mean-speed denominator (mirrors the previous formula's
+        # close-based, not valid-based, speed averaging).
         diffs = np.array([[10.0, 0, 0], [10.0, 0.1, 0]], dtype=np.float32)
         dists = np.linalg.norm(diffs, axis=1)
         close = dists > 1e-6
-        neighbor_vel = np.array([[1.0, 0.0, 2.0], [1.0, 0.0, 6.0]], dtype=np.float32)
-        out = kernels.kernel_circular_mean_2d(diffs, dists, close, neighbor_vel)
-        assert out[2] == pytest.approx(4.0, rel=1e-4)  # plain mean of 2 and 6
+        neighbor_vel = np.array([[2.0, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=np.float32)
+        out = kernels.kernel_spherical_mean_alignment(diffs, dists, close, neighbor_vel)
+        # direction comes entirely from the moving neighbour (+X);
+        # mean_speed = (2+0)/2 = 1.0
+        assert out[0] == pytest.approx(1.0, rel=1e-4)
+        assert out[1] == pytest.approx(0.0, abs=1e-6)
+        assert out[2] == pytest.approx(0.0, abs=1e-6)
 
 
 class TestKernelBellZoneAlignment:
@@ -365,5 +391,5 @@ class TestValidKernelSets:
 
     def test_valid_alignment_kernels(self):
         assert kernels.VALID_ALIGNMENT_KERNELS == {
-            "unweighted", "fov_weighted", "circular_mean_2d", "bell_zone",
+            "unweighted", "fov_weighted", "spherical_mean", "bell_zone",
         }

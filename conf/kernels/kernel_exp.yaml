@@ -9,7 +9,7 @@
 # (murmuration_showcase.yaml), and unit separation
 # (murmuration_boids.yaml) were ever exercised by a runnable preset.
 #
-# This file demonstrates: separation_kernel=exp, alignment_kernel=circular_mean_2d,
+# This file demonstrates: separation_kernel=exp, alignment_kernel=spherical_mean,
 # cohesion_kernel=inverse_distance.
 #
 # Coverage/reference fixture, not tuned for visual character. Kept out
@@ -37,7 +37,7 @@ spatial:
   alignment_weight: 0.65
   cohesion_weight: 0.75
   separation_kernel: exp
-  alignment_kernel: circular_mean_2d
+  alignment_kernel: spherical_mean
   cohesion_kernel: inverse_distance
   separation_kernel_radius: 20.0   # only consulted by exp/linear_ramp/asymptotic/bell_zone
   kernel_zone_width: 10.0           # only consulted by bell_zone (sep/align/coh)

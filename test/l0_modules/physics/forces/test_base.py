@@ -214,7 +214,7 @@ def test_curl_flow_is_normalized_before_base_scale():
 
 
 # ── New kernel dispatch: separation "linear"/"nearest_only"/"bell_zone",
-#    cohesion "bell_zone", alignment "fov_weighted"/"circular_mean_2d" ──
+#    cohesion "bell_zone", alignment "fov_weighted"/"spherical_mean" ──
 
 def test_separation_force_linear_kernel_dispatch(known_positions, known_velocities):
     idx = np.array([[1], [0], [3], [2]], dtype=np.int32)
@@ -268,12 +268,12 @@ def test_alignment_force_fov_weighted_kernel_dispatch():
     assert force[0, 1] > 0
 
 
-def test_alignment_force_circular_mean_2d_kernel_dispatch():
+def test_alignment_force_spherical_mean_kernel_dispatch():
     pos = np.array([[0, 0, 0], [10, 0, 0], [0, 10, 0]], dtype=np.float32)
     vel = np.array([[1, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=np.float32)
     idx = np.array([[1, 2], [0, 0], [0, 0]], dtype=np.int32)
     active = np.ones(3, dtype=bool)
-    force = alignment_force(pos, vel, idx, active, kernel="circular_mean_2d")
+    force = alignment_force(pos, vel, idx, active, kernel="spherical_mean")
     assert np.isfinite(force).all()
 
 

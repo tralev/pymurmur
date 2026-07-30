@@ -171,10 +171,10 @@ def _align_fov_weighted(diffs, dists, close, neighbor_vel, heading, fov_min):
     return kernel_fov_weighted(diffs, dists, close, heading, neighbor_vel, fov_min)
 
 
-@register_alignment("circular_mean_2d")
-def _align_circular_mean(diffs, dists, close, neighbor_vel):
-    from ..forces.force_kernels import kernel_circular_mean_2d
-    return kernel_circular_mean_2d(diffs, dists, close, neighbor_vel)
+@register_alignment("spherical_mean")
+def _align_spherical_mean(diffs, dists, close, neighbor_vel):
+    from ..forces.force_kernels import kernel_spherical_mean_alignment
+    return kernel_spherical_mean_alignment(diffs, dists, close, neighbor_vel)
 
 
 @register_alignment("bell_zone", needs_radius=True, needs_zone_width=True)
