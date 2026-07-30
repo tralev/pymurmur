@@ -238,9 +238,15 @@ jobs:
           cache-from: type=gha,scope=fast-py3.12
           cache-to: type=gha,mode=max,scope=fast-py3.12
       - name: Run mypy (in Docker)
+        # Pinned to pyproject.toml's [project.optional-dependencies].lint
+        # constraint (mypy>=1.8,<2.0) — previously unpinned here, so CI
+        # silently ran whatever the latest mypy release was (2.3.0),
+        # disagreeing with what the project actually declares as its
+        # supported range and with what `pip install .[lint]` gives any
+        # local dev. types-PyYAML matches the same lint extra.
         run: |
           docker run --rm pymurmur-test:latest \
-            sh -c "pip install --no-cache-dir mypy && mypy pymurmur/ --ignore-missing-imports"
+            sh -c "pip install --no-cache-dir 'mypy>=1.8,<2.0' 'types-PyYAML>=6.0,<7.0' && mypy pymurmur/ --ignore-missing-imports"
 
   guard-rail-evolved:
     name: P0.16 — Evolved artifact validation

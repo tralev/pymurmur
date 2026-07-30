@@ -307,7 +307,10 @@ class Predator(Extension):
         threat_force = push[within] + wake[within] + split[within] + wave[within]
         if cfg.priority_stack_enabled:
             # Isolated into its own tier (see top-of-apply comment) rather
-            # than fused into flock.accelerations.
+            # than fused into flock.accelerations. Always allocated above
+            # (line ~129) whenever cfg.priority_stack_enabled is true, on
+            # this same cfg, earlier in this same call.
+            assert flock.predator_priority_accel is not None
             flock.predator_priority_accel[force_mask] += threat_force
         else:
             flock.accelerations[force_mask] += threat_force

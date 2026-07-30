@@ -57,7 +57,7 @@ def load_config_from_file(config_cls, path: str | Path, strict: bool = True):
     Raises FileNotFoundError if path doesn't exist.
     Raises ValueError if strict=True and unknown keys are found.
     """
-    import yaml  # type: ignore[import-untyped]
+    import yaml
 
     path = Path(path)
     if not path.exists():

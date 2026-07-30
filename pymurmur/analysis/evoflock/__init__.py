@@ -423,7 +423,7 @@ class EvoFlock:
     def save(self, path: str | Path = "output/evolved.yaml") -> Path:
         """Persist best genome + Pareto front + per-run seeds + objective
         scores as the evolved.yaml artifact (P11.6, schema guarded by P0.16)."""
-        import yaml  # type: ignore[import-untyped]
+        import yaml
 
         best = self._best_genome()
         if best is None:

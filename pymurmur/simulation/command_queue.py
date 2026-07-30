@@ -44,6 +44,11 @@ class _CommandQueueMixin:
     flock: "PhysicsFlock"
     config: "SimConfig"
 
+    if TYPE_CHECKING:
+        # Provided by SimulationEngine itself (engine.py), not this mixin.
+        def reset(self) -> None: ...
+        def _drain_pilot_commands(self) -> None: ...
+
     def enqueue_add(self, count: int) -> None:
         """Queue boids to be added on the next step()."""
         self.commands.pending_add += count

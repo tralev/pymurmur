@@ -17,13 +17,19 @@ when N_active crosses the threshold (auto mode).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from ...core.config import SimConfig
     from ...core.types import SpatialIndex
 
-SPATIAL_INDEX_STRATEGY_REGISTRY: dict[str, type["SpatialIndexStrategy"]] = {}
+# Values are plain functions (config, N_active, kdtree_box) -> SpatialIndex
+# | None, NOT SpatialIndexStrategy subclasses/instances — see that class's
+# own docstring below ("no base class — strategies are plain functions").
+SPATIAL_INDEX_STRATEGY_REGISTRY: dict[
+    str,
+    Callable[["SimConfig", int, "tuple[float, float, float] | None"], "SpatialIndex | None"],
+] = {}
 
 # Shared with flock.py::_reevaluate_index() — single source of truth for
 # the N_active threshold that decides SpatialHashGrid vs. KDTreeIndex in

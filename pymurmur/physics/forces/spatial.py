@@ -123,6 +123,7 @@ except ImportError:
             predator_idx = valid_nbrs[predator_mask]
             diffs = positions[predator_idx] - positions[global_i]
             if wrap:
+                assert box is not None  # wrap is only True when box is not None
                 diffs = min_image(diffs, box)
             dists_sq = np.sum(diffs * diffs, axis=1)
             nearest = np.argmin(dists_sq)

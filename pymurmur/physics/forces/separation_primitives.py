@@ -17,6 +17,8 @@ cohesion_force also use it).
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 
 from ..plugins.kernel_registry import SEPARATION_KERNEL_REGISTRY, KernelInfo

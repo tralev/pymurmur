@@ -7,7 +7,7 @@ Renderer3D.__init__.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -15,10 +15,38 @@ from .mesh_registry import MESH_REGISTRY, resolve_bird_mesh
 
 if TYPE_CHECKING:
     from ..physics.flock import PhysicsFlock
+    from .trails import TrailRenderer
 
 
 class _RendererDrawMixin:
     """Drawing methods, mixed into Renderer3D."""
+
+    # Set by Renderer3D.__init__ (renderer.py); declared here for mypy
+    # (mirrors _RendererVAOMixin's identical pattern in renderer_vao.py
+    # — see that file for the "GPU handles -> Any" rationale).
+    ctx: Any
+    _prog: Any
+    _fbo: Any
+    _grid_vao: Any
+    _hud_prog: Any
+    _hud_vao: Any
+    _impostor_vao: Any
+    _instance_vbo: Any
+    _vao: Any
+    _winged_vao: Any
+    _mesh_vaos: dict[str, object]
+    _mesh_vbos: dict[str, object]
+    _mesh_ibos: dict[str, object]
+    _bird_mesh: str
+    _density_mode: bool
+    _point_sprites: bool
+    _trails_mode: str
+    _winged_mesh: bool
+    _trails: "TrailRenderer | None"
+
+    if TYPE_CHECKING:
+        # Provided by Renderer3D itself (renderer.py:424), not this mixin.
+        def update_instances(self, flock: PhysicsFlock, positions_override=None) -> int: ...
 
     def draw_birds(self, flock: PhysicsFlock, positions_override=None) -> None:
         """Single instanced draw call — winged (P8.4) / impostor (P8.1) / tetra.
@@ -45,7 +73,7 @@ class _RendererDrawMixin:
             self.ctx.enable(_mgl.BLEND)
             self.ctx.blend_func = (_mgl.SRC_ALPHA, _mgl.ONE_MINUS_SRC_ALPHA)
             self.ctx.disable(_mgl.DEPTH_TEST)
-            self.ctx.depth_mask = False  # type: ignore[attr-defined]
+            self.ctx.depth_mask = False
 
         # S4.4a: Route to the appropriate VAO
         try:
@@ -67,7 +95,7 @@ class _RendererDrawMixin:
             # P8.11: Restore state after density-mode render
             if _density:
                 import moderngl as _mgl
-                self.ctx.depth_mask = True  # type: ignore[attr-defined]
+                self.ctx.depth_mask = True
                 self.ctx.enable(_mgl.DEPTH_TEST)
                 self.ctx.disable(_mgl.BLEND)
 
@@ -163,7 +191,7 @@ class _RendererDrawMixin:
         self._prog["in_bird_hue"] = hue
         self._prog["in_bird_scale"] = scale
         import moderngl
-        vao.render(moderngl.TRIANGLES)  # type: ignore[attr-defined]
+        vao.render(moderngl.TRIANGLES)
 
     def draw_hud_rect(
         self,
@@ -179,11 +207,11 @@ class _RendererDrawMixin:
         """
         import moderngl
         c = np.array(colour, dtype=np.float32)
-        self._hud_prog["u_hud_offset"].write(  # type: ignore[union-attr]
+        self._hud_prog["u_hud_offset"].write(
             np.array([float(x), float(y)], dtype=np.float32).tobytes()
         )
-        self._hud_prog["u_hud_size"].write(  # type: ignore[union-attr]
+        self._hud_prog["u_hud_size"].write(
             np.array([float(w), float(h)], dtype=np.float32).tobytes()
         )
-        self._hud_prog["u_hud_colour"].write(c.tobytes())  # type: ignore[union-attr]
+        self._hud_prog["u_hud_colour"].write(c.tobytes())
         self._hud_vao.render(moderngl.TRIANGLES)

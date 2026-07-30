@@ -9,7 +9,7 @@ velocity/ring trail modes (simpler, smaller) stay on TrailRenderer itself.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -19,6 +19,22 @@ if TYPE_CHECKING:
 
 class _TrailExtraModesMixin:
     """Accumulation and lines trail-mode methods, mixed into TrailRenderer."""
+
+    # Set by TrailRenderer.__init__ (trails.py); declared here for mypy
+    # (mirrors _RendererVAOMixin's identical pattern in renderer_vao.py
+    # — see that file for the "GPU handles -> Any" rationale; _accum_fbo/
+    # _accum_tex already carry an explicit Any annotation in trails.py
+    # itself, so this is consistent with that file's own convention too).
+    _ctx: Any
+    _trail_length: int
+    _ring_prog: Any
+    _ring_capacity: int
+    _accum_prog: Any
+    _accum_vao: Any
+    _accum_fbo: Any
+    _accum_tex: Any
+    _accum_decay: float
+    _lines_capacity: int
 
     # ── Accumulation — screen-space FBO persistence ────────────
 

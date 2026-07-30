@@ -196,7 +196,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # driver: docker (not the default docker-container) — required so
+      # this job's local, --load'ed pymurmur-test:latest is visible to
+      # the next step's `FROM pymurmur-test:latest` via build-contexts
+      # below. The docker-container driver builds in an isolated
+      # context that can't see the daemon's image store, which is why
+      # "Build GPU image" was failing with "pull access denied ...
+      # docker.io/library/pymurmur-test:latest" — it was trying to pull
+      # a public image of that name instead of reusing the one just
+      # built. Trade-off: the docker driver doesn't support cache
+      # export (`cache-to: type=gha` errors outright), so this job's
+      # two build steps below don't cache — acceptable since it only
+      # runs on the nightly schedule, not every push/PR.
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
       - name: Build fast image (base layer for GPU image)
         uses: docker/build-push-action@v6
         with:
@@ -204,8 +218,6 @@ jobs:
           file: ci/Dockerfile
           tags: pymurmur-test:latest
           load: true
-          cache-from: type=gha,scope=fast-py3.12
-          cache-to: type=gha,mode=max,scope=fast-py3.12
       - name: Build GPU image
         uses: docker/build-push-action@v6
         with:
@@ -213,8 +225,8 @@ jobs:
           file: ci/Dockerfile.gpu
           tags: pymurmur-test-gpu:latest
           load: true
-          cache-from: type=gha,scope=gpu
-          cache-to: type=gha,mode=max,scope=gpu
+          build-contexts: |
+            pymurmur-test:latest=docker-image://pymurmur-test:latest
       - name: Run GPU tests (Xvfb + Mesa llvmpipe, in Docker)
         # Marker-based selection — all @gl/@gpu-marked tests. The image's
         # own entrypoint-gpu.sh starts Xvfb; no host-side Xvfb needed.
@@ -252,8 +264,13 @@ jobs:
           cache-from: type=gha,scope=fast-py3.12
           cache-to: type=gha,mode=max,scope=fast-py3.12
       - name: Run ruff + mypy (in Docker)
+        # Pinned to pyproject.toml's [project.optional-dependencies].lint
+        # constraints (ruff>=0.4,<1.0, mypy>=1.8,<2.0) — previously
+        # unpinned here, so CI silently ran whatever the latest releases
+        # were, disagreeing with what the project declares as its
+        # supported range and what `pip install .[lint]` gives locally.
         run: |
           docker run --rm pymurmur-test:latest \
-            sh -c "pip install --no-cache-dir ruff mypy && \
+            sh -c "pip install --no-cache-dir 'ruff>=0.4,<1.0' 'mypy>=1.8,<2.0' 'types-PyYAML>=6.0,<7.0' && \
               ruff check pymurmur/ test/ && \
               mypy pymurmur/ --ignore-missing-imports"

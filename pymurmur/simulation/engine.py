@@ -368,6 +368,7 @@ class SimulationEngine(_CommandQueueMixin):
             )
             budget_mode_cls = MODE_REGISTRY.get(self.config.mode)
             budget = self._resolve_priority_budget(budget_mode_cls, self.config)
+            assert tier1 is not None  # priority_stack_on (unchanged since tier1 was set) guarantees this
             allocated = allocate_priority_budget(tier1, tier2, tier3, budget)
             self.flock.velocities[:] = v_before
             self.flock.accelerations[:] = allocated

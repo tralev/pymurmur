@@ -7,11 +7,40 @@ self._prog, instance/mesh buffers) set up by Renderer3D.__init__.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from .mesh_registry import MESH_REGISTRY
+
+if TYPE_CHECKING:
+    from .renderer import InstanceSchema
 
 
 class _RendererVAOMixin:
     """VAO construction methods, mixed into Renderer3D."""
+
+    # Set by Renderer3D.__init__ (renderer.py); declared here for mypy
+    # (mirrors the existing pattern in simulation/command_queue.py's
+    # _CommandQueueMixin). GPU handles are typed Any, not a real
+    # moderngl.* type — moderngl is never imported at module level in
+    # renderer.py either (deferred local import inside __init__, to
+    # keep the headless-minimal core story), matching
+    # renderer.py:257-261's own "Typed as 'Any' because
+    # moderngl.VertexArray is not available at import time" precedent.
+    ctx: Any
+    _schema: "InstanceSchema"
+    _prog: Any
+    _winged_prog: Any
+    _impostor_prog: Any
+    _mesh_vbo: Any
+    _mesh_ibo: Any
+    _winged_mesh_vbo: Any
+    _winged_mesh_ibo: Any
+    _impostor_mesh_vbo: Any
+    _impostor_mesh_ibo: Any
+    _instance_vbo: Any
+    _mesh_vaos: dict[str, object]
+    _mesh_vbos: dict[str, object]
+    _mesh_ibos: dict[str, object]
 
     def _build_vao(self):  # returns moderngl.VertexArray
         """Build a tetrahedron VAO from the current mesh + instance buffers (P2.7).

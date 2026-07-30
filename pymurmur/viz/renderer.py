@@ -291,7 +291,7 @@ class Renderer3D(_RendererVAOMixin, _RendererDrawMixin):
             self._hud_prog,
             [(hud_vbo, "2f", "in_position")],
         )
-        self._hud_prog["u_viewport"].write(  # type: ignore[union-attr]
+        self._hud_prog["u_viewport"].write(
             np.array([float(width), float(height)], dtype=np.float32).tobytes()
         )
 
@@ -303,7 +303,7 @@ class Renderer3D(_RendererVAOMixin, _RendererDrawMixin):
                 depth_attachment=self._depth_rb,
             )
         else:
-            self._fbo = None  # type: ignore[assignment]
+            self._fbo = None
 
         # P8.3: Trail renderer — owns trail GPU state
         self._trails: TrailRenderer | None = None
@@ -533,51 +533,51 @@ class Renderer3D(_RendererVAOMixin, _RendererDrawMixin):
         eye = camera.eye_position()
 
         # Tetrahedron program uniforms
-        self._prog["u_view"].write(_mat4_bytes(camera.view_matrix()))  # type: ignore[union-attr]
-        self._prog["u_projection"].write(  # type: ignore[union-attr]
+        self._prog["u_view"].write(_mat4_bytes(camera.view_matrix()))
+        self._prog["u_projection"].write(
             _mat4_bytes(camera.projection_matrix(aspect))
         )
-        self._prog["u_light_dir"].write(np.array([0.5, 0.5, 1.0], dtype=np.float32).tobytes())  # type: ignore[union-attr]
-        self._prog["u_camera_pos"].write(np.array(eye, dtype=np.float32).tobytes())  # type: ignore[union-attr]
+        self._prog["u_light_dir"].write(np.array([0.5, 0.5, 1.0], dtype=np.float32).tobytes())
+        self._prog["u_camera_pos"].write(np.array(eye, dtype=np.float32).tobytes())
         # P8.5 + S4.4a: Theme material tables from MATERIAL_REGISTRY
         mats = self._materials
-        self._prog["u_Ambient"].write(np.array(mats["ambient"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
-        self._prog["u_Diffuse"].write(np.array(mats["diffuse"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
+        self._prog["u_Ambient"].write(np.array(mats["ambient"], dtype=np.float32).tobytes())
+        self._prog["u_Diffuse"].write(np.array(mats["diffuse"], dtype=np.float32).tobytes())
         # Legacy theme colours
-        self._prog["u_theme_slow"].write(np.array(mats["slow"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
-        self._prog["u_theme_spec"].write(np.array(mats["spec"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
+        self._prog["u_theme_slow"].write(np.array(mats["slow"], dtype=np.float32).tobytes())
+        self._prog["u_theme_spec"].write(np.array(mats["spec"], dtype=np.float32).tobytes())
         self._prog["u_rim_power"] = 3.0  # S4.2: mesh Fresnel rim exponent
 
         # P8.4: Winged program uniforms
-        self._winged_prog["u_view"].write(_mat4_bytes(camera.view_matrix()))  # type: ignore[union-attr]
-        self._winged_prog["u_projection"].write(  # type: ignore[union-attr]
+        self._winged_prog["u_view"].write(_mat4_bytes(camera.view_matrix()))
+        self._winged_prog["u_projection"].write(
             _mat4_bytes(camera.projection_matrix(aspect))
         )
         self._winged_prog["u_frame"] = float(self._frame_count)
         self._winged_prog["u_flap_period_frames"] = self._flap_period_frames
-        self._winged_prog["u_light_dir"].write(np.array([0.5, 0.5, 1.0], dtype=np.float32).tobytes())  # type: ignore[union-attr]
-        self._winged_prog["u_camera_pos"].write(np.array(eye, dtype=np.float32).tobytes())  # type: ignore[union-attr]
+        self._winged_prog["u_light_dir"].write(np.array([0.5, 0.5, 1.0], dtype=np.float32).tobytes())
+        self._winged_prog["u_camera_pos"].write(np.array(eye, dtype=np.float32).tobytes())
         # P8.5 + S4.4a: Theme materials from MATERIAL_REGISTRY
         mats = self._materials
-        self._winged_prog["u_Ambient"].write(np.array(mats["ambient"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
-        self._winged_prog["u_Diffuse"].write(np.array(mats["diffuse"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
-        self._winged_prog["u_theme_slow"].write(np.array(mats["slow"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
-        self._winged_prog["u_theme_spec"].write(np.array(mats["spec"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
+        self._winged_prog["u_Ambient"].write(np.array(mats["ambient"], dtype=np.float32).tobytes())
+        self._winged_prog["u_Diffuse"].write(np.array(mats["diffuse"], dtype=np.float32).tobytes())
+        self._winged_prog["u_theme_slow"].write(np.array(mats["slow"], dtype=np.float32).tobytes())
+        self._winged_prog["u_theme_spec"].write(np.array(mats["spec"], dtype=np.float32).tobytes())
         self._winged_prog["u_rim_power"] = 3.0  # S4.2: mesh Fresnel rim exponent
 
         # P8.1+P8.2: Impostor program uniforms
-        self._impostor_prog["u_view"].write(_mat4_bytes(camera.view_matrix()))  # type: ignore[union-attr]
-        self._impostor_prog["u_projection"].write(  # type: ignore[union-attr]
+        self._impostor_prog["u_view"].write(_mat4_bytes(camera.view_matrix()))
+        self._impostor_prog["u_projection"].write(
             _mat4_bytes(camera.projection_matrix(aspect))
         )
         self._impostor_prog["u_bird_scale"] = 9.0
-        self._impostor_prog["u_camera_pos"].write(np.array(eye, dtype=np.float32).tobytes())  # type: ignore[union-attr]
+        self._impostor_prog["u_camera_pos"].write(np.array(eye, dtype=np.float32).tobytes())
         self._impostor_prog["u_depth_power"] = 0.3
         self._impostor_prog["u_depth_fade"] = 0.5
         self._impostor_prog["u_rim_power"] = 3.0
         self._impostor_prog["u_max_depth"] = 5000.0
-        self._impostor_prog["u_Paper"].write(np.array(mats["paper"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
-        self._impostor_prog["u_Ink"].write(np.array(mats["ink"], dtype=np.float32).tobytes())  # type: ignore[union-attr]
+        self._impostor_prog["u_Paper"].write(np.array(mats["paper"], dtype=np.float32).tobytes())
+        self._impostor_prog["u_Ink"].write(np.array(mats["ink"], dtype=np.float32).tobytes())
 
         # P8.3: Trail renderer camera uniforms
         if self._trails is not None:
@@ -599,10 +599,10 @@ class Renderer3D(_RendererVAOMixin, _RendererDrawMixin):
             tuple(min(c * 1.3, 1.0) for c in clear)
         )
         bottom = self._background_bottom if self._background_bottom is not None else clear
-        self._sky_prog["u_sky_top"].write(  # type: ignore[union-attr]
+        self._sky_prog["u_sky_top"].write(
             np.array(top, dtype=np.float32).tobytes()
         )
-        self._sky_prog["u_sky_bottom"].write(  # type: ignore[union-attr]
+        self._sky_prog["u_sky_bottom"].write(
             np.array(bottom, dtype=np.float32).tobytes()
         )
         self._sky_vao.render(moderngl.TRIANGLES)

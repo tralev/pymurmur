@@ -10,4 +10,15 @@ if [ -z "$DISPLAY" ]; then
     # Give Xvfb a moment to start
     sleep 0.5
 fi
+
+# P0.16: output/evolved.yaml is baked into the image at build time (see
+# ci/Dockerfile), but any job that volume-mounts a host output/
+# directory over /app/output (needed to extract junit XML results)
+# shadows the baked file with an empty host directory — regenerate it
+# here if missing so test_evolved_yaml.py sees a real file regardless
+# of what got mounted over it. Cheap (~2-3s) and only runs when needed.
+if [ ! -f output/evolved.yaml ]; then
+    python3 scripts/generate_evolved_artifact.py
+fi
+
 exec "$@"
