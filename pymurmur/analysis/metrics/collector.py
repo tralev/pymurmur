@@ -27,7 +27,8 @@ from .dynamics_curves import (
     compute_msd_curve,
     compute_tau_rho,
     compute_tau_rho_hull,
-    compute_theta_accel_correlation,
+    compute_theta_accel_correlation_3d,
+    compute_theta_horizontal_accel_correlation,
 )
 from .flock_metrics import FlockMetrics
 from .opacity import (
@@ -300,7 +301,7 @@ class MetricsCollector:
                 self._accel_theta_ring.pop(0)
 
         if self._detail_level >= 2 and len(self._accel_theta_ring) >= 6:
-            curve, peak_lag = compute_theta_accel_correlation(
+            curve, peak_lag = compute_theta_horizontal_accel_correlation(
                 self._accel_com_vel_ring,
                 self._accel_theta_ring,
                 interval=self._hull_density_interval,
@@ -308,6 +309,15 @@ class MetricsCollector:
             )
             m.theta_accel_correlation = curve
             m.theta_accel_peak_lag = peak_lag
+
+            curve_3d, peak_lag_3d = compute_theta_accel_correlation_3d(
+                self._accel_com_vel_ring,
+                self._accel_theta_ring,
+                interval=self._hull_density_interval,
+                buffer_size=self._hull_density_maxlen,
+            )
+            m.theta_accel_correlation_3d = curve_3d
+            m.theta_accel_peak_lag_3d = peak_lag_3d
 
         self._history.append(m)
         # S3.11: EMA readout smoothing (display-only, raw history untouched).
@@ -442,6 +452,7 @@ class MetricsCollector:
             "gyration_radius", "aspect_ratio", "thickness_ratio",
             "optimal_m", "suggested_m", "eta_m", "convergence_speed", "r_max",
             "theta_accel_correlation", "theta_accel_peak_lag",
+            "theta_accel_correlation_3d", "theta_accel_peak_lag_3d",
         ):
             raw_val = getattr(raw, field_name)
             if raw_val is not None:

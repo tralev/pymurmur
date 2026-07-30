@@ -58,8 +58,10 @@ class FlockMetrics:
     r_per_m: float | None = None       # A7: robustness per neighbour, R_nodal/m at m_star_sensing
     m_star_sensing: int | None = None  # A7: argmax_m R_per_m(m) — sensing-cost-optimal m*
     tau_rho: float | None = None  # density autocorrelation time (frames)
-    theta_accel_correlation: list[float] | None = None  # B9: C(δt), accel vs opacity
+    theta_accel_correlation: list[float] | None = None  # B9: C(δt), horizontal accel vs opacity
     theta_accel_peak_lag: int | None = None  # B9: δt (frames) where |C(δt)| peaks
+    theta_accel_correlation_3d: list[float] | None = None  # full-3D-accel sibling of theta_accel_correlation
+    theta_accel_peak_lag_3d: int | None = None  # δt (frames) where |C_3d(δt)| peaks
     hull_volume: float | None = None  # P9.3: convex hull volume
     density_rho: float | None = None  # P9.3: N / hull_volume
     msd: float | None = None      # P9.2: mean squared displacement (longest lag)

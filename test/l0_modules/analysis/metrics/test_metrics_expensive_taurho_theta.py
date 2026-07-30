@@ -11,7 +11,8 @@ from pymurmur.analysis.metrics import (
     _density_histogram,
     compute_shape,
     compute_tau_rho,
-    compute_theta_accel_correlation,
+    compute_theta_accel_correlation_3d,
+    compute_theta_horizontal_accel_correlation,
     find_optimal_m,
 )
 from pymurmur.core.config import SimConfig
@@ -170,14 +171,14 @@ class TestThetaAccelCorrelation:
     COM acceleration and internal opacity Theta."""
 
     def test_insufficient_samples_returns_none(self):
-        curve, peak = compute_theta_accel_correlation(
+        curve, peak = compute_theta_horizontal_accel_correlation(
             [np.zeros(3)] * 3, [0.1, 0.2, 0.3]
         )
         assert curve is None
         assert peak is None
 
     def test_length_mismatch_returns_none(self):
-        curve, peak = compute_theta_accel_correlation(
+        curve, peak = compute_theta_horizontal_accel_correlation(
             [np.zeros(3)] * 8, [0.1] * 6
         )
         assert curve is None
@@ -188,7 +189,7 @@ class TestThetaAccelCorrelation:
         rng = np.random.default_rng(2)
         vel = list(rng.normal(0, 1, (10, 3)).astype(np.float64))
         theta = [0.3] * 10
-        curve, peak = compute_theta_accel_correlation(vel, theta)
+        curve, peak = compute_theta_horizontal_accel_correlation(vel, theta)
         assert curve is None
         assert peak is None
 
@@ -196,7 +197,7 @@ class TestThetaAccelCorrelation:
         """Zero-variance acceleration (constant velocity) -> degenerate."""
         vel = [np.array([1.0, 2.0, 0.0])] * 10
         theta = list(np.linspace(0.1, 0.9, 10))
-        curve, peak = compute_theta_accel_correlation(vel, theta)
+        curve, peak = compute_theta_horizontal_accel_correlation(vel, theta)
         assert curve is None
         assert peak is None
 
@@ -219,7 +220,7 @@ class TestThetaAccelCorrelation:
             if idx < n:
                 theta[idx] = 0.3 + 0.1 * accel_mag[i]
 
-        curve, peak_lag = compute_theta_accel_correlation(
+        curve, peak_lag = compute_theta_horizontal_accel_correlation(
             list(vel), list(theta), interval=10, buffer_size=500
         )
         assert curve is not None
@@ -272,6 +273,121 @@ class TestThetaAccelCorrelation:
         assert all(
             s.theta_accel_peak_lag is None for s in sim.metrics.history
         )
+        assert all(
+            s.theta_accel_correlation_3d is None for s in sim.metrics.history
+        )
+        assert all(
+            s.theta_accel_peak_lag_3d is None for s in sim.metrics.history
+        )
+
+
+class TestThetaAccelCorrelation3D:
+    """Full-3D-acceleration sibling of TestThetaAccelCorrelation — same
+    edge-case contract, plus a check that it actually differs from the
+    horizontal-only variant when there's genuine vertical acceleration."""
+
+    def test_insufficient_samples_returns_none(self):
+        curve, peak = compute_theta_accel_correlation_3d(
+            [np.zeros(3)] * 3, [0.1, 0.2, 0.3]
+        )
+        assert curve is None
+        assert peak is None
+
+    def test_length_mismatch_returns_none(self):
+        curve, peak = compute_theta_accel_correlation_3d(
+            [np.zeros(3)] * 8, [0.1] * 6
+        )
+        assert curve is None
+        assert peak is None
+
+    def test_constant_theta_returns_none(self):
+        """Zero-variance theta -> degenerate, can't correlate."""
+        rng = np.random.default_rng(2)
+        vel = list(rng.normal(0, 1, (10, 3)).astype(np.float64))
+        theta = [0.3] * 10
+        curve, peak = compute_theta_accel_correlation_3d(vel, theta)
+        assert curve is None
+        assert peak is None
+
+    def test_constant_velocity_returns_none(self):
+        """Zero-variance acceleration (constant velocity) -> degenerate."""
+        vel = [np.array([1.0, 2.0, 3.0])] * 10
+        theta = list(np.linspace(0.1, 0.9, 10))
+        curve, peak = compute_theta_accel_correlation_3d(vel, theta)
+        assert curve is None
+        assert peak is None
+
+    def test_engineered_lag_is_recovered(self):
+        """Same construction as the horizontal test's engineered-lag
+        check, but with genuine (nonzero) Z velocity, and theta tracks
+        the *full 3D* accel magnitude -- proves the recovered curve is
+        actually driven by the 3D magnitude, not just reproducing the
+        horizontal result by coincidence."""
+        rng = np.random.default_rng(1)
+        n = 20
+        vel = rng.normal(0, 1, (n, 3)).astype(np.float64)
+        accel_mag = np.linalg.norm(np.diff(vel, axis=0), axis=1)  # (n-1,), full 3D
+
+        lag_samples = 2
+        theta = np.full(n, 0.3)
+        for i in range(len(accel_mag)):
+            idx = i + 1 + lag_samples
+            if idx < n:
+                theta[idx] = 0.3 + 0.1 * accel_mag[i]
+
+        curve, peak_lag = compute_theta_accel_correlation_3d(
+            list(vel), list(theta), interval=10, buffer_size=500
+        )
+        assert curve is not None
+        assert peak_lag == lag_samples * 10, (
+            f"expected peak at {lag_samples} sample-steps "
+            f"({lag_samples * 10} frames), got {peak_lag} frames"
+        )
+        assert curve[lag_samples] == pytest.approx(max(curve, key=abs), abs=1e-9)
+
+    def test_differs_from_horizontal_variant_with_vertical_acceleration(self):
+        """When Z-velocity varies independently of X/Y, the 3D and
+        horizontal-only correlation curves must differ -- proves the 3D
+        variant actually incorporates the vertical component rather
+        than silently ignoring it like the old horizontal-only formula."""
+        rng = np.random.default_rng(3)
+        n = 20
+        vel = rng.normal(0, 1, (n, 3)).astype(np.float64)
+        theta = list(rng.uniform(0.1, 0.9, n))
+
+        curve_h, _ = compute_theta_horizontal_accel_correlation(list(vel), theta)
+        curve_3d, _ = compute_theta_accel_correlation_3d(list(vel), theta)
+
+        assert curve_h is not None and curve_3d is not None
+        assert not np.allclose(curve_h, curve_3d), (
+            "3D and horizontal-only curves should differ when Z carries "
+            "independent acceleration signal"
+        )
+
+    def test_metrics_collector_computes_theta_accel_correlation_3d(self):
+        """Projection mode, enough frames to fill the buffer past the
+        >=6-sample threshold (10-frame cadence -> need >=60 frames) --
+        mirrors the horizontal collector-wiring test."""
+        cfg = SimConfig()
+        cfg.mode = "projection"
+        cfg.num_boids = 40
+        cfg.seed = 5
+        cfg.metrics_detail_level = 2
+        cfg.metrics_interval = 5
+
+        sim = SimulationEngine(cfg)
+        sim.run_headless(steps=200)
+
+        computed = [
+            s for s in sim.metrics.history if s.theta_accel_correlation_3d is not None
+        ]
+        assert len(computed) >= 1, "theta_accel_correlation_3d was never computed"
+        for snap in computed:
+            assert isinstance(snap.theta_accel_correlation_3d, list)
+            assert len(snap.theta_accel_correlation_3d) > 0
+            assert all(np.isfinite(c) for c in snap.theta_accel_correlation_3d)
+            assert snap.theta_accel_peak_lag_3d is not None
+            assert snap.theta_accel_peak_lag_3d >= 0
 
 
 class TestFindOptimalM:

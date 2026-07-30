@@ -263,7 +263,39 @@ def compute_tau_rho_hull(
     return float(tau_sum * interval)
 
 
-def compute_theta_accel_correlation(
+def _theta_accel_correlation(
+    accel_mag: np.ndarray,
+    theta_ring: list[float],
+    interval: int,
+    buffer_size: int,
+) -> tuple[list[float] | None, int | None]:
+    """Shared cross-correlation core for both the horizontal and 3D
+    theta-accel variants — everything after "compute an acceleration
+    magnitude series" is identical between them."""
+    theta_arr = np.array(theta_ring[1:], dtype=np.float64)  # (n-1,), aligned
+
+    m = len(accel_mag)
+    if m < 4:
+        return None, None
+
+    accel_mean, accel_std = accel_mag.mean(), accel_mag.std()
+    theta_mean, theta_std = theta_arr.mean(), theta_arr.std()
+    if accel_std < 1e-12 or theta_std < 1e-12:
+        return None, None
+
+    max_lag = min(m - 1, max(1, int(0.25 * buffer_size)))
+    curve: list[float] = []
+    for lag in range(0, max_lag + 1):
+        a = accel_mag[: m - lag]
+        t = theta_arr[lag:]
+        c = float(np.mean((a - accel_mean) * (t - theta_mean)) / (accel_std * theta_std))
+        curve.append(c)
+
+    peak_lag = int(np.argmax(np.abs(curve))) * interval
+    return curve, peak_lag
+
+
+def compute_theta_horizontal_accel_correlation(
     com_vel_ring: list[np.ndarray],
     theta_ring: list[float],
     interval: int = 10,
@@ -282,8 +314,16 @@ def compute_theta_accel_correlation(
     convention, but as a cross-correlation between two series instead
     of an autocorrelation of one).
 
-    com_vel_ring holds full 3D COM velocity samples (only the
-    horizontal x,y components are used — z is "up" in this codebase).
+    com_vel_ring holds full 3D COM velocity samples, but only the
+    horizontal x,y components are used (z is "up" in this codebase) —
+    this is a deliberate, paper-faithful choice: Pearce et al.'s own
+    Fig. 3c specifically measures horizontal acceleration of real
+    flocks (their footage only gave them horizontal motion to measure).
+    See compute_theta_accel_correlation_3d for the full-3D-acceleration
+    sibling, which uses the vertical component too — a genuinely
+    different quantity, not a "more correct" version of this one; keep
+    both, don't collapse into one.
+
     Acceleration is derived as the per-sample-step difference of
     horizontal velocity; this is proportional to true acceleration but
     not divided by interval·dt_phys, since Pearson correlation is
@@ -315,26 +355,46 @@ def compute_theta_accel_correlation(
     vel_arr = np.array(com_vel_ring, dtype=np.float64)  # (n, 3)
     accel_xy = np.diff(vel_arr[:, :2], axis=0)  # (n-1, 2)
     accel_mag = np.linalg.norm(accel_xy, axis=1)  # (n-1,)
-    theta_arr = np.array(theta_ring[1:], dtype=np.float64)  # (n-1,), aligned
+    return _theta_accel_correlation(accel_mag, theta_ring, interval, buffer_size)
 
-    m = len(accel_mag)
-    if m < 4:
+
+def compute_theta_accel_correlation_3d(
+    com_vel_ring: list[np.ndarray],
+    theta_ring: list[float],
+    interval: int = 10,
+    buffer_size: int = 500,
+) -> tuple[list[float] | None, int | None]:
+    """Full-3D-acceleration sibling of compute_theta_horizontal_accel_correlation:
+    cross-correlation between internal opacity and the full 3D COM
+    acceleration magnitude ‖Δv‖ (not just the horizontal ‖Δv_xy‖).
+
+    Pearce et al.'s own Fig. 3c is horizontal-only because their real
+    flock footage couldn't measure vertical motion; this simulation has
+    genuine 3D velocity data, so it's a legitimate question whether
+    vertical maneuvering also correlates with opacity changes — a
+    different quantity from the paper's own result, not a replacement
+    for it. Same ring-buffer/lag-cap/degeneracy-guard mechanics as the
+    horizontal version; see its docstring for those details.
+
+    Args:
+        com_vel_ring: list of (3,) COM velocity samples, oldest first.
+        theta_ring: list of Θ samples, same length, same instants.
+        interval: frames between consecutive samples (default 10).
+        buffer_size: capacity of the ring buffer the samples were drawn
+            from (default 500).
+
+    Returns:
+        (curve, peak_lag) — same convention as
+        compute_theta_horizontal_accel_correlation. (None, None) if
+        there are too few samples or either series is degenerate.
+    """
+    n = len(theta_ring)
+    if n < 6 or len(com_vel_ring) != n:
         return None, None
 
-    accel_mean, accel_std = accel_mag.mean(), accel_mag.std()
-    theta_mean, theta_std = theta_arr.mean(), theta_arr.std()
-    if accel_std < 1e-12 or theta_std < 1e-12:
-        return None, None
-
-    max_lag = min(m - 1, max(1, int(0.25 * buffer_size)))
-    curve: list[float] = []
-    for lag in range(0, max_lag + 1):
-        a = accel_mag[: m - lag]
-        t = theta_arr[lag:]
-        c = float(np.mean((a - accel_mean) * (t - theta_mean)) / (accel_std * theta_std))
-        curve.append(c)
-
-    peak_lag = int(np.argmax(np.abs(curve))) * interval
-    return curve, peak_lag
+    vel_arr = np.array(com_vel_ring, dtype=np.float64)  # (n, 3)
+    accel_3d = np.diff(vel_arr, axis=0)  # (n-1, 3)
+    accel_mag = np.linalg.norm(accel_3d, axis=1)  # (n-1,)
+    return _theta_accel_correlation(accel_mag, theta_ring, interval, buffer_size)
 
 

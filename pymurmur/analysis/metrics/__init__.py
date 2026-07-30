@@ -37,7 +37,8 @@ from .dynamics_curves import (
     compute_msd_curve,
     compute_tau_rho,
     compute_tau_rho_hull,
-    compute_theta_accel_correlation,
+    compute_theta_accel_correlation_3d,
+    compute_theta_horizontal_accel_correlation,
 )
 from .flock_metrics import FlockMetrics
 from .opacity import (
@@ -102,7 +103,8 @@ __all__ = [
     "compute_suggested_m",
     "compute_tau_rho",
     "compute_tau_rho_hull",
-    "compute_theta_accel_correlation",
+    "compute_theta_accel_correlation_3d",
+    "compute_theta_horizontal_accel_correlation",
     "compute_theta_prime",
     "find_connectivity_threshold",
     "find_m_star_by_sensing_cost",

@@ -84,7 +84,7 @@ class TestFlockMetricsToDict:
         assert d["dispersion"] == pytest.approx(123.45)
 
     def test_all_keys_present(self):
-        """All 15 expected metric keys are present in the output."""
+        """All expected metric keys are present in the output."""
         m = FlockMetrics()
         d = m.to_dict()
 
@@ -101,8 +101,9 @@ class TestFlockMetricsToDict:
             "convergence_speed",
             # B3: max pairwise 3D distance (fragmentation)
             "r_max",
-            # B9: accel-vs-opacity cross-correlation
+            # B9: accel-vs-opacity cross-correlation (horizontal + 3D)
             "theta_accel_correlation", "theta_accel_peak_lag",
+            "theta_accel_correlation_3d", "theta_accel_peak_lag_3d",
             # B14: steering-saturation "jammed" states diagnostic
             "jamming_index",
             # B5/B6: mean-field Psky + marginal-opacity critical density
