@@ -1,5 +1,33 @@
 # pymurmur — Validation Rigor: Acceptance Gates & Analysis Math
 
+> **Relocated 2026-07-30** from `pymurmur/todo_validation_rigor.md` — it was
+> sitting inside the installable package, which is the wrong place for
+> not-yet-implemented planning material; this repo's convention is that
+> `TODO/` holds things yet to be implemented.
+>
+> **Adaptation notice — read before implementing.** This spec was
+> "adapted from the Murmuration Core v2 design" and references a module
+> layout that does not exist in this codebase (`analysis/h2.py`,
+> `analysis/density.py`, `analysis/shape_pca.py`, `analysis/tau_rho.py`,
+> `sci/todo.md`, `sci/sim_new.md`, `design/03_observables_bindings.md`).
+> **Do not create these modules** — pymurmur already has working,
+> tested equivalents under different names and APIs:
+>
+> | This doc's module | pymurmur's real equivalent |
+> |---|---|
+> | `analysis/h2.py` (`h2_curve`, `m_star`) | `pymurmur/analysis/metrics/consensus_robustness.py` (see `sci/h2_consensus.md` — note its §4.3 documents a real H₂-normalisation discrepancy vs. the paper, relevant to gate Y-a below) |
+> | `analysis/density.py` (`density_gyration`, `scaling_exponent`) | `pymurmur/analysis/research/density_scaling.py` (see `sci/density_and_shape.md`) |
+> | `analysis/shape_pca.py` (`flock_shape`) | `pymurmur/analysis/metrics/shape_motion.py` (see `sci/density_and_shape.md` §3) |
+> | `analysis/tau_rho.py` (`tau_rho`) | already computed in the metrics collector (see `sci/density_and_shape.md` §2.1) |
+> | `analysis/opacity.py` (external opacity) | `pymurmur/physics/occlusion.py` (see `sci/projection_model.md` §6) |
+>
+> The genuine, non-duplicate unimplemented value in this document is the
+> **acceptance-gate thresholds and harness structure** below (§1, §4,
+> §5) — a scientific validation suite with 5 hard pass/fail gates isn't
+> currently wired as automated tests anywhere in pymurmur. An
+> implementation should reuse the table above rather than write the
+> `analysis/*.py` modules this document sketches from scratch.
+>
 > **Purpose:** This document specifies a scientific validation harness for pymurmur,
 > adapted from the Murmuration Core v2 design. It defines 10 results (5 hard gates,
 > 5 reported-only) derived from Pearce (2014) and Young (2013), with complete

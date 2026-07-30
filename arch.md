@@ -199,12 +199,20 @@ pymurmur/                          # pip-installable package
 │
 ├── physics/
 │   ├── boid.py                # integrate(speed_mode|move|inertia|noise), boundaries
-│   │                          #   (toroidal/open/margin/sphere/sphere_soft, centred on C),
-│   │                          #   position-init variants (box/sphere/shell/gaussian/grid/blob),
+│   │                          #   (toroidal/open/margin/sphere/sphere_soft, centred on C)
+│   ├── boid_init.py           # position-init variants (box/sphere/shell/gaussian/grid/blob),
 │   │                          #   velocity-init variants (fixed/cube/speed_uniform/tangential/blob)
+│   │                          #   — split out of boid.py (file-size split)
 │   ├── flock.py               # PhysicsFlock (composes FlockArrays; rng, is_predator,
-│   │                          #   center, prev_positions, last_accelerations, max_speed),
-│   │                          #   SpatialHashGrid (modulo cells, incremental), KDTreeIndex (boxsize)
+│   │                          #   center, prev_positions, last_accelerations, max_speed)
+│   ├── spatial_index.py       # SpatialHashGrid (modulo cells, incremental), KDTreeIndex
+│   │                          #   (boxsize) — split out of flock.py (file-size split)
+│   ├── adaptive_speed.py      # neighbor-count adaptive speed law (pure fn) — shared by
+│   │                          #   the NeighborAdaptiveSpeed extension across all 7 modes;
+│   │                          #   angle.py keeps its own separate inline copy, unchanged
+│   ├── priority_stack.py      # priority-ordered force budget: obstacle-avoidance (tier 1),
+│   │                          #   predator-threat (tier 2), flocking (tier 3) binary-cutoff
+│   │                          #   cascade, used when engine's priority_stack_enabled is set
 │   ├── occlusion.py           # spherical-cap occlusion — per-observer math, true visibility
 │   │                          #   culling, union Θ, boundary-weighted δ̂  (pure numpy)
 │   ├── occlusion_culling.py   # P4.6 sequential/chunk/parallel culling-strategy dispatch
@@ -232,11 +240,19 @@ pymurmur/                          # pip-installable package
 │   │   ├── projection.py      # Pearce: δ̂ + alignment + noise; refinements
 │   │   ├── spatial.py         # Reynolds: hybrid filter, dual radii, jitter, species,
 │   │   │                      #   physical pipeline order, parallel two-phase
-│   │   ├── field.py           # 13-term blob field: anchors, leader/chaser, shell/cavity,
-│   │   │                      #   slot repulsion, flow/fold, grid-sep normalization
+│   │   ├── spatial_helpers.py # neighbour-query helpers (_query_neighbors) — split out
+│   │   │                      #   of spatial.py (file-size split)
+│   │   ├── field.py           # 11-term blob field: shell/cavity, target pull, slot
+│   │   │                      #   repulsion, tangential, buoyancy, curl/fold flow, field
+│   │   │                      #   noise, viscous drag, drift alignment, floating boundary
+│   │   ├── field_anchors.py   # Lissajous blob anchors, leader/chaser group targeting —
+│   │   │                      #   split out of field.py (file-size split)
+│   │   ├── field_terms.py     # the 11 per-bird ForceTerm implementations — split out of
+│   │   │                      #   field.py (file-size split)
 │   │   ├── vicsek.py          # corrected update — core P1.8 alignment/memory term
 │   │   ├── vicsek_predator.py # Phase 6 predator-prey: fear blending, hunting,
-│   │   │                      #   asymmetric collisions
+│   │   │                      #   asymmetric collisions — split out of vicsek.py
+│   │   │                      #   (file-size split)
 │   │   ├── influencer.py      # tick-driven Lissajous, move-then-steer, rank influence, pilot
 │   │   ├── angle.py           # turn-rate steering, mode gating, adaptive speed, edges
 │   │   └── marl.py            # deferred global rules under external control
@@ -396,15 +412,15 @@ read somewhere (usage-drift scan). The full guard set runs as
 
 ## 6. Force Modes *(Level 3 — one class per file; `@register` → `MODE_REGISTRY`)*
 
-| Mode | Mechanism | needs_index | speed_mode | owns_positions | Per-mode state | 300K target |
-|------|-----------|:---:|:---:|:---:|----------------|:---:|
-| **projection** | Pearce δ̂ (culled occlusion) + alignment + noise | yes (topological σ) | band | no | — | ~13 ms |
-| **spatial** | Reynolds hybrid-filter sep/align/coh (+species, jitter, kernels) | yes (radius+cap) | band \| ceiling \| fixed | no | — | ~17 ms (numba) |
-| **field** | 13-term blob/anchor field (anchors, leader/chaser, shell, ripples…) | no | band + inertia | no | t, group cache | ~3 ms |
-| **vicsek** | angle coupling η, tangent-plane noise D, predator–prey, collisions | yes (radius) | fixed | no | — | ~17 ms |
-| **influencer** | tick-driven Lissajous target, rank influence, move-then-steer | no | fixed | **yes** | tick, pilot | ~1 ms |
-| **angle** | turn-rate-limited heading steering, mode gating, adaptive speed | yes (knn) | fixed (per-bird s) | no | last_cell grid | ~8 ms |
-| **marl** | deferred global rules under external per-bird control | yes (sep radius) | none | no | — | ~2 ms |
+| Mode | Mechanism | needs_index | speed_mode | owns_positions | Per-mode state | 300K target | Math |
+|------|-----------|:---:|:---:|:---:|----------------|:---:|---|
+| **projection** | Pearce δ̂ (culled occlusion) + alignment + noise | yes (topological σ) | band | no | — | ~13 ms | `sci/projection_model.md` |
+| **spatial** | Reynolds hybrid-filter sep/align/coh (+species, jitter, kernels) | yes (radius+cap) | band \| ceiling \| fixed | no | — | ~17 ms (numba) | `sci/spatial_mode.md` |
+| **field** | 11-term blob/anchor field (anchors, leader/chaser, shell, ripples…) | no | band + inertia | no | t, group cache | ~3 ms | `sci/field_mode.md` |
+| **vicsek** | angle coupling η, tangent-plane noise D, predator–prey, collisions | yes (radius) | fixed | no | — | ~17 ms | `sci/vicsek_mode.md`, `sci/predator_prey.md` |
+| **influencer** | tick-driven Lissajous target, rank influence, move-then-steer | no | fixed | **yes** | tick, pilot | ~1 ms | `sci/influencer_mode.md` |
+| **angle** | turn-rate-limited heading steering, mode gating, adaptive speed | yes (knn) | fixed (per-bird s) | no | last_cell grid | ~8 ms | `sci/angle_mode.md` |
+| **marl** | deferred global rules under external per-bird control | yes (sep radius) | none | no | — | ~2 ms | `sci/marl_mode.md` |
 
 Runtime: `M` cycles `sorted(MODE_REGISTRY)` (= angle, field, influencer,
 marl, projection, spatial, vicsek); each mode reads only its own
@@ -422,16 +438,16 @@ other seven live together under `physics/plugins/` (their ABC/registry
 plumbing was scattered across `physics/`, `physics/forces/`, and
 `physics/boundary/` until consolidated there):
 
-| Plugin family | Purpose | File | Registry | Entries |
-|---|---|---|---|---|
-| **ForceMode** | force computation (see table above) | `physics/plugins/force_mode.py` | `MODE_REGISTRY` | angle, field, influencer, marl, projection, spatial, vicsek |
-| **BoundaryMode** | domain-edge handling, dispatched from `boid.py`'s `_apply_boundary()` | `physics/plugins/boundary/` | `BOUNDARY_REGISTRY` | margin, open, sphere, sphere_soft, toroidal |
-| **NeighborSelector** | per-mode neighbour-query strategy (spatial/vicsek/projection) | `physics/plugins/neighbor_selection.py` | `NEIGHBOR_SELECTOR_REGISTRY` | ball_tree_radius, hybrid, topological_visibility |
-| **ObstacleAvoidanceStrategy** | SDF-gradient fly-away + linear-TTC predictive steering | `physics/plugins/obstacle_avoidance.py` | `OBSTACLE_AVOIDANCE_REGISTRY` | sdf_ttc |
-| **SpeedModel** | post-integrate speed enforcement, dispatched from `boid.py`'s `integrate()` | `physics/plugins/speed_model.py` | `SPEED_MODEL_REGISTRY` | band, ceiling, clamp (alias of band), fixed, none, noise_modulated, velocity_adaptive |
-| **SpatialIndexStrategy** | N-adaptive index selection (`flock.py`) | `physics/plugins/spatial_index_strategy.py` | `SPATIAL_INDEX_STRATEGY_REGISTRY` | auto, hash_grid, kdtree, none |
-| **Kernel registries** | separation/alignment/cohesion distance-weighting, dispatched from `forces/separation_primitives.py` + `forces/_base.py` | `physics/plugins/kernel_registry.py` | `SEPARATION_KERNEL_REGISTRY` (11) / `ALIGNMENT_KERNEL_REGISTRY` (4) / `COHESION_KERNEL_REGISTRY` (3) | — |
-| **NoiseStrategy** | spatial-mode noise injection, dispatched from `forces/spatial.py` | `physics/plugins/noise_strategy.py` | `NOISE_STRATEGY_REGISTRY` | additive, maxwellian, none, seed_sinusoidal, velocity |
+| Plugin family | Purpose | File | Registry | Entries | Math |
+|---|---|---|---|---|---|
+| **ForceMode** | force computation (see table above) | `physics/plugins/force_mode.py` | `MODE_REGISTRY` | angle, field, influencer, marl, projection, spatial, vicsek | (see table above) |
+| **BoundaryMode** | domain-edge handling, dispatched from `boid.py`'s `_apply_boundary()` | `physics/plugins/boundary/` | `BOUNDARY_REGISTRY` | margin, open, sphere, sphere_soft, toroidal | `sci/boundary_strategies.md` |
+| **NeighborSelector** | per-mode neighbour-query strategy (spatial/vicsek/projection) | `physics/plugins/neighbor_selection.py` | `NEIGHBOR_SELECTOR_REGISTRY` | ball_tree_radius, hybrid, topological_visibility | `sci/neighbor_selection.md` |
+| **ObstacleAvoidanceStrategy** | SDF-gradient fly-away + linear-TTC predictive steering | `physics/plugins/obstacle_avoidance.py` | `OBSTACLE_AVOIDANCE_REGISTRY` | sdf_ttc | `sci/obstacle_avoidance.md` |
+| **SpeedModel** | post-integrate speed enforcement, dispatched from `boid.py`'s `integrate()` | `physics/plugins/speed_model.py` | `SPEED_MODEL_REGISTRY` | band, ceiling, clamp (alias of band), fixed, none, noise_modulated, velocity_adaptive | `sci/speed_models.md` |
+| **SpatialIndexStrategy** | N-adaptive index selection (`flock.py`) | `physics/plugins/spatial_index_strategy.py` | `SPATIAL_INDEX_STRATEGY_REGISTRY` | auto, hash_grid, kdtree, none | `sci/spatial_acceleration.md` |
+| **Kernel registries** | separation/alignment/cohesion distance-weighting, dispatched from `forces/separation_primitives.py` + `forces/_base.py` | `physics/plugins/kernel_registry.py` | `SEPARATION_KERNEL_REGISTRY` (11) / `ALIGNMENT_KERNEL_REGISTRY` (4) / `COHESION_KERNEL_REGISTRY` (3) | — | `sci/force_kernels.md` |
+| **NoiseStrategy** | spatial-mode noise injection, dispatched from `forces/spatial.py` | `physics/plugins/noise_strategy.py` | `NOISE_STRATEGY_REGISTRY` | additive, maxwellian, none, seed_sinusoidal, velocity | `sci/noise_and_speed.md` |
 
 ---
 
