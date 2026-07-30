@@ -379,6 +379,10 @@ def test_ideal_exponent_in_density_scaling_result():
         n_values=np.array([50.0, 100.0], dtype=np.float64),
         spacings_toroidal=np.array([12.0, 8.0], dtype=np.float64),
         spacings_open=np.array([12.0, 8.0], dtype=np.float64),
+        sizes_toroidal=np.full(2, np.nan),
+        sizes_open=np.full(2, np.nan),
+        theta_ext_toroidal=np.full(2, np.nan),
+        theta_ext_open=np.full(2, np.nan),
     )
     assert result.ideal_density_exponent == pytest.approx(-0.5)
 
