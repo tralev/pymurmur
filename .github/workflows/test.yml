@@ -249,7 +249,7 @@ jobs:
           path: output/test-results-gpu.xml
 
   lint:
-    name: Lint (ruff + mypy, in Docker)
+    name: Lint (ruff, in Docker)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -263,14 +263,21 @@ jobs:
           load: true
           cache-from: type=gha,scope=fast-py3.12
           cache-to: type=gha,mode=max,scope=fast-py3.12
-      - name: Run ruff + mypy (in Docker)
+      - name: Run ruff (in Docker)
         # Pinned to pyproject.toml's [project.optional-dependencies].lint
-        # constraints (ruff>=0.4,<1.0, mypy>=1.8,<2.0) — previously
-        # unpinned here, so CI silently ran whatever the latest releases
-        # were, disagreeing with what the project declares as its
-        # supported range and what `pip install .[lint]` gives locally.
+        # constraint (ruff>=0.4,<1.0) — previously unpinned here, so CI
+        # silently ran whatever the latest release was, disagreeing with
+        # what the project declares as its supported range and what
+        # `pip install .[lint]` gives locally.
+        #
+        # mypy intentionally NOT run here — guard-rails.yml's
+        # guard-rail-mypy (P8.0) already runs the identical
+        # `mypy pymurmur/ --ignore-missing-imports` check on every
+        # push/PR and is merge-blocking via guard-rails-summary; running
+        # it a second time here was pure duplication (same command, same
+        # trigger conditions, no independent signal), just extra CI
+        # minutes. guard-rail-mypy is the single source of truth now.
         run: |
           docker run --rm pymurmur-test:latest \
-            sh -c "pip install --no-cache-dir 'ruff>=0.4,<1.0' 'mypy>=1.8,<2.0' 'types-PyYAML>=6.0,<7.0' && \
-              ruff check pymurmur/ test/ && \
-              mypy pymurmur/ --ignore-missing-imports"
+            sh -c "pip install --no-cache-dir 'ruff>=0.4,<1.0' && \
+              ruff check pymurmur/ test/"
