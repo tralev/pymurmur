@@ -302,9 +302,12 @@ def _compute_effective_radii(
         d_dir = d_vec / d_norm
         cos_psi = abs(np.dot(d_dir, v_dir))
         sin_psi = math.sqrt(max(0.0, 1.0 - cos_psi * cos_psi))
+        # b_eff = sqrt((b*anisotropy * sin(psi))^2 + (b * cos(psi))^2):
+        # end-on (psi=0) -> b (unchanged cross-section); broadside (psi=90)
+        # -> b*anisotropy (the body's full elongated length is visible).
         result[i] = math.sqrt(
-            (boid_size * sin_psi) ** 2 +
-            (boid_size / anisotropy * cos_psi) ** 2
+            (boid_size * anisotropy * sin_psi) ** 2 +
+            (boid_size * cos_psi) ** 2
         )
     return result
 
@@ -351,10 +354,12 @@ def _compute_effective_radii_batched(
     cos_psi = np.abs(np.sum(d_dir * v_dir, axis=2))  # (N, M)
     sin_psi = np.sqrt(np.maximum(0.0, 1.0 - cos_psi * cos_psi))
 
-    # b_eff = sqrt((b * sin(psi))^2 + (b/a * cos(psi))^2)
+    # b_eff = sqrt((b*anisotropy * sin(psi))^2 + (b * cos(psi))^2):
+    # end-on (psi=0) -> b (unchanged cross-section); broadside (psi=90)
+    # -> b*anisotropy (the body's full elongated length is visible).
     b_eff = np.sqrt(
-        (boid_size * sin_psi) ** 2 +
-        (boid_size / anisotropy * cos_psi) ** 2
+        (boid_size * anisotropy * sin_psi) ** 2 +
+        (boid_size * cos_psi) ** 2
     )
 
     # Only update where both velocity and direction are valid

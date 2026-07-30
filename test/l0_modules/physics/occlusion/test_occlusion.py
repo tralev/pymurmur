@@ -7,6 +7,8 @@ import numpy as np
 import pytest
 
 from pymurmur.physics.occlusion import (
+    _compute_effective_radii,
+    _compute_effective_radii_batched,
     spherical_cap_occlusion,
     spherical_cap_occlusion_soa,
 )
@@ -149,6 +151,55 @@ def test_occlusion_anisotropic_body():
     assert theta_iso != theta_aniso
     assert 0.0 <= theta_iso <= 1.0
     assert 0.0 <= theta_aniso <= 1.0
+
+
+def test_effective_radii_end_on_unchanged():
+    """A prolate body viewed end-on (view direction == its heading) must
+    present exactly its base cross-section radius, independent of how
+    elongated it is — the elongation axis is invisible when staring
+    straight down it. Regression guard: an earlier version of this
+    formula divided by anisotropy here instead, shrinking end-on bodies
+    below the isotropic baseline."""
+    obs_pos = np.array([0, 0, 0], dtype=np.float32)
+    positions = np.array([[50.0, 0.0, 0.0]], dtype=np.float32)
+    velocities = np.array([[1.0, 0.0, 0.0]], dtype=np.float32)  # heading == view dir
+    order = np.array([0])
+
+    b_eff = _compute_effective_radii(
+        obs_pos, positions, velocities, order, boid_size=9.0, anisotropy=3.0)
+    assert b_eff[0] == pytest.approx(9.0)
+
+
+def test_effective_radii_broadside_scales_by_anisotropy():
+    """A prolate body viewed broadside (view direction perpendicular to
+    its heading) must present its full elongated length, boid_size *
+    anisotropy — the larger silhouette a bird's side profile actually
+    shows. Regression guard: an earlier version left this unchanged from
+    the isotropic baseline instead of scaling it up."""
+    obs_pos = np.array([0, 0, 0], dtype=np.float32)
+    positions = np.array([[50.0, 0.0, 0.0]], dtype=np.float32)
+    velocities = np.array([[0.0, 1.0, 0.0]], dtype=np.float32)  # heading perp. to view dir
+    order = np.array([0])
+
+    b_eff = _compute_effective_radii(
+        obs_pos, positions, velocities, order, boid_size=9.0, anisotropy=3.0)
+    assert b_eff[0] == pytest.approx(27.0)
+
+
+def test_effective_radii_batched_matches_single_observer():
+    """Batched effective-radius computation agrees with the single-observer
+    path at both limiting viewing angles (end-on and broadside)."""
+    obs_positions = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=np.float32)
+    diffs = np.array(
+        [[[50.0, 0.0, 0.0]], [[50.0, 0.0, 0.0]]], dtype=np.float32)  # (N=2, M=1, 3)
+    velocities = np.array(
+        [[[1.0, 0.0, 0.0]], [[0.0, 1.0, 0.0]]], dtype=np.float32)  # end-on, broadside
+
+    b_effs = _compute_effective_radii_batched(
+        obs_positions, diffs, velocities, boid_size=9.0, anisotropy=3.0)
+
+    assert b_effs[0, 0] == pytest.approx(9.0)   # end-on
+    assert b_effs[1, 0] == pytest.approx(27.0)  # broadside
 
 
 def test_occlusion_interior_bird():
