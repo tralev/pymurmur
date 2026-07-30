@@ -37,6 +37,35 @@ def test_silhouette_2d_flat_wall():
     assert theta < 0.1, f"3D theta for flat wall should be < 0.1, got {theta:.4f}"
 
 
+def test_silhouette_2d_observer_axis_changes_projection():
+    """P9.4: observer_axis actually changes which plane is projected —
+    a flock flat in Z projects its full XY extent viewed along Z, but a
+    visibly different (here: near-degenerate, since the flock has zero
+    extent in Z) footprint viewed along X, so the two silhouettes must
+    differ. Guards against observer_axis being a silent no-op."""
+    from pymurmur.analysis.metrics import compute_silhouette_2d
+
+    N = 200
+    rng = np.random.RandomState(42)
+    positions = np.zeros((N, 3), dtype=np.float32)
+    positions[:, 0] = rng.uniform(0, 100, N).astype(np.float32)
+    positions[:, 1] = rng.uniform(0, 100, N).astype(np.float32)
+    positions[:, 2] = 0.0  # flat in Z
+
+    sil_along_z = compute_silhouette_2d(positions, boid_size=5.0, grid_res=100, observer_axis=2)
+    sil_along_x = compute_silhouette_2d(positions, boid_size=5.0, grid_res=100, observer_axis=0)
+
+    assert sil_along_z > 0.3, f"Viewed along Z should be a wide silhouette, got {sil_along_z:.4f}"
+    assert sil_along_x != pytest.approx(sil_along_z), (
+        f"observer_axis must change which plane is projected: "
+        f"along_x={sil_along_x:.4f}, along_z={sil_along_z:.4f}"
+    )
+    # Default (no observer_axis given) must match the explicit Z default —
+    # backward-compatible for every pre-existing call site.
+    sil_default = compute_silhouette_2d(positions, boid_size=5.0, grid_res=100)
+    assert sil_default == pytest.approx(sil_along_z)
+
+
 def test_metrics_collector_wires_boid_size_into_silhouette():
     """S3.6: MetricsCollector.collect() passes cfg.flock.boid_size into
     compute_silhouette_2d instead of the function's hardcoded 5.0

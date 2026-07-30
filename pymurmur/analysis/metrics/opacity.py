@@ -106,12 +106,14 @@ def compute_silhouette_2d(
     positions: np.ndarray,
     boid_size: float = 5.0,
     grid_res: int = 100,
+    observer_axis: int = 2,
 ) -> float:
     """P9.4: 2D silhouette — disk rasterization ⊥ observer axis.
 
-    Projects positions onto the XY plane (⊥ Z = observer axis),
-    rasterizes disks of radius `boid_size` onto a coarse grid,
-    and returns the union fraction (overlaps count once).
+    Projects positions onto the plane perpendicular to `observer_axis`
+    (default Z, i.e. the XY plane), rasterizes disks of radius
+    `boid_size` onto a coarse grid, and returns the union fraction
+    (overlaps count once).
 
     This complements the 3D voxel-based theta_prime and measures
     how much of the observer's field of view the flock covers.
@@ -120,6 +122,8 @@ def compute_silhouette_2d(
         positions: (N, 3) float32 array.
         boid_size: disk radius in world units.
         grid_res: pixels per axis (default 100 → 10,000 cells).
+        observer_axis: 0/1/2 — axis the observer looks along (projected
+            out); default 2 (Z) preserves prior behaviour.
 
     Returns:
         silhouette ∈ [0, 1] — fraction of bounding rectangle covered.
@@ -128,8 +132,9 @@ def compute_silhouette_2d(
     if N == 0:
         return 0.0
 
-    # Project to XY (observer axis = Z)
-    pts = positions[:, :2]  # (N, 2)
+    # Project onto the plane perpendicular to observer_axis.
+    ax = [i for i in range(3) if i != observer_axis]
+    pts = positions[:, ax]  # (N, 2)
     mins = pts.min(axis=0) - boid_size
     maxs = pts.max(axis=0) + boid_size
     span = maxs - mins
