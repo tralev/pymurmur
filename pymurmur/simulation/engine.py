@@ -87,13 +87,10 @@ class SimulationEngine(_CommandQueueMixin):
         config.validate()
         self.config = config
 
-        # C6: Apply numba settings once at engine startup
-        if config.perf.fastmath:
-            try:
-                import numba
-                numba.config.FASTMATH = True
-            except ImportError:
-                pass
+        # C6: Apply numba settings once at engine startup. fastmath is
+        # wired per-kernel at dispatch time (spatial.py's _dispatch_kernels,
+        # vicsek_predator.py's resolve_species_collisions) since numba
+        # compiles fastmath in at @njit decoration time, not globally.
         if config.perf.num_threads > 0:
             try:
                 import numba

@@ -144,12 +144,12 @@ class MPLRecorder:
 
         # ── Left subplot: elev=15°, azim=15° ──
         ax1 = fig.add_subplot(1, 2, 1, projection="3d")
-        ax1.view_init(elev=15, azim=15)  # type: ignore[attr-defined]
+        ax1.view_init(elev=15, azim=15)
         self._draw_scatter(ax1, pos, prey_mask, pred_mask, seeds, center, pad)
 
         # ── Right subplot: elev=45°, azim=45° ──
         ax2 = fig.add_subplot(1, 2, 2, projection="3d")
-        ax2.view_init(elev=45, azim=45)  # type: ignore[attr-defined]
+        ax2.view_init(elev=45, azim=45)
         self._draw_scatter(ax2, pos, prey_mask, pred_mask, seeds, center, pad)
 
         fig.suptitle(

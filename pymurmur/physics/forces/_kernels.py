@@ -20,7 +20,7 @@ try:
 except ImportError:
     _HAS_NUMBA = False
 
-    def njit(*args, **kwargs):
+    def njit(*args, **kwargs):  # type: ignore[no-redef]
         """No-op decorator when numba is absent."""
         def wrapper(fn):
             return fn
@@ -31,8 +31,7 @@ except ImportError:
 # Hybrid filter kernel (P4.1)
 # ═══════════════════════════════════════════════════════════════════
 
-@njit(cache=True)
-def _numba_hybrid_filter(
+def _hybrid_filter_kernel(
     neighbor_idx: np.ndarray,      # (N, k) int32 — mutated in-place
     positions: np.ndarray,          # (N, 3) float32
     active: np.ndarray,             # (N,) bool
@@ -86,12 +85,19 @@ def _numba_hybrid_filter(
             neighbor_idx[global_i, ni] = in_range_indices[ni]
 
 
+_numba_hybrid_filter = njit(cache=True, fastmath=False)(_hybrid_filter_kernel)
+# C6: fastmath=True relaxes IEEE-754 float semantics (reordering,
+# no NaN/Inf checks) for a compile-time speedup — used when
+# config.perf.fastmath is set (see spatial.py's _dispatch_kernels).
+# Not bit-identical to the fastmath=False build; that's the whole point.
+_numba_hybrid_filter_fastmath = njit(cache=True, fastmath=True)(_hybrid_filter_kernel)
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Predator detection kernel (P4.3)
 # ═══════════════════════════════════════════════════════════════════
 
-@njit(cache=True)
-def _numba_predator_detect(
+def _predator_detect_kernel(
     threatened: np.ndarray,         # (N,) bool — mutated in-place
     neighbor_idx: np.ndarray,       # (N, k) int32
     is_predator: np.ndarray,        # (N,) bool
@@ -127,12 +133,15 @@ def _numba_predator_detect(
         threatened[global_i] = has_predator
 
 
+_numba_predator_detect = njit(cache=True, fastmath=False)(_predator_detect_kernel)
+_numba_predator_detect_fastmath = njit(cache=True, fastmath=True)(_predator_detect_kernel)
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Predator escape kernel (P4.3)
 # ═══════════════════════════════════════════════════════════════════
 
-@njit(cache=True)
-def _numba_predator_escape(
+def _predator_escape_kernel(
     escape: np.ndarray,             # (N, 3) float32 — mutated in-place
     positions: np.ndarray,          # (N, 3) float32
     neighbor_idx: np.ndarray,       # (N, k) int32
@@ -217,6 +226,10 @@ def _numba_predator_escape(
         escape[global_i, 0] = (dx / d) * mag
         escape[global_i, 1] = (dy / d) * mag
         escape[global_i, 2] = (dz / d) * mag
+
+
+_numba_predator_escape = njit(cache=True, fastmath=False)(_predator_escape_kernel)
+_numba_predator_escape_fastmath = njit(cache=True, fastmath=True)(_predator_escape_kernel)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -327,8 +340,7 @@ def _numpy_predator_escape(
 # at N=2000: ~2e6 pairs x 3-dim min-image unwrap, dominated by per-pair
 # Python/numpy call overhead) while being bit-identical to the original.
 
-@njit(cache=True)
-def _numba_species_collisions(
+def _species_collisions_kernel(
     positions: np.ndarray,      # (N, 3) float32 — mutated in-place
     is_predator: np.ndarray,    # (N,) bool
     active_idx: np.ndarray,     # (M,) int64 — indices of active birds
@@ -401,6 +413,10 @@ def _numba_species_collisions(
                 corrections += 1
 
     return corrections
+
+
+_numba_species_collisions = njit(cache=True, fastmath=False)(_species_collisions_kernel)
+_numba_species_collisions_fastmath = njit(cache=True, fastmath=True)(_species_collisions_kernel)
 
 
 def _numpy_species_collisions(

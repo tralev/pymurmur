@@ -331,7 +331,7 @@ class InfluencerMode(ForceMode):
 
                 if influence_mode == "rank":
                     ranks = np.argsort(dists_to_target).argsort().astype(np.float32)
-                    ranks = ranks / max(n_active - 1, 1)
+                    ranks = (ranks / max(n_active - 1, 1)).astype(np.float32)
                     influence = (1.0 - ranks * 0.8) ** rank_exp
                 else:
                     raw = near_dist_sq * (s_val ** 2) / (dists_to_target ** 2 + 1e-10)

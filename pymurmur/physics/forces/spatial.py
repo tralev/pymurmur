@@ -56,13 +56,19 @@ try:
     if _KERNELS_HAS_NUMBA:
         from ._kernels import (
             _numba_hybrid_filter,
+            _numba_hybrid_filter_fastmath,
             _numba_predator_detect,
+            _numba_predator_detect_fastmath,
             _numba_predator_escape,
+            _numba_predator_escape_fastmath,
         )
     else:
-        _numba_hybrid_filter = _numpy_hybrid_filter
-        _numba_predator_detect = _numpy_predator_detect
-        _numba_predator_escape = _numpy_predator_escape
+        _numba_hybrid_filter = _numpy_hybrid_filter  # type: ignore[assignment]
+        _numba_hybrid_filter_fastmath = _numpy_hybrid_filter  # type: ignore[assignment]
+        _numba_predator_detect = _numpy_predator_detect  # type: ignore[assignment]
+        _numba_predator_detect_fastmath = _numpy_predator_detect  # type: ignore[assignment]
+        _numba_predator_escape = _numpy_predator_escape  # type: ignore[assignment]
+        _numba_predator_escape_fastmath = _numpy_predator_escape  # type: ignore[assignment]
 except ImportError:
     # D7: _kernels.py failed to import (missing or errored).
     # Inline the numpy fallback implementations instead of re-importing
@@ -142,18 +148,22 @@ except ImportError:
             escape[global_i] = direction * (
                 escape_factor * accel_boost / (d * d))
 
-    # No numba — both aliases point to numpy fallbacks
-    _numba_hybrid_filter = _numpy_hybrid_filter
-    _numba_predator_detect = _numpy_predator_detect
-    _numba_predator_escape = _numpy_predator_escape
+    # No numba — all aliases point to numpy fallbacks
+    _numba_hybrid_filter = _numpy_hybrid_filter  # type: ignore[assignment]
+    _numba_hybrid_filter_fastmath = _numpy_hybrid_filter  # type: ignore[assignment]
+    _numba_predator_detect = _numpy_predator_detect  # type: ignore[assignment]
+    _numba_predator_detect_fastmath = _numpy_predator_detect  # type: ignore[assignment]
+    _numba_predator_escape = _numpy_predator_escape  # type: ignore[assignment]
+    _numba_predator_escape_fastmath = _numpy_predator_escape  # type: ignore[assignment]
 
 
 def _dispatch_kernels(config):
     """Return (hybrid, predator_detect, predator_escape) kernels.
 
     Selects numba-accelerated versions when numba is installed
-    and config.perf.use_numba is True. Otherwise returns pure-numpy
-    fallbacks.
+    and config.perf.use_numba is True, and among those the
+    fastmath=True build when config.perf.fastmath is also True
+    (C6). Otherwise returns pure-numpy fallbacks.
 
     Safe for non-SimConfig configs (e.g., test FakeConfig): defaults
     to numpy fallbacks when config lacks a 'perf' attribute.
@@ -161,6 +171,13 @@ def _dispatch_kernels(config):
     perf = getattr(config, 'perf', None)
     use_numba = getattr(perf, 'use_numba', False) if perf is not None else False
     if use_numba and _KERNELS_HAS_NUMBA:
+        fastmath = getattr(perf, 'fastmath', False) if perf is not None else False
+        if fastmath:
+            return (
+                _numba_hybrid_filter_fastmath,
+                _numba_predator_detect_fastmath,
+                _numba_predator_escape_fastmath,
+            )
         return _numba_hybrid_filter, _numba_predator_detect, _numba_predator_escape
     return _numpy_hybrid_filter, _numpy_predator_detect, _numpy_predator_escape
 

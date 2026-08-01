@@ -84,7 +84,7 @@ def init_positions(
         # cbrt of uniform [0,1] gives the correct radial CDF.
         R = 0.4 * min(width, height, depth)
         r = rng.uniform(0, 1, (n, 1)).astype(np.float32)
-        r = np.cbrt(r) * R  # ∛-law: uniform in volume
+        r = (np.cbrt(r) * R).astype(np.float32)  # ∛-law: uniform in volume
         dirs = random_unit_sphere(n, rng)
         return (C + dirs * r).astype(np.float32)
 

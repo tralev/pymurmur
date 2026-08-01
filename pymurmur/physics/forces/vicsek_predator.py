@@ -29,9 +29,10 @@ try:
     from ._kernels import _HAS_NUMBA as _KERNELS_HAS_NUMBA  # noqa: F401
     from ._kernels import _numpy_species_collisions
     if _KERNELS_HAS_NUMBA:
-        from ._kernels import _numba_species_collisions
+        from ._kernels import _numba_species_collisions, _numba_species_collisions_fastmath
     else:
-        _numba_species_collisions = _numpy_species_collisions
+        _numba_species_collisions = _numpy_species_collisions  # type: ignore[assignment]
+        _numba_species_collisions_fastmath = _numpy_species_collisions  # type: ignore[assignment]
 except ImportError:
     _KERNELS_HAS_NUMBA = False
 
@@ -71,7 +72,8 @@ except ImportError:
                     corrections += 1
         return corrections
 
-    _numba_species_collisions = _numpy_species_collisions
+    _numba_species_collisions = _numpy_species_collisions  # type: ignore[assignment]
+    _numba_species_collisions_fastmath = _numpy_species_collisions  # type: ignore[assignment]
 
 
 def _apply_fear_blending(
@@ -317,7 +319,13 @@ def resolve_species_collisions(
     # mode), falling back to the pure-Python loop otherwise.
     use_numba = getattr(config.perf, 'use_numba', False)
     if use_numba and _KERNELS_HAS_NUMBA:
-        return int(_numba_species_collisions(
+        # C6: fastmath=True build when config.perf.fastmath is also set.
+        kernel = (
+            _numba_species_collisions_fastmath
+            if getattr(config.perf, 'fastmath', False)
+            else _numba_species_collisions
+        )
+        return int(kernel(
             positions, is_predator, active_idx.astype(np.int64),
             float(R_avoid), float(R_pred),
             float(width), float(height), float(depth),

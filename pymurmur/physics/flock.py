@@ -390,16 +390,16 @@ class PhysicsFlock:
 
         for attr in ("seeds", "last_theta"):
             arr = getattr(self, attr)
-            extended = np.zeros(new_size, dtype=np.float32)
-            extended[:N] = arr
-            setattr(self, attr, extended)
+            extended_1d = np.zeros(new_size, dtype=np.float32)
+            extended_1d[:N] = arr
+            setattr(self, attr, extended_1d)
 
         # Extend bool arrays
         for attr in ("is_predator",):
             arr = getattr(self, attr)
-            extended = np.zeros(new_size, dtype=bool)
-            extended[:N] = arr
-            setattr(self, attr, extended)
+            extended_bool = np.zeros(new_size, dtype=bool)
+            extended_bool[:N] = arr
+            setattr(self, attr, extended_bool)
 
         active = np.zeros(new_size, dtype=bool)
         active[:N] = self.active

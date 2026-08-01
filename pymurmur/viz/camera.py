@@ -210,8 +210,8 @@ class OrbitCamera:
         t = (self.target.z - near.z) / direction.z
         if t < 0:
             return None
-        hit = near + direction * t
-        return (float(hit.x), float(hit.y), float(hit.z))
+        plane_hit = near + direction * t
+        return (float(plane_hit.x), float(plane_hit.y), float(plane_hit.z))
 
     def projection_matrix(self, aspect: float) -> glm.mat4:
         """Projection matrix — perspective or orthographic (P8.8)."""
