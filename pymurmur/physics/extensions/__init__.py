@@ -11,15 +11,19 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from ._base import StepContext  # noqa: F401  # used in type hints with annotations future
-from .boid_state_machine import BoidStateMachine
-from .dynamic_vision_range import DynamicVisionRange
+from .boid_state_machine import BoidStateMachine  # noqa: F401  # registers via @register_extension
+from .dynamic_vision_range import (
+    DynamicVisionRange,  # noqa: F401  # registers via @register_extension
+)
 from .ecology import Ecology
 from .extension_registry import EXTENSION_REGISTRY
-from .neighbor_adaptive_speed import NeighborAdaptiveSpeed
+from .neighbor_adaptive_speed import (
+    NeighborAdaptiveSpeed,  # noqa: F401  # registers via @register_extension
+)
 from .predator import Predator
-from .ripple import Ripple
-from .speed_noise import SpeedNoise
-from .wander import Wander
+from .ripple import Ripple  # noqa: F401  # registers via @register_extension
+from .speed_noise import SpeedNoise  # noqa: F401  # registers via @register_extension
+from .wander import Wander  # noqa: F401  # registers via @register_extension
 
 if TYPE_CHECKING:
     from ...core.config import SimConfig
@@ -121,7 +125,7 @@ class ExtensionManager:
         # ── Remaining extensions (all except ecology + predator, and
         #     only those with a non-None active instance) ──
         _SKIP = frozenset({"roosting_enabled", "predator_enabled"})
-        for cls, attr, cleanup_attr in EXTENSION_REGISTRY:
+        for _cls, attr, _cleanup_attr in EXTENSION_REGISTRY:
             if attr in _SKIP:
                 continue
             ext = self._active.get(attr)

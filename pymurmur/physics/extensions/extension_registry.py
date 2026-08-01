@@ -19,11 +19,7 @@ Predator, which preserves the existing ordering contract.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from ...core.config import SimConfig
-    from ...physics.extensions._base import Extension
+from typing import Any
 
 # Each entry: (ExtensionClass, config_attr_name, flock_cleanup_attr_name_or_None)
 EXTENSION_REGISTRY: list[tuple[type[Any], str, str | None]] = []

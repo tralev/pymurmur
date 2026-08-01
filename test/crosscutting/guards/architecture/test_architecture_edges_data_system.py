@@ -147,12 +147,16 @@ ALLOWED_EDGES_SYSTEM: dict[str, set[str]] = {
         "pymurmur.viz.renderer_draw",
     },
     # File-size split from renderer.py: VAO-building mixin.
-    "pymurmur.viz.renderer_vao": {"pymurmur.viz.mesh_registry"},
+    "pymurmur.viz.renderer_vao": {
+        "pymurmur.viz.mesh_registry",
+        "pymurmur.viz.renderer",  # TYPE_CHECKING only — InstanceSchema
+    },
     # File-size split from renderer.py: drawing mixin.
     "pymurmur.viz.renderer_draw": {
         "pymurmur.core.types",
         "pymurmur.viz.mesh_registry",
         "pymurmur.physics.flock",  # TYPE_CHECKING only
+        "pymurmur.viz.trails",  # TYPE_CHECKING only — TrailRenderer
     },
     "pymurmur.viz.shaders": {
         "pymurmur.core.types",
