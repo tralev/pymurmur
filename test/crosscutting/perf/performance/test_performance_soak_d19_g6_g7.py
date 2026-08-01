@@ -269,7 +269,17 @@ class TestG7FastmathWarningSoak:
         cfg.mode = "spatial"
         cfg.num_boids = self.G7_N
         cfg.seed = 42
-        cfg.metrics_detail_level = 1
+        # S2.B10 (config_validation.py) requires metrics_detail_level==0
+        # whenever fastmath=True -- this test predates that rule (added
+        # in 9c62192, after this file was last touched) and was never
+        # updated, so it started raising ValueError at SimConfig
+        # construction instead of testing what it's meant to. The
+        # fastmath warning itself (collector.py's self._fastmath check)
+        # doesn't gate on detail_level at all, so level 0 still reaches
+        # and exercises it -- metrics_history is still populated too
+        # (detail_level only gates which *additional* expensive metrics
+        # get computed, not whether collect() runs).
+        cfg.metrics_detail_level = 0
         cfg.metrics_interval = 1
         cfg.capture_with_viz = False
         cfg.capture_frame_cap = self.G7_CAP
